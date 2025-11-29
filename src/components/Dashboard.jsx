@@ -3,9 +3,8 @@ import { supabase } from '../supabaseClient';
 import { groupBookings } from '../utils/bookingUtils';
 import StatusBadge from './StatusBadge';
 import BookingModal from './BookingModal';
+import UserBookingsCalendar from './UserBookingsCalendar';
 import Toast from './Toast';
-
-const CATEGORIES = ['All', 'Lithography', 'Metrology', 'Etching', 'Deposition', 'Processing'];
 
 const Dashboard = ({ user, onLogout }) => {
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -28,7 +27,8 @@ const Dashboard = ({ user, onLogout }) => {
                 // Fetch Tools
                 const { data: toolsData, error: toolsError } = await supabase
                     .from('tools')
-                    .select('*');
+                    .select('*')
+                    .order('id', { ascending: true });
 
                 if (toolsError) throw toolsError;
                 if (toolsData) setTools(toolsData);
@@ -86,6 +86,7 @@ const Dashboard = ({ user, onLogout }) => {
     // Memoized grouped bookings
     const myBookings = bookings.filter(b => b.user_id === user.id);
     const myGroupedBookings = useMemo(() => groupBookings(myBookings), [bookings, user.id]);
+    const allGroupedBookings = useMemo(() => groupBookings(bookings), [bookings]);
 
     const handleBookTool = async (bookingData) => {
         const newBookings = Array.isArray(bookingData) ? bookingData : [bookingData];
@@ -159,12 +160,19 @@ const Dashboard = ({ user, onLogout }) => {
         }
 
         try {
-            const { error } = await supabase
+            console.log(`Updating licenses for user ${userId} to:`, newLicenses);
+            const { data, error } = await supabase
                 .from('profiles')
                 .update({ licenses: newLicenses })
-                .eq('id', userId);
+                .eq('id', userId)
+                .select();
 
-            if (error) throw error;
+            if (error) {
+                console.error('Supabase update error:', error);
+                throw error;
+            }
+
+            console.log('Supabase update success:', data);
 
             // Update local state
             setAllUsers(allUsers.map(u => u.id === userId ? { ...u, licenses: newLicenses } : u));
@@ -174,15 +182,96 @@ const Dashboard = ({ user, onLogout }) => {
             setToastMessage('Licenses updated successfully.');
         } catch (error) {
             console.error('Error updating licenses:', error);
-            setToastMessage('Failed to update licenses.');
+            setToastMessage('Failed to update licenses: ' + error.message);
         }
     };
+
+    const categories = useMemo(() => {
+        const cats = new Set(tools.map(t => t.category));
+        return ['All', ...Array.from(cats).sort()];
+    }, [tools]);
 
     const filteredTools = tools.filter(t => {
         const matchesCategory = filterCategory === 'All' || t.category === filterCategory;
         const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) || t.id.toString().includes(searchQuery);
         return matchesCategory && matchesSearch;
     });
+
+    const authorizedTools = filteredTools.filter(t => !t.license_req || profile?.licenses?.includes(t.id));
+    const otherTools = filteredTools.filter(t => t.license_req && !profile?.licenses?.includes(t.id));
+
+    const ToolTable = ({ toolsList, title }) => (
+        <div className="bg-white rounded shadow-sm overflow-hidden border mb-8">
+            <div className="p-4 bg-gray-50 border-b font-bold text-gray-700">{title} ({toolsList.length})</div>
+            <table className="w-full text-left border-collapse">
+                <thead className="bg-gray-50 border-b">
+                    <tr>
+                        <th className="p-4 font-semibold text-gray-600">ID</th>
+                        <th className="p-4 font-semibold text-gray-600">Name</th>
+                        <th className="p-4 font-semibold text-gray-600">Category</th>
+                        <th className="p-4 font-semibold text-gray-600">Status</th>
+                        <th className="p-4 font-semibold text-gray-600">License</th>
+                        <th className="p-4 font-semibold text-gray-600 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {toolsList.map(tool => (
+                        <tr key={tool.id} className="tool-row border-b last:border-0 transition">
+                            <td className="p-4 text-gray-500 font-mono text-sm">{tool.id}</td>
+                            <td className="p-4">
+                                <div className="font-bold text-gray-800">{tool.name}</div>
+                                <div className="text-xs text-gray-500">{tool.description}</div>
+                            </td>
+                            <td className="p-4">
+                                <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-semibold">
+                                    {tool.category}
+                                </span>
+                            </td>
+                            <td className="p-4">
+                                <div className="flex items-center gap-2">
+                                    <StatusBadge status={tool.status} />
+                                    {profile?.access_level === 'admin' && (
+                                        <select
+                                            value={tool.status}
+                                            onChange={(e) => handleStatusChange(tool.id, e.target.value)}
+                                            className="text-xs border rounded p-1 bg-white"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <option value="up">Up</option>
+                                            <option value="down">Down</option>
+                                            <option value="service">Service</option>
+                                        </select>
+                                    )}
+                                </div>
+                            </td>
+                            <td className="p-4">
+                                {!tool.license_req ? (
+                                    <span className="text-green-600 text-xs font-bold bg-green-50 px-2 py-1 rounded">Not Required</span>
+                                ) : profile?.licenses?.includes(tool.id) ? (
+                                    <span className="text-green-700 font-bold flex items-center gap-1 text-sm"><i className="fas fa-check-circle"></i> Active</span>
+                                ) : (
+                                    <span className="text-gray-400 flex items-center gap-1 text-sm"><i className="fas fa-times-circle"></i> Missing</span>
+                                )}
+                            </td>
+                            <td className="p-4 text-right">
+                                <button
+                                    onClick={() => setSelectedTool(tool)}
+                                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-medium shadow-sm"
+                                >
+                                    Book
+                                </button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+            {toolsList.length === 0 && (
+                <div className="p-8 text-center text-gray-500">
+                    No tools found in this section.
+                </div>
+            )}
+        </div>
+    );
 
     if (loading) {
         return <div className="flex items-center justify-center h-screen">Loading...</div>;
@@ -216,11 +305,16 @@ const Dashboard = ({ user, onLogout }) => {
                     </button>
                     <button onClick={() => setActiveTab('bookings')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'bookings' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
                         <i className="fas fa-calendar-alt w-8"></i> My Bookings
-                        {myBookings.length > 0 && <span className="ml-auto bg-blue-600 text-white text-xs rounded-full px-2 py-0.5">{myBookings.length}</span>}
+                        {myGroupedBookings.length > 0 && <span className="ml-auto bg-blue-600 text-white text-xs rounded-full px-2 py-0.5">{myGroupedBookings.length}</span>}
                     </button>
                     {profile?.access_level === 'admin' && (
                         <button onClick={() => setActiveTab('users')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'users' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
                             <i className="fas fa-users w-8"></i> Users
+                        </button>
+                    )}
+                    {profile?.access_level === 'admin' && (
+                        <button onClick={() => setActiveTab('all_bookings')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'all_bookings' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
+                            <i className="fas fa-calendar-check w-8"></i> All Bookings
                         </button>
                     )}
                 </nav>
@@ -252,7 +346,7 @@ const Dashboard = ({ user, onLogout }) => {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 <div className="bg-white p-6 rounded-lg shadow-sm border">
                                     <h3 className="text-gray-500 text-sm font-bold uppercase mb-2">My Active Bookings</h3>
-                                    <div className="text-3xl font-bold text-blue-900">{myBookings.length}</div>
+                                    <div className="text-3xl font-bold text-blue-900">{myGroupedBookings.length}</div>
                                 </div>
                                 <div className="bg-white p-6 rounded-lg shadow-sm border">
                                     <h3 className="text-gray-500 text-sm font-bold uppercase mb-2">Active Licenses</h3>
@@ -311,86 +405,22 @@ const Dashboard = ({ user, onLogout }) => {
                                     value={filterCategory}
                                     onChange={(e) => setFilterCategory(e.target.value)}
                                 >
-                                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
                             </div>
 
-                            <div className="bg-white rounded shadow-sm overflow-hidden border">
-                                <table className="w-full text-left border-collapse">
-                                    <thead className="bg-gray-50 border-b">
-                                        <tr>
-                                            <th className="p-4 font-semibold text-gray-600">ID</th>
-                                            <th className="p-4 font-semibold text-gray-600">Name</th>
-                                            <th className="p-4 font-semibold text-gray-600">Category</th>
-                                            <th className="p-4 font-semibold text-gray-600">Status</th>
-                                            <th className="p-4 font-semibold text-gray-600">License</th>
-                                            <th className="p-4 font-semibold text-gray-600 text-right">Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {filteredTools.map(tool => (
-                                            <tr key={tool.id} className="tool-row border-b last:border-0 transition">
-                                                <td className="p-4 text-gray-500 font-mono text-sm">{tool.id}</td>
-                                                <td className="p-4">
-                                                    <div className="font-bold text-gray-800">{tool.name}</div>
-                                                    <div className="text-xs text-gray-500">{tool.description}</div>
-                                                </td>
-                                                <td className="p-4">
-                                                    <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-semibold">
-                                                        {tool.category}
-                                                    </span>
-                                                </td>
-                                                <td className="p-4">
-                                                    <div className="flex items-center gap-2">
-                                                        <StatusBadge status={tool.status} />
-                                                        {profile?.access_level === 'admin' && (
-                                                            <select
-                                                                value={tool.status}
-                                                                onChange={(e) => handleStatusChange(tool.id, e.target.value)}
-                                                                className="text-xs border rounded p-1 bg-white"
-                                                                onClick={(e) => e.stopPropagation()}
-                                                            >
-                                                                <option value="up">Up</option>
-                                                                <option value="down">Down</option>
-                                                                <option value="service">Service</option>
-                                                            </select>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                                <td className="p-4">
-                                                    {!tool.license_req ? (
-                                                        <span className="text-green-600 text-xs font-bold bg-green-50 px-2 py-1 rounded">Not Required</span>
-                                                    ) : profile?.licenses?.includes(tool.id) ? (
-                                                        <span className="text-green-700 font-bold flex items-center gap-1 text-sm"><i className="fas fa-check-circle"></i> Active</span>
-                                                    ) : (
-                                                        <span className="text-gray-400 flex items-center gap-1 text-sm"><i className="fas fa-times-circle"></i> Missing</span>
-                                                    )}
-                                                </td>
-                                                <td className="p-4 text-right">
-                                                    <button
-                                                        onClick={() => setSelectedTool(tool)}
-                                                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-medium shadow-sm"
-                                                    >
-                                                        Book
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                                {filteredTools.length === 0 && (
-                                    <div className="p-8 text-center text-gray-500">
-                                        No tools found matching your criteria.
-                                    </div>
-                                )}
-                            </div>
+                            <ToolTable toolsList={authorizedTools} title="My Authorized Tools" />
+                            <ToolTable toolsList={otherTools} title="Other Tools" />
                         </div>
                     )}
+
 
                     {/* TAB: BOOKINGS */}
                     {activeTab === 'bookings' && (
                         <div className="space-y-6">
-                            <h3 className="font-bold text-gray-800">My Booking History</h3>
+                            <UserBookingsCalendar bookings={myBookings} />
+
+                            <h3 className="font-bold text-gray-800 pt-4 border-t">Booking List</h3>
                             {myGroupedBookings.length === 0 ? (
                                 <p className="text-gray-500">No bookings found.</p>
                             ) : (
@@ -403,6 +433,35 @@ const Dashboard = ({ user, onLogout }) => {
                                             </div>
                                             <button onClick={() => initiateCancel(b.ids)} className="text-red-500 hover:text-red-700 text-sm font-semibold">
                                                 Cancel
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* TAB: ALL BOOKINGS (ADMIN ONLY) */}
+                    {activeTab === 'all_bookings' && profile?.access_level === 'admin' && (
+                        <div className="space-y-6">
+                            <UserBookingsCalendar bookings={bookings} />
+
+                            <h3 className="font-bold text-gray-800 pt-4 border-t">All Bookings List</h3>
+                            {allGroupedBookings.length === 0 ? (
+                                <p className="text-gray-500">No bookings found in the system.</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {allGroupedBookings.map(b => (
+                                        <div key={b.ids[0]} className="bg-white p-4 rounded shadow-sm border flex justify-between items-center">
+                                            <div>
+                                                <div className="font-bold text-blue-900">{b.tool_name}</div>
+                                                <div className="text-sm text-gray-600">
+                                                    <span className="font-semibold text-gray-800">{b.user_name}</span> | {b.date} | {b.startTime} - {b.endTime}
+                                                </div>
+                                                <div className="text-xs text-gray-500">Project: {b.project}</div>
+                                            </div>
+                                            <button onClick={() => initiateCancel(b.ids)} className="text-red-500 hover:text-red-700 text-sm font-semibold border border-red-200 px-3 py-1 rounded hover:bg-red-50">
+                                                Delete Booking
                                             </button>
                                         </div>
                                     ))}
