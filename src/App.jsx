@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import { ToastProvider } from './context/ToastContext';
 import LoginScreen from './components/LoginScreen';
 import Dashboard from './components/Dashboard';
 
@@ -27,15 +28,17 @@ function App() {
     return <div className="flex items-center justify-center h-screen bg-gray-100">Loading...</div>;
   }
 
-  if (!session) {
-    return <LoginScreen />;
-  }
-
   return (
-    <Dashboard
-      user={session.user}
-      onLogout={() => supabase.auth.signOut()}
-    />
+    <ToastProvider>
+      {!session ? (
+        <LoginScreen />
+      ) : (
+        <Dashboard
+          user={session.user}
+          onLogout={() => supabase.auth.signOut()}
+        />
+      )}
+    </ToastProvider>
   );
 }
 
