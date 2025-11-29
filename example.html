@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Myfab LIMS | Chalmers</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body {
+            background-color: #f0f2f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+            /* Prevent text selection during drag */
+        }
+
+        .lims-header {
+            background: linear-gradient(90deg, #00205b 0%, #003366 100%);
+            color: white;
+        }
+
+        .tool-row:hover {
+            background-color: #f8fafc;
+        }
+
+        .status-dot {
+            height: 12px;
+            width: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* Custom Scrollbar for tables */
+        .custom-scroll::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .toast-enter {
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+
+        /* Calendar Styles */
+        .calendar-header-cell {
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 10;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .time-label-cell {
+            position: sticky;
+            left: 0;
+            background: white;
+            z-index: 10;
+            border-right: 1px solid #e5e7eb;
+        }
+
+        .pattern-dots {
+            background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+            background-size: 4px 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- MOCK DATA & CONFIG ---
+
+        const INITIAL_TOOLS = [
+            { id: 101, name: 'Raith EBPG 5200', category: 'Lithography', status: 'up', location: 'Cleanroom D', licenseReq: true, description: 'Electron Beam Lithography system. High resolution patterning.' },
+            { id: 102, name: 'Heidelberg DWL 2000', category: 'Lithography', status: 'up', location: 'Cleanroom D', licenseReq: true, description: 'Laser lithography system for mask making and direct write.' },
+            { id: 201, name: 'JEOL 7800F Prime', category: 'Metrology', status: 'up', location: 'Analysis Lab', licenseReq: true, description: 'High resolution SEM with EDS.' },
+            { id: 202, name: 'Dektak XT', category: 'Metrology', status: 'up', location: 'Cleanroom E', licenseReq: false, description: 'Stylus profilometer.' },
+            { id: 301, name: 'Oxford PlasmaPro 100', category: 'Etching', status: 'down', location: 'Cleanroom A', licenseReq: true, description: 'ICP-RIE for III-V etching. Currently undergoing maintenance.' },
+            { id: 302, name: 'Lesker PVD 225', category: 'Deposition', status: 'service', location: 'Cleanroom B', licenseReq: true, description: 'E-beam evaporator for metals.' },
+            { id: 401, name: 'Disco DAD 3350', category: 'Processing', status: 'up', location: 'Back-end Lab', licenseReq: true, description: 'Dicing saw.' },
+        ];
+
+        const USERS = [
+            { id: 'u1', name: 'Dr. Anna Anderson', role: 'researcher', licenses: [101, 102, 201, 301, 302, 401], project: 'MC2-Quantum-25' },
+            { id: 'u2', name: 'Sven Svensson (Student)', role: 'student', licenses: [201, 202], project: 'MSc-Thesis-Nano' },
+            { id: 'u3', name: 'Admin User', role: 'admin', licenses: [101, 102, 201, 202, 301, 302, 401], project: 'Facility-Mgmt' },
+        ];
+
+        const CATEGORIES = ['All', 'Lithography', 'Metrology', 'Etching', 'Deposition', 'Processing'];
+
+        // --- HELPERS ---
+
+        const getNextSlotTime = (timeStr) => {
+            const [h, m] = timeStr.split(':').map(Number);
+            let nextM = m + 30;
+            let nextH = h;
+            if (nextM >= 60) {
+                nextH++;
+                nextM = 0;
+            }
+            return `${nextH.toString().padStart(2, '0')}:${nextM.toString().padStart(2, '0')}`;
+        };
+
+        const groupBookings = (bookings) => {
+            if (!bookings.length) return [];
+
+            // Sort by Date -> Tool -> Time
+            const sorted = [...bookings].sort((a, b) => {
+                if (a.date !== b.date) return a.date.localeCompare(b.date);
+                if (a.toolId !== b.toolId) return a.toolId - b.toolId;
+                return a.time.localeCompare(b.time);
+            });
+
+            const groups = [];
+            let currentGroup = null;
+
+            sorted.forEach(booking => {
+                if (!currentGroup) {
+                    currentGroup = {
+                        ...booking,
+                        ids: [booking.id],
+                        endTime: getNextSlotTime(booking.time),
+                        startTime: booking.time
+                    };
+                    return;
+                }
+
+                const isSameDate = booking.date === currentGroup.date;
+                const isSameTool = booking.toolId === currentGroup.toolId;
+                const isContinuous = booking.time === currentGroup.endTime;
+
+                if (isSameDate && isSameTool && isContinuous) {
+                    currentGroup.ids.push(booking.id);
+                    currentGroup.endTime = getNextSlotTime(booking.time);
+                } else {
+                    groups.push(currentGroup);
+                    currentGroup = {
+                        ...booking,
+                        ids: [booking.id],
+                        endTime: getNextSlotTime(booking.time),
+                        startTime: booking.time
+                    };
+                }
+            });
+
+            if (currentGroup) groups.push(currentGroup);
+            return groups;
+        };
+
+        // --- COMPONENTS ---
+
+        // 1. TOAST NOTIFICATION
+        const Toast = ({ message, onClose }) => {
+            useEffect(() => {
+                const timer = setTimeout(onClose, 3000);
+                return () => clearTimeout(timer);
+            }, [onClose]);
+
+            return (
+                <div className="fixed bottom-6 right-6 bg-gray-800 text-white px-6 py-4 rounded shadow-lg z-50 flex items-center gap-3 toast-enter">
+                    <i className="fas fa-check-circle text-green-400 text-xl"></i>
+                    <div>
+                        <h4 className="font-bold text-sm">Success</h4>
+                        <p className="text-xs text-gray-300">{message}</p>
+                    </div>
+                    <button onClick={onClose} className="ml-4 text-gray-400 hover:text-white"><i className="fas fa-times"></i></button>
+                </div>
+            );
+        };
+
+        // 2. CONFIRMATION MODAL
+        const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6 transform transition-all scale-100">
+                        <div className="text-center">
+                            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                                <i className="fas fa-exclamation-triangle text-red-600 text-xl"></i>
+                            </div>
+                            <h3 className="text-lg font-bold text-gray-900">{title}</h3>
+                            <p className="text-sm text-gray-500 mt-2">{message}</p>
+                        </div>
+                        <div className="mt-6 flex gap-3">
+                            <button onClick={onCancel} className="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:text-sm">
+                                Cancel
+                            </button>
+                            <button onClick={onConfirm} className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 sm:text-sm">
+                                Confirm
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // 3. LOGIN SCREEN
+        const LoginScreen = ({ onLogin }) => {
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-gray-200">
+                    <div className="bg-white p-8 rounded-lg shadow-xl w-96 border-t-4 border-blue-900">
+                        <div className="text-center mb-8">
+                            <h1 className="text-3xl font-bold text-blue-900">Myfab LIMS</h1>
+                            <p className="text-gray-500 text-sm mt-1">Chalmers University of Technology</p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <p className="text-sm font-semibold text-gray-700">Select a Role to Simulate:</p>
+                            {USERS.map(user => (
+                                <button
+                                    key={user.id}
+                                    onClick={() => onLogin(user)}
+                                    className="w-full p-3 text-left border rounded hover:bg-blue-50 hover:border-blue-500 transition flex justify-between items-center group"
+                                >
+                                    <div>
+                                        <div className="font-bold text-gray-800">{user.name}</div>
+                                        <div className="text-xs text-gray-500 uppercase tracking-wide">{user.role}</div>
+                                    </div>
+                                    <i className="fas fa-chevron-right text-gray-300 group-hover:text-blue-500"></i>
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="mt-8 text-xs text-gray-400 text-center">
+                            Warning: This is a simulation clone. Not connected to actual booking database.
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // 4. STATUS BADGE
+        const StatusBadge = ({ status }) => {
+            const config = {
+                up: { color: 'bg-green-500', text: 'Available' },
+                down: { color: 'bg-red-500', text: 'Down' },
+                service: { color: 'bg-yellow-500', text: 'Service' },
+            };
+            const current = config[status] || config.up;
+            return (
+                <div className="flex items-center gap-2">
+                    <span className={`status-dot ${current.color}`}></span>
+                    <span className="text-sm capitalize text-gray-700">{status}</span>
+                </div>
+            );
+        };
+
+        // 5. BOOKING MODAL
+        const BookingModal = ({ tool, user, onClose, onConfirm, existingBookings }) => {
+            // Initialize week start to current week's Monday
+            const [currentWeekStart, setCurrentWeekStart] = useState(() => {
+                const d = new Date();
+                const day = d.getDay();
+                const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+                return new Date(d.setDate(diff));
+            });
+
+            const [selectedSlots, setSelectedSlots] = useState([]); // Array of {date, time}
+            const [isDragging, setIsDragging] = useState(false);
+            const [dragStart, setDragStart] = useState(null); // {dIndex, tIndex}
+
+            // Validation
+            const hasLicense = user.licenses.includes(tool.id);
+            const isToolUp = tool.status === 'up';
+            const canBook = hasLicense && isToolUp;
+
+            // Helper to get dates for the week
+            const weekDates = useMemo(() => {
+                const dates = [];
+                for (let i = 0; i < 7; i++) {
+                    const d = new Date(currentWeekStart);
+                    d.setDate(currentWeekStart.getDate() + i);
+                    dates.push(d);
+                }
+                return dates;
+            }, [currentWeekStart]);
+
+            // Helper to generate 30-min slots from 08:00 to 20:00
+            const timeSlots = useMemo(() => {
+                const slots = [];
+                for (let h = 8; h < 20; h++) {
+                    const hStr = h < 10 ? '0' + h : h;
+                    slots.push(`${hStr}:00`);
+                    slots.push(`${hStr}:30`);
+                }
+                return slots;
+            }, []);
+
+            const formatDate = (date) => date.toISOString().split('T')[0];
+            const displayDate = (date) => date.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
+
+            const isSlotBooked = (dateStr, timeStr) => {
+                return existingBookings.some(b => b.date === dateStr && b.time === timeStr && b.toolId === tool.id);
+            };
+
+            const getBooking = (dateStr, timeStr) => {
+                return existingBookings.find(b => b.date === dateStr && b.time === timeStr && b.toolId === tool.id);
+            };
+
+            const isSlotSelected = (dateStr, timeStr) => {
+                return selectedSlots.some(s => s.date === dateStr && s.time === timeStr);
+            };
+
+            // Indices lookup
+            const getDateIndex = (dateStr) => weekDates.findIndex(d => formatDate(d) === dateStr);
+            const getTimeIndex = (time) => timeSlots.indexOf(time);
+
+            // Drag Handlers
+            const handleMouseDown = (dateStr, time) => {
+                if (!canBook || isSlotBooked(dateStr, time)) return;
+
+                setIsDragging(true);
+                const dIndex = getDateIndex(dateStr);
+                const tIndex = getTimeIndex(time);
+                setDragStart({ dIndex, tIndex });
+                setSelectedSlots([{ date: dateStr, time }]);
+            };
+
+            const handleMouseEnter = (dateStr, time) => {
+                if (!isDragging || !dragStart) return;
+
+                const currentDIndex = getDateIndex(dateStr);
+                const currentTIndex = getTimeIndex(time);
+
+                // Calculate rectangular range
+                const minD = Math.min(dragStart.dIndex, currentDIndex);
+                const maxD = Math.max(dragStart.dIndex, currentDIndex);
+                const minT = Math.min(dragStart.tIndex, currentTIndex);
+                const maxT = Math.max(dragStart.tIndex, currentTIndex);
+
+                const newSelection = [];
+
+                // Iterate range
+                for (let d = minD; d <= maxD; d++) {
+                    for (let t = minT; t <= maxT; t++) {
+                        const dStr = formatDate(weekDates[d]);
+                        const tStr = timeSlots[t];
+                        // Only select if not booked
+                        if (!isSlotBooked(dStr, tStr)) {
+                            newSelection.push({ date: dStr, time: tStr });
+                        }
+                    }
+                }
+                setSelectedSlots(newSelection);
+            };
+
+            const handleMouseUp = () => {
+                setIsDragging(false);
+                setDragStart(null);
+            };
+
+            // Navigation
+            const handlePrevWeek = () => {
+                const newDate = new Date(currentWeekStart);
+                newDate.setDate(newDate.getDate() - 7);
+                setCurrentWeekStart(newDate);
+                setSelectedSlots([]);
+            };
+
+            const handleNextWeek = () => {
+                const newDate = new Date(currentWeekStart);
+                newDate.setDate(newDate.getDate() + 7);
+                setCurrentWeekStart(newDate);
+                setSelectedSlots([]);
+            };
+
+            const handleConfirm = () => {
+                if (selectedSlots.length === 0) return;
+
+                const newBookings = selectedSlots.map((slot, index) => ({
+                    id: Date.now() + index,
+                    toolId: tool.id,
+                    toolName: tool.name,
+                    userId: user.id,
+                    userName: user.name,
+                    project: user.project,
+                    date: slot.date,
+                    time: slot.time,
+                    timestamp: new Date().toISOString()
+                }));
+
+                onConfirm(newBookings);
+            };
+
+            return (
+                <div
+                    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+                    onMouseUp={handleMouseUp} // Catch drops outside grid
+                >
+                    <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">
+                        {/* Header */}
+                        <div className="bg-blue-900 text-white p-4 flex justify-between items-center shrink-0">
+                            <h2 className="text-xl font-bold"><i className="fas fa-calendar-alt mr-2"></i>Weekly Schedule</h2>
+                            <button onClick={onClose} className="hover:text-gray-300"><i className="fas fa-times text-xl"></i></button>
+                        </div>
+
+                        {/* Tool Info & Controls */}
+                        <div className="p-4 border-b bg-gray-50 flex justify-between items-center shrink-0">
+                            <div>
+                                <h3 className="font-bold text-lg text-gray-800">{tool.name}</h3>
+                                <div className="flex gap-2 text-sm mt-1">
+                                    <StatusBadge status={tool.status} />
+                                    {hasLicense ?
+                                        <span className="text-green-700 bg-green-100 px-2 rounded font-bold">Licensed</span> :
+                                        <span className="text-red-700 bg-red-100 px-2 rounded font-bold">No License</span>
+                                    }
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <button onClick={handlePrevWeek} className="p-2 hover:bg-gray-200 rounded"><i className="fas fa-chevron-left"></i></button>
+                                <div className="font-bold text-gray-700 w-48 text-center">
+                                    {weekDates[0].toLocaleDateString()} - {weekDates[6].toLocaleDateString()}
+                                </div>
+                                <button onClick={handleNextWeek} className="p-2 hover:bg-gray-200 rounded"><i className="fas fa-chevron-right"></i></button>
+                            </div>
+                        </div>
+
+                        {!canBook && (
+                            <div className="bg-red-50 border-b border-red-200 p-2 text-center text-red-700 text-sm font-bold shrink-0">
+                                {!isToolUp ? "Tool is currently down for maintenance." : "You do not have a license for this tool."}
+                            </div>
+                        )}
+
+                        {/* Calendar Grid Container */}
+                        <div className="flex-1 overflow-auto custom-scroll relative select-none">
+                            <div className="min-w-[800px]">
+
+                                {/* Header Row (Days) */}
+                                <div className="grid grid-cols-[80px_repeat(7,1fr)] bg-white border-b sticky top-0 z-20 shadow-sm">
+                                    <div className="p-2 border-r bg-gray-50"></div>
+                                    {weekDates.map((date, i) => (
+                                        <div key={i} className="p-2 text-center border-r font-semibold text-gray-700 text-sm bg-gray-50">
+                                            {displayDate(date)}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Body Rows (Time Slots) */}
+                                {timeSlots.map(time => (
+                                    <div key={time} className="grid grid-cols-[80px_repeat(7,1fr)] border-b last:border-0 h-12">
+                                        {/* Time Label */}
+                                        <div className="p-2 text-right text-xs text-gray-500 border-r bg-gray-50 font-mono flex items-center justify-end sticky left-0 z-10">
+                                            {time}
+                                        </div>
+
+                                        {/* Slots */}
+                                        {weekDates.map((date, i) => {
+                                            const dateStr = formatDate(date);
+                                            const booking = getBooking(dateStr, time);
+                                            const isBooked = !!booking;
+                                            const selected = isSlotSelected(dateStr, time);
+
+                                            let cellClass = "bg-white cursor-pointer hover:bg-blue-50";
+                                            if (isBooked) cellClass = "bg-gray-200 cursor-not-allowed";
+                                            else if (selected) cellClass = "bg-blue-600 text-white";
+                                            else if (!canBook) cellClass = "bg-gray-50 cursor-not-allowed";
+
+                                            return (
+                                                <div
+                                                    key={`${dateStr}-${time}`}
+                                                    onMouseDown={() => handleMouseDown(dateStr, time)}
+                                                    onMouseEnter={() => handleMouseEnter(dateStr, time)}
+                                                    className={`border-r p-1 transition-colors flex items-center justify-center text-xs overflow-hidden ${cellClass}`}
+                                                    title={isBooked ? `Booked by: ${booking.userName}\nProject: ${booking.project}` : ''}
+                                                >
+                                                    {isBooked && (
+                                                        <span className="text-gray-600 font-semibold text-[10px] truncate w-full text-center">
+                                                            {booking.userName}
+                                                        </span>
+                                                    )}
+                                                    {selected && <span className="font-bold">SELECTED</span>}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-4 border-t bg-white flex justify-end gap-3 shrink-0 z-30">
+                            <div className="mr-auto flex items-center gap-4 text-sm">
+                                <div className="flex items-center gap-1"><div className="w-4 h-4 bg-white border"></div> Available</div>
+                                <div className="flex items-center gap-1"><div className="w-4 h-4 bg-blue-600 rounded"></div> Selected ({selectedSlots.length})</div>
+                                <div className="flex items-center gap-1"><div className="w-4 h-4 bg-gray-200 rounded"></div> Booked</div>
+                            </div>
+                            <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                            <button
+                                disabled={selectedSlots.length === 0}
+                                onClick={handleConfirm}
+                                className={`px-6 py-2 rounded text-white font-bold transition ${selectedSlots.length === 0 ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                            >
+                                Confirm Booking
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // 6. MAIN DASHBOARD LAYOUT
+        const Dashboard = ({ user, onLogout }) => {
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [tools, setTools] = useState(INITIAL_TOOLS);
+            const [bookings, setBookings] = useState([]);
+            const [selectedTool, setSelectedTool] = useState(null);
+            const [filterCategory, setFilterCategory] = useState('All');
+            const [searchQuery, setSearchQuery] = useState('');
+
+            // UI States
+            const [toastMessage, setToastMessage] = useState(null);
+            const [idsToDelete, setIdsToDelete] = useState([]); // Now an array of IDs
+
+            // Load from LocalStorage on mount
+            useEffect(() => {
+                const savedBookings = localStorage.getItem('lims_bookings');
+                const savedTools = localStorage.getItem('lims_tools');
+                if (savedBookings) setBookings(JSON.parse(savedBookings));
+                if (savedTools) setTools(JSON.parse(savedTools));
+            }, []);
+
+            // Save to LocalStorage on change
+            useEffect(() => {
+                localStorage.setItem('lims_bookings', JSON.stringify(bookings));
+                localStorage.setItem('lims_tools', JSON.stringify(tools));
+            }, [bookings, tools]);
+
+            // Memoized grouped bookings
+            const myBookings = bookings.filter(b => b.userId === user.id);
+            const myGroupedBookings = useMemo(() => groupBookings(myBookings), [bookings, user.id]);
+
+            const handleBookTool = (bookingData) => {
+                // Handle both single object and array of objects
+                const newBookings = Array.isArray(bookingData) ? bookingData : [bookingData];
+                setBookings([...bookings, ...newBookings]);
+                setSelectedTool(null);
+                setToastMessage(`Successfully created ${newBookings.length} booking(s).`);
+            };
+
+            const initiateCancel = (ids) => {
+                setIdsToDelete(ids);
+            };
+
+            const confirmCancel = () => {
+                if (idsToDelete.length > 0) {
+                    setBookings(bookings.filter(b => !idsToDelete.includes(b.id)));
+                    setIdsToDelete([]);
+                    setToastMessage("Booking has been cancelled.");
+                }
+            };
+
+            const toggleToolStatus = (toolId) => {
+                if (user.role !== 'admin') return;
+                const newTools = tools.map(t => {
+                    if (t.id === toolId) {
+                        const nextStatus = t.status === 'up' ? 'down' : (t.status === 'down' ? 'service' : 'up');
+                        return { ...t, status: nextStatus };
+                    }
+                    return t;
+                });
+                setTools(newTools);
+            };
+
+            const filteredTools = tools.filter(t => {
+                const matchesCategory = filterCategory === 'All' || t.category === filterCategory;
+                const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) || t.id.toString().includes(searchQuery);
+                return matchesCategory && matchesSearch;
+            });
+
+            return (
+                <div className="flex h-screen bg-gray-100">
+                    {/* Sidebar */}
+                    <div className="w-64 bg-white shadow-lg flex flex-col z-10">
+                        <div className="h-16 flex items-center justify-center border-b border-blue-900 bg-blue-900 text-white">
+                            <div className="font-bold text-xl tracking-wider"><i className="fas fa-microscope mr-2"></i>MYFAB LIMS</div>
+                        </div>
+
+                        <div className="p-4 border-b">
+                            <div className="text-sm text-gray-500">Logged in as</div>
+                            <div className="font-bold text-gray-800 truncate">{user.name}</div>
+                            <div className="text-xs text-blue-600 font-semibold uppercase mt-1">{user.role}</div>
+                        </div>
+
+                        <nav className="flex-1 p-4 space-y-2">
+                            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
+                                <i className="fas fa-home w-8"></i> Dashboard
+                            </button>
+                            <button onClick={() => setActiveTab('tools')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'tools' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
+                                <i className="fas fa-tools w-8"></i> Tool List
+                            </button>
+                            <button onClick={() => setActiveTab('bookings')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'bookings' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
+                                <i className="fas fa-calendar-alt w-8"></i> My Bookings
+                                {myBookings.length > 0 && <span className="ml-auto bg-blue-600 text-white text-xs rounded-full px-2 py-0.5">{myBookings.length}</span>}
+                            </button>
+                        </nav>
+
+                        <div className="p-4 border-t">
+                            <button onClick={onLogout} className="w-full flex items-center p-2 text-red-600 hover:bg-red-50 rounded transition">
+                                <i className="fas fa-sign-out-alt w-8"></i> Logout
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Main Content */}
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        <header className="h-16 bg-white shadow-sm flex items-center justify-between px-6">
+                            <h2 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('-', ' ')}</h2>
+                            <div className="flex items-center gap-4">
+                                <span className="text-sm text-gray-500">Project: {user.project}</span>
+                                <div className="h-8 w-8 bg-blue-900 rounded-full flex items-center justify-center text-white font-bold">
+                                    {user.name.charAt(0)}
+                                </div>
+                            </div>
+                        </header>
+
+                        <main className="flex-1 overflow-y-auto p-6 custom-scroll">
+
+                            {/* TAB: DASHBOARD */}
+                            {activeTab === 'dashboard' && (
+                                <div className="space-y-6">
+                                    {/* Messages / News */}
+                                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start gap-3">
+                                        <i className="fas fa-exclamation-triangle text-yellow-600 mt-1"></i>
+                                        <div>
+                                            <h4 className="font-bold text-yellow-800">Cleanroom D Maintenance</h4>
+                                            <p className="text-sm text-yellow-700">Ventilation work scheduled for next Tuesday (08:00 - 12:00). Expect noise.</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div className="bg-white p-6 rounded-lg shadow-sm border">
+                                            <h3 className="text-gray-500 text-sm font-bold uppercase mb-2">My Active Bookings</h3>
+                                            <div className="text-3xl font-bold text-blue-900">{myBookings.length}</div>
+                                        </div>
+                                        <div className="bg-white p-6 rounded-lg shadow-sm border">
+                                            <h3 className="text-gray-500 text-sm font-bold uppercase mb-2">Active Licenses</h3>
+                                            <div className="text-3xl font-bold text-green-700">{user.licenses.length}</div>
+                                        </div>
+                                        <div className="bg-white p-6 rounded-lg shadow-sm border">
+                                            <h3 className="text-gray-500 text-sm font-bold uppercase mb-2">Tools Down</h3>
+                                            <div className="text-3xl font-bold text-red-600">{tools.filter(t => t.status === 'down').length}</div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white rounded-lg shadow-sm border">
+                                        <div className="p-4 border-b font-bold text-gray-800">
+                                            Upcoming Bookings (Next 24h)
+                                        </div>
+                                        <div className="p-4">
+                                            {myGroupedBookings.length === 0 ? (
+                                                <p className="text-gray-500 text-sm italic">No upcoming bookings.</p>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {myGroupedBookings.slice(0, 3).map(b => (
+                                                        <div key={b.ids[0]} className="flex justify-between items-center p-3 bg-gray-50 rounded border-l-4 border-blue-500">
+                                                            <div>
+                                                                <div className="font-bold text-gray-800">{b.toolName}</div>
+                                                                <div className="text-xs text-gray-500">
+                                                                    {b.date} @ {b.startTime} - {b.endTime}
+                                                                </div>
+                                                            </div>
+                                                            <button onClick={() => initiateCancel(b.ids)} className="text-red-500 hover:text-red-700 text-sm">
+                                                                <i className="fas fa-times"></i>
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TAB: TOOLS */}
+                            {activeTab === 'tools' && (
+                                <div className="space-y-4">
+                                    {/* Filters */}
+                                    <div className="flex flex-col md:flex-row gap-4 bg-white p-4 rounded shadow-sm">
+                                        <div className="flex-1">
+                                            <input
+                                                type="text"
+                                                placeholder="Search tool name or ID..."
+                                                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                                value={searchQuery}
+                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                            />
+                                        </div>
+                                        <select
+                                            className="border p-2 rounded"
+                                            value={filterCategory}
+                                            onChange={(e) => setFilterCategory(e.target.value)}
+                                        >
+                                            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+
+                                    {/* Tool Table */}
+                                    <div className="bg-white rounded shadow-sm overflow-hidden border">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead className="bg-gray-50 border-b">
+                                                <tr>
+                                                    <th className="p-4 font-semibold text-gray-600">ID</th>
+                                                    <th className="p-4 font-semibold text-gray-600">Name</th>
+                                                    <th className="p-4 font-semibold text-gray-600">Category</th>
+                                                    <th className="p-4 font-semibold text-gray-600">Status</th>
+                                                    <th className="p-4 font-semibold text-gray-600 text-center">License</th>
+                                                    <th className="p-4 font-semibold text-gray-600 text-right">Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {filteredTools.map(tool => {
+                                                    const hasLicense = user.licenses.includes(tool.id);
+                                                    return (
+                                                        <tr key={tool.id} className="tool-row border-b last:border-0 transition">
+                                                            <td className="p-4 text-gray-500 font-mono text-sm">{tool.id}</td>
+                                                            <td className="p-4">
+                                                                <div className="font-bold text-gray-800">{tool.name}</div>
+                                                                <div className="text-xs text-gray-500">{tool.description}</div>
+                                                            </td>
+                                                            <td className="p-4">
+                                                                <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-semibold">
+                                                                    {tool.category}
+                                                                </span>
+                                                            </td>
+                                                            <td className="p-4">
+                                                                <div className="flex items-center gap-2">
+                                                                    <StatusBadge status={tool.status} />
+                                                                    {user.role === 'admin' && (
+                                                                        <button
+                                                                            onClick={() => toggleToolStatus(tool.id)}
+                                                                            className="ml-2 text-gray-400 hover:text-blue-600 text-xs"
+                                                                            title="Admin: Toggle Status"
+                                                                        >
+                                                                            <i className="fas fa-cog"></i>
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td className="p-4 text-center">
+                                                                {hasLicense ?
+                                                                    <i className="fas fa-check-circle text-green-500 text-lg" title="Licensed"></i> :
+                                                                    <i className="fas fa-times-circle text-gray-300 text-lg" title="No License"></i>
+                                                                }
+                                                            </td>
+                                                            <td className="p-4 text-right">
+                                                                <button
+                                                                    onClick={() => setSelectedTool(tool)}
+                                                                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-medium shadow-sm"
+                                                                >
+                                                                    Book
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                        {filteredTools.length === 0 && (
+                                            <div className="p-8 text-center text-gray-500">
+                                                No tools found matching your criteria.
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TAB: MY BOOKINGS */}
+                            {activeTab === 'bookings' && (
+                                <div className="space-y-4">
+                                    <div className="bg-white rounded shadow-sm border overflow-hidden">
+                                        <div className="p-4 border-b bg-gray-50 font-bold text-gray-700">
+                                            My Booking History
+                                        </div>
+                                        {myGroupedBookings.length === 0 ? (
+                                            <div className="p-8 text-center text-gray-500">
+                                                You have no active bookings. Go to the Tool List to reserve equipment.
+                                            </div>
+                                        ) : (
+                                            <div className="divide-y">
+                                                {myGroupedBookings.map(b => (
+                                                    <div key={b.ids[0]} className="p-4 flex items-center justify-between hover:bg-gray-50">
+                                                        <div className="flex gap-4 items-center">
+                                                            <div className="bg-blue-100 text-blue-800 p-3 rounded-lg text-center min-w-[80px]">
+                                                                <div className="text-xs font-bold uppercase">{new Date(b.date).toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                                                                <div className="text-lg font-bold">{b.date}</div>
+                                                            </div>
+                                                            <div>
+                                                                <h4 className="font-bold text-gray-800 text-lg">{b.toolName}</h4>
+                                                                <div className="text-gray-500 text-sm">
+                                                                    <i className="far fa-clock mr-1"></i> {b.startTime} - {b.endTime}
+                                                                </div>
+                                                                <div className="text-gray-400 text-xs mt-1">Booked on: {new Date(b.timestamp).toLocaleString()}</div>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => initiateCancel(b.ids)}
+                                                            className="text-red-500 border border-red-200 hover:bg-red-50 px-3 py-1 rounded text-sm transition"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                        </main>
+                    </div>
+
+                    {/* Modals & Overlays */}
+                    {selectedTool && (
+                        <BookingModal
+                            tool={selectedTool}
+                            user={user}
+                            existingBookings={bookings}
+                            onClose={() => setSelectedTool(null)}
+                            onConfirm={handleBookTool}
+                        />
+                    )}
+
+                    <ConfirmModal
+                        isOpen={idsToDelete.length > 0}
+                        title="Cancel Booking"
+                        message="Are you sure you want to cancel this booking session? This action cannot be undone."
+                        onConfirm={confirmCancel}
+                        onCancel={() => setIdsToDelete([])}
+                    />
+
+                    {toastMessage && (
+                        <Toast
+                            message={toastMessage}
+                            onClose={() => setToastMessage(null)}
+                        />
+                    )}
+                </div>
+            );
+        };
+
+        // 7. APP ROOT
+        const App = () => {
+            const [user, setUser] = useState(null);
+
+            // Persist Login Session
+            useEffect(() => {
+                const savedUser = localStorage.getItem('lims_user');
+                if (savedUser) setUser(JSON.parse(savedUser));
+            }, []);
+
+            const handleLogin = (u) => {
+                setUser(u);
+                localStorage.setItem('lims_user', JSON.stringify(u));
+            };
+
+            const handleLogout = () => {
+                setUser(null);
+                localStorage.removeItem('lims_user');
+            };
+
+            if (!user) return <LoginScreen onLogin={handleLogin} />;
+            return <Dashboard user={user} onLogout={handleLogout} />;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
