@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import StatusBadge from './StatusBadge';
 
-const BookingModal = ({ tool, user, profile, onClose, onConfirm, existingBookings }) => {
+const BookingModal = ({ tool, user, profile, onClose, onConfirm, existingBookings = [] }) => {
     // Initialize week start to current week's Monday
     const [currentWeekStart, setCurrentWeekStart] = useState(() => {
         const d = new Date();
@@ -10,19 +10,29 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, existingBooking
         return new Date(d.setDate(diff));
     });
 
+    const [selectedSlots, setSelectedSlots] = useState([]); // Array of {date, time}
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState(null); // {dIndex, tIndex}
+
+    console.log('BookingModal Rendered', { tool, user, profile, existingBookings });
+
     // Validation
     const isAdmin = profile?.access_level === 'admin';
-    const hasLicense = profile?.licenses ? profile.licenses.includes(tool.id) : false;
+    const hasLicense = Array.isArray(profile?.licenses) ? profile.licenses.includes(tool.id) : false;
     const isToolUp = tool.status === 'up';
     const canBook = isAdmin || (hasLicense && isToolUp);
 
     // Helper to get dates for the week
     const weekDates = useMemo(() => {
         const dates = [];
-        for (let i = 0; i < 7; i++) {
-            const d = new Date(currentWeekStart);
-            d.setDate(currentWeekStart.getDate() + i);
-            dates.push(d);
+        try {
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(currentWeekStart);
+                d.setDate(currentWeekStart.getDate() + i);
+                dates.push(d);
+            }
+        } catch (e) {
+            console.error('Error generating week dates', e);
         }
         return dates;
     }, [currentWeekStart]);
@@ -38,8 +48,20 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, existingBooking
         return slots;
     }, []);
 
-    const formatDate = (date) => date.toISOString().split('T')[0];
-    const displayDate = (date) => date.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
+    const formatDate = (date) => {
+        try {
+            return date.toISOString().split('T')[0];
+        } catch (e) {
+            return '';
+        }
+    };
+    const displayDate = (date) => {
+        try {
+            return date.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
+        } catch (e) {
+            return 'Invalid Date';
+        }
+    };
 
     const isSlotBooked = (dateStr, timeStr) => {
         return existingBookings.some(b => b.date === dateStr && b.time === timeStr && b.tool_id === tool.id);

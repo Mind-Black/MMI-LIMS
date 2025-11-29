@@ -12,6 +12,8 @@ const Dashboard = ({ user, onLogout }) => {
     const [tools, setTools] = useState([]);
     const [bookings, setBookings] = useState([]);
     const [profile, setProfile] = useState(null);
+    const [allUsers, setAllUsers] = useState([]);
+    const [selectedUser, setSelectedUser] = useState(null);
     const [selectedTool, setSelectedTool] = useState(null);
     const [filterCategory, setFilterCategory] = useState('All');
     const [searchQuery, setSearchQuery] = useState('');
@@ -62,6 +64,24 @@ const Dashboard = ({ user, onLogout }) => {
 
         // Real-time subscription could go here
     }, []);
+
+    // Fetch All Users if Admin
+    useEffect(() => {
+        console.log('Checking admin access for user fetch:', profile?.access_level);
+        if (profile?.access_level === 'admin') {
+            const fetchUsers = async () => {
+                console.log('Fetching all users...');
+                const { data, error } = await supabase.from('profiles').select('*').order('last_name', { ascending: true });
+                if (error) {
+                    console.error('Error fetching users:', error);
+                } else {
+                    console.log('Fetched users:', data);
+                    setAllUsers(data);
+                }
+            };
+            fetchUsers();
+        }
+    }, [profile]);
 
     // Memoized grouped bookings
     const myBookings = bookings.filter(b => b.user_id === user.id);
@@ -125,6 +145,39 @@ const Dashboard = ({ user, onLogout }) => {
         }
     };
 
+    const handleLicenseToggle = async (userId, toolId) => {
+        const userToUpdate = allUsers.find(u => u.id === userId);
+        if (!userToUpdate) return;
+
+        const currentLicenses = userToUpdate.licenses || [];
+        let newLicenses;
+
+        if (currentLicenses.includes(toolId)) {
+            newLicenses = currentLicenses.filter(id => id !== toolId);
+        } else {
+            newLicenses = [...currentLicenses, toolId];
+        }
+
+        try {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ licenses: newLicenses })
+                .eq('id', userId);
+
+            if (error) throw error;
+
+            // Update local state
+            setAllUsers(allUsers.map(u => u.id === userId ? { ...u, licenses: newLicenses } : u));
+            if (selectedUser?.id === userId) {
+                setSelectedUser({ ...selectedUser, licenses: newLicenses });
+            }
+            setToastMessage('Licenses updated successfully.');
+        } catch (error) {
+            console.error('Error updating licenses:', error);
+            setToastMessage('Failed to update licenses.');
+        }
+    };
+
     const filteredTools = tools.filter(t => {
         const matchesCategory = filterCategory === 'All' || t.category === filterCategory;
         const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) || t.id.toString().includes(searchQuery);
@@ -165,6 +218,11 @@ const Dashboard = ({ user, onLogout }) => {
                         <i className="fas fa-calendar-alt w-8"></i> My Bookings
                         {myBookings.length > 0 && <span className="ml-auto bg-blue-600 text-white text-xs rounded-full px-2 py-0.5">{myBookings.length}</span>}
                     </button>
+                    {profile?.access_level === 'admin' && (
+                        <button onClick={() => setActiveTab('users')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'users' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
+                            <i className="fas fa-users w-8"></i> Users
+                        </button>
+                    )}
                 </nav>
 
                 <div className="p-4 border-t">
@@ -265,6 +323,7 @@ const Dashboard = ({ user, onLogout }) => {
                                             <th className="p-4 font-semibold text-gray-600">Name</th>
                                             <th className="p-4 font-semibold text-gray-600">Category</th>
                                             <th className="p-4 font-semibold text-gray-600">Status</th>
+                                            <th className="p-4 font-semibold text-gray-600">License</th>
                                             <th className="p-4 font-semibold text-gray-600 text-right">Action</th>
                                         </tr>
                                     </thead>
@@ -297,6 +356,15 @@ const Dashboard = ({ user, onLogout }) => {
                                                             </select>
                                                         )}
                                                     </div>
+                                                </td>
+                                                <td className="p-4">
+                                                    {!tool.license_req ? (
+                                                        <span className="text-green-600 text-xs font-bold bg-green-50 px-2 py-1 rounded">Not Required</span>
+                                                    ) : profile?.licenses?.includes(tool.id) ? (
+                                                        <span className="text-green-700 font-bold flex items-center gap-1 text-sm"><i className="fas fa-check-circle"></i> Active</span>
+                                                    ) : (
+                                                        <span className="text-gray-400 flex items-center gap-1 text-sm"><i className="fas fa-times-circle"></i> Missing</span>
+                                                    )}
                                                 </td>
                                                 <td className="p-4 text-right">
                                                     <button
@@ -343,8 +411,71 @@ const Dashboard = ({ user, onLogout }) => {
                         </div>
                     )}
 
+                    {/* TAB: USERS (ADMIN ONLY) */}
+                    {activeTab === 'users' && profile?.access_level === 'admin' && (
+                        <div className="space-y-6">
+                            <h3 className="font-bold text-gray-800">User Management</h3>
+                            <div className="bg-white rounded shadow-sm overflow-hidden border">
+                                <table className="w-full text-left border-collapse">
+                                    <thead className="bg-gray-50 border-b">
+                                        <tr>
+                                            <th className="p-4 font-semibold text-gray-600">Name</th>
+                                            <th className="p-4 font-semibold text-gray-600">Job Title</th>
+                                            <th className="p-4 font-semibold text-gray-600">Access</th>
+                                            <th className="p-4 font-semibold text-gray-600">Licenses</th>
+                                            <th className="p-4 font-semibold text-gray-600 text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {allUsers.map(u => (
+                                            <tr key={u.id} className="border-b last:border-0 hover:bg-gray-50 transition">
+                                                <td className="p-4 font-bold text-gray-800">{u.first_name} {u.last_name}</td>
+                                                <td className="p-4 text-gray-600">{u.job_title}</td>
+                                                <td className="p-4">
+                                                    <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${u.access_level === 'admin' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                        {u.access_level}
+                                                    </span>
+                                                </td>
+                                                <td className="p-4 text-gray-600">{u.licenses?.length || 0}</td>
+                                                <td className="p-4 text-right">
+                                                    <button
+                                                        onClick={() => setSelectedUser(selectedUser?.id === u.id ? null : u)}
+                                                        className="text-blue-600 hover:text-blue-800 font-semibold text-sm"
+                                                    >
+                                                        {selectedUser?.id === u.id ? 'Close' : 'Manage'}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {selectedUser && (
+                                <div className="bg-white p-6 rounded shadow-sm border border-blue-200 animate-fade-in">
+                                    <h4 className="font-bold text-lg text-gray-800 mb-4">
+                                        Manage Licenses for {selectedUser.first_name} {selectedUser.last_name}
+                                    </h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {tools.map(tool => {
+                                            const hasLicense = selectedUser.licenses?.includes(tool.id);
+                                            return (
+                                                <div key={tool.id} className={`p-3 rounded border flex items-center justify-between cursor-pointer transition ${hasLicense ? 'bg-green-50 border-green-200' : 'bg-gray-50 hover:bg-gray-100'}`}
+                                                    onClick={() => handleLicenseToggle(selectedUser.id, tool.id)}
+                                                >
+                                                    <span className="font-medium text-gray-700">{tool.name}</span>
+                                                    {hasLicense ? <i className="fas fa-check-circle text-green-600 text-xl"></i> : <i className="far fa-circle text-gray-400 text-xl"></i>}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                 </main>
-            </div>
+            </div >
 
             {selectedTool && (
                 <BookingModal
@@ -357,13 +488,15 @@ const Dashboard = ({ user, onLogout }) => {
                 />
             )}
 
-            {toastMessage && (
-                <Toast
-                    message={toastMessage}
-                    onClose={() => setToastMessage(null)}
-                />
-            )}
-        </div>
+            {
+                toastMessage && (
+                    <Toast
+                        message={toastMessage}
+                        onClose={() => setToastMessage(null)}
+                    />
+                )
+            }
+        </div >
     );
 };
 

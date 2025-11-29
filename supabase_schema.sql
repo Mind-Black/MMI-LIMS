@@ -41,6 +41,9 @@ alter table profiles enable row level security;
 create policy "Public profiles are viewable by everyone" on profiles for select using (true);
 create policy "Users can insert their own profile" on profiles for insert with check (auth.uid() = id);
 create policy "Users can update own profile" on profiles for update using (auth.uid() = id);
+create policy "Admins can update any profile" on profiles for update using (
+  exists (select 1 from profiles where id = auth.uid() and access_level = 'admin')
+);
 
 -- Function to handle new user signup
 create or replace function public.handle_new_user()
