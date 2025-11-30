@@ -13,8 +13,16 @@ body {
     color: white;
 }
 
+.dark .lims-header {
+    background: linear-gradient(90deg, #0f172a 0%, #1e293b 100%);
+}
+
 .tool-row:hover {
     background-color: #f8fafc;
+}
+
+.dark .tool-row:hover {
+    background-color: #1f2937;
 }
 
 .status-dot {
@@ -41,6 +49,18 @@ body {
 
 .custom-scroll::-webkit-scrollbar-thumb:hover {
     background: #555;
+}
+
+.dark .custom-scroll::-webkit-scrollbar-track {
+    background: #374151;
+}
+
+.dark .custom-scroll::-webkit-scrollbar-thumb {
+    background: #6b7280;
+}
+
+.dark .custom-scroll::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
 }
 
 /* Animations */

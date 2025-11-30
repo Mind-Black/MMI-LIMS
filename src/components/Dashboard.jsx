@@ -7,6 +7,8 @@ import ToolList from './ToolList';
 import BookingList from './BookingList';
 import UserManagement from './UserManagement';
 import { useToast } from '../context/ToastContext';
+import { useTheme } from '../context/ThemeContext';
+import AnalyticsCharts from './AnalyticsCharts';
 
 const Dashboard = ({ user, onLogout }) => {
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -14,9 +16,19 @@ const Dashboard = ({ user, onLogout }) => {
     const [bookings, setBookings] = useState([]);
     const [profile, setProfile] = useState(null);
     const [selectedTool, setSelectedTool] = useState(null);
+
     const [loading, setLoading] = useState(true);
 
+    // Week State
+    const [currentWeekStart, setCurrentWeekStart] = useState(() => {
+        const d = new Date();
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+        return new Date(d.setDate(diff));
+    });
+
     const { showToast } = useToast();
+    const { theme, toggleTheme } = useTheme();
 
     // Fetch Data
     useEffect(() => {
@@ -64,6 +76,25 @@ const Dashboard = ({ user, onLogout }) => {
     // Memoized grouped bookings
     const myBookings = bookings.filter(b => b.user_id === user.id);
     const myGroupedBookings = useMemo(() => groupBookings(myBookings), [bookings, user.id]);
+
+    // Quick Book: Get last 3 unique tools used by the user
+    const recentTools = useMemo(() => {
+        const uniqueToolIds = new Set();
+        const recent = [];
+        // Sort bookings by date descending
+        const sortedBookings = [...myBookings].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        for (const booking of sortedBookings) {
+            if (!uniqueToolIds.has(booking.tool_id)) {
+                uniqueToolIds.add(booking.tool_id);
+                // Find tool details
+                const tool = tools.find(t => t.id === booking.tool_id);
+                if (tool) recent.push(tool);
+            }
+            if (recent.length >= 3) break;
+        }
+        return recent;
+    }, [myBookings, tools]);
 
     const handleBookTool = async (bookingData) => {
         const newBookings = Array.isArray(bookingData) ? bookingData : [bookingData];
@@ -186,59 +217,62 @@ const Dashboard = ({ user, onLogout }) => {
     return (
         <div className="flex h-screen bg-gray-100">
             {/* Sidebar */}
-            <div className="w-64 bg-white shadow-lg flex flex-col z-10">
-                <div className="h-16 flex items-center justify-center border-b border-blue-900 bg-blue-900 text-white">
+            <div className="w-64 bg-white dark:bg-gray-800 shadow-lg flex flex-col z-10 transition-colors">
+                <div className="h-16 flex items-center justify-center border-b border-blue-900 bg-blue-900 dark:bg-blue-950 text-white transition-colors">
                     <div className="font-bold text-xl tracking-wider flex items-center">
                         <img src={logo} alt="Logo" className="h-8 mr-2 brightness-0 invert" />
                         MMI-LIMS
                     </div>
                 </div>
 
-                <div className="p-4 border-b">
-                    <div className="text-sm text-gray-500">Logged in as</div>
-                    <div className="font-bold text-gray-800 truncate">
+                <div className="p-4 border-b dark:border-gray-700">
+                    <div className="text-sm text-gray-500 dark:text-gray-400">Logged in as</div>
+                    <div className="font-bold text-gray-800 dark:text-gray-200 truncate">
                         {profile ? `${profile.first_name} ${profile.last_name}` : user.email}
                     </div>
-                    <div className="text-xs text-blue-600 font-semibold uppercase mt-1">
+                    <div className="text-xs text-blue-600 dark:text-blue-400 font-semibold uppercase mt-1">
                         {profile?.job_title || 'Researcher'}
                         {profile?.access_level === 'admin' && <span className="ml-2 bg-red-600 text-white px-1 rounded text-[10px]">ADMIN</span>}
                     </div>
                 </div>
 
                 <nav className="flex-1 p-4 space-y-2">
-                    <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'dashboard' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-bold' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <i className="fas fa-home w-8"></i> Dashboard
                     </button>
-                    <button onClick={() => setActiveTab('tools')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'tools' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    <button onClick={() => setActiveTab('tools')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'tools' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-bold' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <i className="fas fa-tools w-8"></i> Tool List
                     </button>
 
                     {profile?.access_level === 'admin' && (
-                        <button onClick={() => setActiveTab('users')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'users' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
+                        <button onClick={() => setActiveTab('users')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'users' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-bold' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                             <i className="fas fa-users w-8"></i> Users
                         </button>
                     )}
                     {profile?.access_level === 'admin' && (
-                        <button onClick={() => setActiveTab('all_bookings')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'all_bookings' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
+                        <button onClick={() => setActiveTab('all_bookings')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'all_bookings' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-bold' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                             <i className="fas fa-calendar-check w-8"></i> All Bookings
                         </button>
                     )}
                 </nav>
 
-                <div className="p-4 border-t">
-                    <button onClick={onLogout} className="w-full flex items-center p-2 text-red-600 hover:bg-red-50 rounded transition">
+                <div className="p-4 border-t dark:border-gray-700 space-y-2">
+                    <button onClick={toggleTheme} className="w-full flex items-center p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded transition">
+                        <i className={`fas ${theme === 'dark' ? 'fa-sun' : 'fa-moon'} w-8`}></i> {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                    </button>
+                    <button onClick={onLogout} className="w-full flex items-center p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition">
                         <i className="fas fa-sign-out-alt w-8"></i> Logout
                     </button>
                 </div>
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 flex flex-col overflow-hidden">
-                <header className="h-16 bg-white shadow-sm flex items-center justify-between px-6">
-                    <h2 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('-', ' ')}</h2>
+            <div className="flex-1 flex flex-col overflow-hidden bg-gray-100 dark:bg-gray-900 transition-colors">
+                <header className="h-16 bg-white dark:bg-gray-800 shadow-sm flex items-center justify-between px-6 transition-colors">
+                    <h2 className="text-xl font-bold text-gray-800 dark:text-white capitalize">{activeTab.replace('-', ' ')}</h2>
                     <div className="flex items-center gap-4">
-                        <span className="text-sm text-gray-500">Project: General</span>
-                        <div className="h-8 w-8 bg-blue-900 rounded-full flex items-center justify-center text-white font-bold">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Project: General</span>
+                        <div className="h-8 w-8 bg-blue-900 dark:bg-blue-700 rounded-full flex items-center justify-center text-white font-bold">
                             {user.email.charAt(0).toUpperCase()}
                         </div>
                     </div>
@@ -250,27 +284,43 @@ const Dashboard = ({ user, onLogout }) => {
                     {activeTab === 'dashboard' && (
                         <div className="space-y-6">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <div className="bg-white p-6 rounded-lg shadow-sm border">
-                                    <h3 className="text-gray-500 text-sm font-bold uppercase mb-2">My Active Bookings</h3>
-                                    <div className="text-3xl font-bold text-blue-900">{myGroupedBookings.length}</div>
+                                {/* Analytics Chart */}
+                                <div className="md:col-span-2">
+                                    <AnalyticsCharts bookings={bookings} currentWeekStart={currentWeekStart} />
                                 </div>
-                                <div className="bg-white p-6 rounded-lg shadow-sm border">
-                                    <h3 className="text-gray-500 text-sm font-bold uppercase mb-2">Active Licenses</h3>
-                                    <div className="text-3xl font-bold text-green-700">{profile?.licenses?.length || 0}</div>
-                                </div>
-                                <div className="bg-white p-6 rounded-lg shadow-sm border">
-                                    <h3 className="text-gray-500 text-sm font-bold uppercase mb-2">Tools Down</h3>
-                                    <div className="text-3xl font-bold text-red-600">{tools.filter(t => t.status === 'down').length}</div>
-                                </div>
+
+                                {/* Stats Cards - Removed per request */}
                             </div>
 
-                            <div className="bg-white rounded-lg shadow-sm border p-4">
-                                <h3 className="font-bold text-gray-800 mb-4">My Bookings</h3>
+                            {/* Quick Book Section */}
+                            {recentTools.length > 0 && (
+                                <div>
+                                    <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">Quick Book</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        {recentTools.map(tool => (
+                                            <div key={tool.id} className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border dark:border-gray-700 hover:shadow-md transition cursor-pointer flex justify-between items-center group" onClick={() => setSelectedTool(tool)}>
+                                                <div>
+                                                    <div className="font-bold text-gray-800 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{tool.name}</div>
+                                                    <div className="text-xs text-gray-500 dark:text-gray-400">{tool.category}</div>
+                                                </div>
+                                                <div className="h-8 w-8 bg-blue-50 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:bg-blue-100 dark:group-hover:bg-blue-800/50 transition-colors">
+                                                    <i className="fas fa-plus"></i>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-4 transition-colors">
+                                <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">My Bookings</h3>
                                 <BookingList
                                     bookings={myBookings}
                                     allBookings={bookings}
                                     onCancel={initiateCancel}
                                     onUpdate={handleUpdateBooking}
+                                    currentWeekStart={currentWeekStart}
+                                    onWeekChange={setCurrentWeekStart}
                                 />
                             </div>
                         </div>

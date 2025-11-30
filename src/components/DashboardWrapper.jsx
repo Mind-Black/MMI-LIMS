@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import Dashboard from './Dashboard';
+import LoadingSpinner from './LoadingSpinner';
 
 const DashboardWrapper = ({ session, onLogout }) => {
     const [profile, setProfile] = useState(null);
@@ -26,7 +27,11 @@ const DashboardWrapper = ({ session, onLogout }) => {
     }, [session]);
 
     if (loading) {
-        return <div className="flex items-center justify-center h-screen bg-gray-100">Loading profile...</div>;
+        return (
+            <div className="flex items-center justify-center h-screen bg-gray-100">
+                <LoadingSpinner />
+            </div>
+        );
     }
 
     if (profile && !profile.is_approved) {

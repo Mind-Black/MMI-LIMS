@@ -1,14 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { groupBookings, checkCollision, calculateEventLayout } from '../utils/bookingUtils';
 
-const UserBookingsCalendar = ({ bookings, allBookings, onUpdate }) => {
-    // Initialize week start to current week's Monday
-    const [currentWeekStart, setCurrentWeekStart] = useState(() => {
-        const d = new Date();
-        const day = d.getDay();
-        const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
-        return new Date(d.setDate(diff));
-    });
+const UserBookingsCalendar = ({ bookings, allBookings, onUpdate, currentWeekStart, onWeekChange }) => {
+    // Week start is now controlled by parent
 
     // Interaction State
     const [interaction, setInteraction] = useState(null);
@@ -303,13 +297,13 @@ const UserBookingsCalendar = ({ bookings, allBookings, onUpdate }) => {
     const handlePrevWeek = () => {
         const newDate = new Date(currentWeekStart);
         newDate.setDate(newDate.getDate() - 7);
-        setCurrentWeekStart(newDate);
+        onWeekChange(newDate);
     };
 
     const handleNextWeek = () => {
         const newDate = new Date(currentWeekStart);
         newDate.setDate(newDate.getDate() + 7);
-        setCurrentWeekStart(newDate);
+        onWeekChange(newDate);
     };
 
     return (
