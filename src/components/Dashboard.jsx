@@ -394,19 +394,37 @@ const Dashboard = ({ user, onLogout }) => {
 
                             {/* Booking List Card */}
                             <div>
-                                <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">Booking List</h3>
-                                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-4 transition-colors">
+                                <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">Upcoming Bookings</h3>
+                                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-4 transition-colors mb-6">
                                     <BookingList
-                                        bookings={myBookings}
+                                        bookings={myBookings.filter(b => {
+                                            const end = new Date(`${b.date}T${b.end_time || b.endTime}`);
+                                            return end >= new Date();
+                                        })}
                                         allBookings={bookings}
                                         onCancel={initiateCancel}
                                         onUpdate={handleUpdateBooking}
+                                        onEdit={handleBookingClick}
+                                    />
+                                </div>
+
+                                <h3 className="font-bold text-gray-600 dark:text-gray-400 mb-4">Past Bookings</h3>
+                                <div className="bg-gray-50 dark:bg-gray-900 rounded-lg shadow-sm border dark:border-gray-700 p-4 transition-colors">
+                                    <BookingList
+                                        bookings={myBookings.filter(b => {
+                                            const end = new Date(`${b.date}T${b.end_time || b.endTime}`);
+                                            return end < new Date();
+                                        })}
+                                        allBookings={bookings}
+                                        onCancel={initiateCancel}
+                                        onUpdate={handleUpdateBooking}
+                                        onEdit={handleBookingClick}
+                                        readOnly={true}
                                     />
                                 </div>
                             </div>
                         </div>
-                    )
-                    }
+                    )}
 
                     {/* TAB: TOOLS */}
                     {activeTab === 'tools' && (
@@ -427,6 +445,7 @@ const Dashboard = ({ user, onLogout }) => {
                                     bookings={bookings}
                                     onCancel={initiateCancel}
                                     onUpdate={handleUpdateBooking}
+                                    onEdit={handleBookingClick}
                                     isAdminView={true}
                                 />
                             </div>

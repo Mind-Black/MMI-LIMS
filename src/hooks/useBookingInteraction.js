@@ -65,11 +65,12 @@ export const useBookingInteraction = ({
             currentHeight: height,
             currentDate: booking.date,
             dayWidth: rect.width,
-            isValid: true // Initial state is valid
+            isValid: true, // Initial state is valid
+            hasMoved: false
         };
 
         interactionRef.current = initialData;
-        setInteraction(initialData);
+        // Don't setInteraction here. Wait for movement threshold.
     };
 
     useEffect(() => {
@@ -77,6 +78,16 @@ export const useBookingInteraction = ({
             if (!interactionRef.current) return;
 
             const data = interactionRef.current;
+
+            // Check threshold if not yet moved
+            if (!data.hasMoved) {
+                const dist = Math.sqrt(Math.pow(e.clientX - data.startX, 2) + Math.pow(e.clientY - data.startY, 2));
+                if (dist < 5) return; // 5px threshold
+
+                data.hasMoved = true;
+                setInteraction(data); // Start visual interaction now
+            }
+
             const deltaY = e.clientY - data.startY;
             const deltaX = e.clientX - data.startX;
             const snappedDeltaY = roundToNearestSlot((deltaY / PIXELS_PER_30_MINS) * 30, 30) / 30 * PIXELS_PER_30_MINS;
@@ -160,7 +171,7 @@ export const useBookingInteraction = ({
 
             const data = interactionRef.current;
 
-            if (data.isValid) {
+            if (data.hasMoved && data.isValid) {
                 const newBooking = {
                     date: data.currentDate,
                     startTime: data.newStartTime,
@@ -168,15 +179,20 @@ export const useBookingInteraction = ({
                     tool_id: data.originalBooking.tool_id
                 };
                 await onUpdate(data.originalBooking.ids, newBooking);
-            } else {
-                // Optional: Show specific error toast based on why it failed, 
-                // but since we have visual feedback (red ghost), generic might be fine or we can skip toast.
-                // For now, let's keep it simple or re-implement the specific checks if needed.
-                // The user asked for visual feedback, so the red ghost is the primary signal.
             }
 
-            setInteraction(null);
-            interactionRef.current = null;
+            // If we dragged (hasMoved), delay clearing interaction to prevent the subsequent 'click' event
+            // from triggering the edit popup.
+            if (data.hasMoved) {
+                setTimeout(() => {
+                    setInteraction(null);
+                    interactionRef.current = null;
+                }, 50);
+            } else {
+                // If we didn't move, it was a click. Clear immediately so the click handler works.
+                setInteraction(null);
+                interactionRef.current = null;
+            }
         };
 
         window.addEventListener('mousemove', handleMouseMove);

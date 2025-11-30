@@ -3,6 +3,7 @@ import StatusBadge from './StatusBadge';
 import { useToast } from '../context/ToastContext';
 import { getNextSlotTime, groupBookings, checkCollision, calculateEventLayout } from '../utils/bookingUtils';
 import { useBookingInteraction } from '../hooks/useBookingInteraction';
+import BookingEditPopup from './BookingEditPopup';
 
 const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, existingBookings = [], initialDate }) => {
     // Initialize week start to current week's Monday
@@ -10,16 +11,14 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
         const d = initialDate ? new Date(initialDate) : new Date();
         const day = d.getDay();
         const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
-        return new Date(d.setDate(diff));
+        const newDate = new Date(d);
+        newDate.setDate(diff);
+        return newDate;
     });
 
     const [selectedSlots, setSelectedSlots] = useState([]); // Array of {date, time}
     const [isSubmitting, setIsSubmitting] = useState(false);
-
-    // Interaction State (for moving/resizing existing bookings)
-    // Interaction State (for moving/resizing existing bookings)
-    // const [interaction, setInteraction] = useState(null); // Removed in favor of hook
-    // const interactionRef = useRef(null); // Removed in favor of hook
+    const [editingBooking, setEditingBooking] = useState(null); // Booking being edited via popup
 
     // Selection State (for creating new bookings)
     const [isSelecting, setIsSelecting] = useState(false);
@@ -148,8 +147,22 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
         };
     };
 
-    // --- Interaction Handlers (Move/Resize Existing) ---
-    // Moved to useBookingInteraction hook
+    const handleBookingClick = (e, booking) => {
+        e.stopPropagation();
+        // If interaction is active (dragging), don't open popup
+        if (interaction) return;
+
+        // Permission check
+        const isOwnBooking = booking.user_id === user.id;
+        if (!isAdmin && !isOwnBooking) return;
+
+        setEditingBooking(booking);
+    };
+
+    const handleSaveEdit = async (oldIds, newBooking) => {
+        await onUpdate(oldIds, newBooking);
+        setEditingBooking(null);
+    };
 
     // --- Selection Handlers (Create New) ---
 
@@ -372,7 +385,6 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                 </div>
 
                 {/* Tool Info & Controls */}
-                {/* Tool Info & Controls */}
                 <div className="p-4 border-b bg-gray-50 flex flex-col sm:flex-row justify-between items-center shrink-0 gap-4 sm:gap-0">
                     <div className="text-center sm:text-left">
                         <h3 className="font-bold text-lg text-gray-800">{tool.name}</h3>
@@ -467,6 +479,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                             ${canEdit ? 'hover:z-10 hover:shadow-md cursor-pointer' : ''}`}
                                                         style={getEventStyle(booking)}
                                                         onMouseDown={(e) => canEdit && startInteraction(e, booking, 'move')}
+                                                        onClick={(e) => handleBookingClick(e, booking)}
                                                         title={`Booked by: ${booking.user_name}\nProject: ${booking.project}`}
                                                     >
                                                         {canEdit && (
@@ -539,6 +552,15 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                     </button>
                 </div>
             </div>
+
+            {editingBooking && (
+                <BookingEditPopup
+                    booking={editingBooking}
+                    existingBookings={existingBookings}
+                    onSave={handleSaveEdit}
+                    onCancel={() => setEditingBooking(null)}
+                />
+            )}
         </div>
     );
 };
