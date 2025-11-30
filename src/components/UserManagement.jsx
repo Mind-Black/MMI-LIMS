@@ -63,6 +63,23 @@ const UserManagement = ({ tools }) => {
         }
     };
 
+    const handleApproveUser = async (userId) => {
+        try {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ is_approved: true })
+                .eq('id', userId);
+
+            if (error) throw error;
+
+            setAllUsers(allUsers.map(u => u.id === userId ? { ...u, is_approved: true } : u));
+            showToast('User approved successfully.');
+        } catch (error) {
+            console.error('Error approving user:', error);
+            showToast('Failed to approve user: ' + error.message, 'error');
+        }
+    };
+
     return (
         <div className="space-y-6">
             <h3 className="font-bold text-gray-800">User Management</h3>
@@ -73,6 +90,7 @@ const UserManagement = ({ tools }) => {
                             <th className="p-4 font-semibold text-gray-600">Name</th>
                             <th className="p-4 font-semibold text-gray-600">Job Title</th>
                             <th className="p-4 font-semibold text-gray-600">Access</th>
+                            <th className="p-4 font-semibold text-gray-600">Status</th>
                             <th className="p-4 font-semibold text-gray-600">Licenses</th>
                             <th className="p-4 font-semibold text-gray-600 text-right">Action</th>
                         </tr>
@@ -86,6 +104,18 @@ const UserManagement = ({ tools }) => {
                                     <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${u.access_level === 'admin' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
                                         {u.access_level}
                                     </span>
+                                </td>
+                                <td className="p-4">
+                                    {u.is_approved ? (
+                                        <span className="px-2 py-1 rounded text-xs font-bold uppercase bg-green-100 text-green-700">Active</span>
+                                    ) : (
+                                        <button
+                                            onClick={() => handleApproveUser(u.id)}
+                                            className="px-2 py-1 rounded text-xs font-bold uppercase bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
+                                        >
+                                            Approve
+                                        </button>
+                                    )}
                                 </td>
                                 <td className="p-4 text-gray-600">{u.licenses?.length || 0}</td>
                                 <td className="p-4 text-right">

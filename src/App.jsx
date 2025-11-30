@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { ToastProvider } from './context/ToastContext';
 import LoginScreen from './components/LoginScreen';
-import Dashboard from './components/Dashboard';
+import DashboardWrapper from './components/DashboardWrapper';
 
 function App() {
   const [session, setSession] = useState(null);
@@ -33,10 +33,7 @@ function App() {
       {!session ? (
         <LoginScreen />
       ) : (
-        <Dashboard
-          user={session.user}
-          onLogout={() => supabase.auth.signOut()}
-        />
+        <DashboardWrapper session={session} onLogout={() => supabase.auth.signOut()} />
       )}
     </ToastProvider>
   );

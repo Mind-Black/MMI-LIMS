@@ -31,7 +31,7 @@ const LoginScreen = () => {
                     }
                 });
                 if (error) throw error;
-                setMessage('Check your email for the confirmation link!');
+                setMessage('Registration successful! Please wait for admin approval.');
             } else {
                 const { error } = await supabase.auth.signInWithPassword({ email, password });
                 if (error) throw error;
