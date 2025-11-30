@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { checkCollision, timeToMinutes, minutesToTime } from '../utils/bookingUtils';
 
-const BookingEditPopup = ({ booking, existingBookings, onSave, onCancel }) => {
+const BookingEditPopup = ({ booking, existingBookings, onSave, onCancel, projects = [] }) => {
     const [date, setDate] = useState(booking.date);
     const [startTime, setStartTime] = useState(booking.startTime);
     const [endTime, setEndTime] = useState(booking.endTime);
+    const [project, setProject] = useState(booking.project || 'General');
     const [error, setError] = useState('');
 
     // Generate time options (08:00 - 20:00)
@@ -63,6 +64,7 @@ const BookingEditPopup = ({ booking, existingBookings, onSave, onCancel }) => {
             date,
             startTime,
             endTime,
+            project,
             tool_id: booking.tool_id
         };
 
@@ -87,6 +89,20 @@ const BookingEditPopup = ({ booking, existingBookings, onSave, onCancel }) => {
                 )}
 
                 <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Project</label>
+                        <select
+                            value={project}
+                            onChange={(e) => setProject(e.target.value)}
+                            className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                            <option value="General">General</option>
+                            {projects.map((proj, idx) => (
+                                <option key={idx} value={proj}>{proj}</option>
+                            ))}
+                        </select>
+                    </div>
+
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
                         <input

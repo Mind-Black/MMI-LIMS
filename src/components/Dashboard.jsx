@@ -192,7 +192,7 @@ const Dashboard = ({ user, onLogout }) => {
                 tool_name: oldBooking.tool_name,
                 user_id: oldBooking.user_id,
                 user_name: oldBooking.user_name,
-                project: oldBooking.project,
+                project: b.project || oldBooking.project,
                 date: b.date,
                 time: b.startTime || b.time,
                 end_time: b.endTime || b.end_time,
@@ -329,12 +329,7 @@ const Dashboard = ({ user, onLogout }) => {
                         </button>
                         <h2 className="text-xl font-bold text-gray-800 dark:text-white capitalize">{activeTab.replace('-', ' ')}</h2>
                     </div>
-                    <div className="flex items-center gap-4">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">Project: General</span>
-                        <div className="h-8 w-8 bg-blue-900 dark:bg-blue-700 rounded-full flex items-center justify-center text-white font-bold">
-                            {user.email.charAt(0).toUpperCase()}
-                        </div>
-                    </div>
+
                 </header>
 
                 <main className="flex-1 overflow-y-auto p-6 custom-scroll">
@@ -454,7 +449,18 @@ const Dashboard = ({ user, onLogout }) => {
 
                     {/* TAB: USERS (ADMIN ONLY) */}
                     {activeTab === 'users' && profile?.access_level === 'admin' && (
-                        <UserManagement tools={tools} />
+                        <UserManagement
+                            tools={tools}
+                            currentUser={user}
+                            onProfileUpdate={async () => {
+                                const { data } = await supabase
+                                    .from('profiles')
+                                    .select('*')
+                                    .eq('id', user.id)
+                                    .single();
+                                if (data) setProfile(data);
+                            }}
+                        />
                     )}
 
                 </main >

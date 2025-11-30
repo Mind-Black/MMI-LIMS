@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { useToast } from '../context/ToastContext';
 
-const UserManagement = ({ tools }) => {
+const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
     const [allUsers, setAllUsers] = useState([]);
     const [selectedUser, setSelectedUser] = useState(null);
     const { showToast } = useToast();
@@ -56,6 +56,9 @@ const UserManagement = ({ tools }) => {
             if (selectedUser?.id === userId) {
                 setSelectedUser({ ...selectedUser, licenses: newLicenses });
             }
+            if (currentUser && currentUser.id === userId && onProfileUpdate) {
+                onProfileUpdate();
+            }
             showToast('Licenses updated successfully.');
         } catch (error) {
             console.error('Error updating licenses:', error);
@@ -77,6 +80,70 @@ const UserManagement = ({ tools }) => {
         } catch (error) {
             console.error('Error approving user:', error);
             showToast('Failed to approve user: ' + error.message, 'error');
+        }
+    };
+
+    const handleProjectAdd = async (userId, projectName) => {
+        const userToUpdate = allUsers.find(u => u.id === userId);
+        if (!userToUpdate) return;
+
+        const currentProjects = userToUpdate.projects || [];
+        if (currentProjects.includes(projectName)) {
+            showToast('Project already assigned.', 'error');
+            return;
+        }
+
+        const newProjects = [...currentProjects, projectName];
+
+        try {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ projects: newProjects })
+                .eq('id', userId);
+
+            if (error) throw error;
+
+            // Update local state
+            setAllUsers(allUsers.map(u => u.id === userId ? { ...u, projects: newProjects } : u));
+            if (selectedUser?.id === userId) {
+                setSelectedUser({ ...selectedUser, projects: newProjects });
+            }
+            if (currentUser && currentUser.id === userId && onProfileUpdate) {
+                onProfileUpdate();
+            }
+            showToast('Project added successfully.');
+        } catch (error) {
+            console.error('Error adding project:', error);
+            showToast('Failed to add project: ' + error.message, 'error');
+        }
+    };
+
+    const handleProjectRemove = async (userId, projectName) => {
+        const userToUpdate = allUsers.find(u => u.id === userId);
+        if (!userToUpdate) return;
+
+        const newProjects = (userToUpdate.projects || []).filter(p => p !== projectName);
+
+        try {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ projects: newProjects })
+                .eq('id', userId);
+
+            if (error) throw error;
+
+            // Update local state
+            setAllUsers(allUsers.map(u => u.id === userId ? { ...u, projects: newProjects } : u));
+            if (selectedUser?.id === userId) {
+                setSelectedUser({ ...selectedUser, projects: newProjects });
+            }
+            if (currentUser && currentUser.id === userId && onProfileUpdate) {
+                onProfileUpdate();
+            }
+            showToast('Project removed successfully.');
+        } catch (error) {
+            console.error('Error removing project:', error);
+            showToast('Failed to remove project: ' + error.message, 'error');
         }
     };
 
@@ -134,21 +201,84 @@ const UserManagement = ({ tools }) => {
 
             {selectedUser && (
                 <div className="bg-white p-6 rounded shadow-sm border border-blue-200 animate-fade-in">
-                    <h4 className="font-bold text-lg text-gray-800 mb-4">
-                        Manage Licenses for {selectedUser.first_name} {selectedUser.last_name}
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {tools.map(tool => {
-                            const hasLicense = selectedUser.licenses?.includes(tool.id);
-                            return (
-                                <div key={tool.id} className={`p-3 rounded border flex items-center justify-between cursor-pointer transition ${hasLicense ? 'bg-green-50 border-green-200' : 'bg-gray-50 hover:bg-gray-100'}`}
-                                    onClick={() => handleLicenseToggle(selectedUser.id, tool.id)}
+                    <div className="flex justify-between items-center mb-4">
+                        <h4 className="font-bold text-lg text-gray-800">
+                            Manage {selectedUser.first_name} {selectedUser.last_name}
+                        </h4>
+                        <button onClick={() => setSelectedUser(null)} className="text-gray-500 hover:text-gray-700">
+                            <i className="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Licenses Section */}
+                        <div>
+                            <h5 className="font-semibold text-gray-700 mb-2">Tool Licenses</h5>
+                            <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto pr-2">
+                                {tools.map(tool => {
+                                    const hasLicense = selectedUser.licenses?.includes(tool.id);
+                                    return (
+                                        <div key={tool.id} className={`p-2 rounded border flex items-center justify-between cursor-pointer transition text-sm ${hasLicense ? 'bg-green-50 border-green-200' : 'bg-gray-50 hover:bg-gray-100'}`}
+                                            onClick={() => handleLicenseToggle(selectedUser.id, tool.id)}
+                                        >
+                                            <span className="font-medium text-gray-700">{tool.name}</span>
+                                            {hasLicense ? <i className="fas fa-check-circle text-green-600"></i> : <i className="far fa-circle text-gray-400"></i>}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Projects Section */}
+                        <div>
+                            <h5 className="font-semibold text-gray-700 mb-2">Assigned Projects</h5>
+                            <div className="flex gap-2 mb-2">
+                                <input
+                                    type="text"
+                                    placeholder="New Project Name"
+                                    className="flex-1 border rounded px-2 py-1 text-sm"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            const val = e.target.value.trim();
+                                            if (val) {
+                                                handleProjectAdd(selectedUser.id, val);
+                                                e.target.value = '';
+                                            }
+                                        }
+                                    }}
+                                    id="new-project-input"
+                                />
+                                <button
+                                    onClick={() => {
+                                        const input = document.getElementById('new-project-input');
+                                        const val = input.value.trim();
+                                        if (val) {
+                                            handleProjectAdd(selectedUser.id, val);
+                                            input.value = '';
+                                        }
+                                    }}
+                                    className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
                                 >
-                                    <span className="font-medium text-gray-700">{tool.name}</span>
-                                    {hasLicense ? <i className="fas fa-check-circle text-green-600 text-xl"></i> : <i className="far fa-circle text-gray-400 text-xl"></i>}
-                                </div>
-                            );
-                        })}
+                                    Add
+                                </button>
+                            </div>
+                            <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                                {(!selectedUser.projects || selectedUser.projects.length === 0) && (
+                                    <div className="text-gray-400 text-sm italic">No projects assigned.</div>
+                                )}
+                                {selectedUser.projects?.map((proj, idx) => (
+                                    <div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded border text-sm">
+                                        <span className="text-gray-700">{proj}</span>
+                                        <button
+                                            onClick={() => handleProjectRemove(selectedUser.id, proj)}
+                                            className="text-red-500 hover:text-red-700"
+                                        >
+                                            <i className="fas fa-trash-alt"></i>
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

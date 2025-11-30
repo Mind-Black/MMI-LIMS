@@ -19,6 +19,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
     const [selectedSlots, setSelectedSlots] = useState([]); // Array of {date, time}
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [editingBooking, setEditingBooking] = useState(null); // Booking being edited via popup
+    const [selectedProject, setSelectedProject] = useState('General'); // Default to General
 
     // Selection State (for creating new bookings)
     const [isSelecting, setIsSelecting] = useState(false);
@@ -354,7 +355,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
             tool_name: tool.name,
             user_id: user.id,
             user_name: profile ? `${profile.first_name} ${profile.last_name}` : user.email,
-            project: user.user_metadata?.project || 'General',
+            project: selectedProject,
             date: range.date,
             time: range.startTime,
             end_time: range.endTime,
@@ -541,6 +542,21 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                         <div className="flex items-center gap-1"><div className="w-4 h-4 bg-blue-100 border border-blue-300 rounded"></div> My Booking</div>
                         <div className="flex items-center gap-1"><div className="w-4 h-4 bg-gray-100 border border-gray-300 rounded"></div> Other's Booking</div>
                     </div>
+
+                    <div className="flex items-center gap-2">
+                        <label className="text-sm font-medium text-gray-700">Project:</label>
+                        <select
+                            value={selectedProject}
+                            onChange={(e) => setSelectedProject(e.target.value)}
+                            className="border rounded p-1 text-sm focus:ring-2 focus:ring-blue-500"
+                        >
+                            <option value="General">General</option>
+                            {profile?.projects?.map((proj, idx) => (
+                                <option key={idx} value={proj}>{proj}</option>
+                            ))}
+                        </select>
+                    </div>
+
                     <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
                     <button
                         disabled={selectedSlots.length === 0 || isSubmitting}
@@ -559,6 +575,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                     existingBookings={existingBookings}
                     onSave={handleSaveEdit}
                     onCancel={() => setEditingBooking(null)}
+                    projects={profile?.projects}
                 />
             )}
         </div>

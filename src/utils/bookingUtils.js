@@ -87,7 +87,12 @@ export const groupBookings = (bookings) => {
 
     if (currentGroup) groupedSlots.push(currentGroup);
 
-    return [...ranges, ...groupedSlots];
+    const allBookings = [...ranges, ...groupedSlots];
+
+    return allBookings.sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        return normalizeTime(a.startTime).localeCompare(normalizeTime(b.startTime));
+    });
 };
 
 export const generateSlots = (date, startTime, endTime) => {
