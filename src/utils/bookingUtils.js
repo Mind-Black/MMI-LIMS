@@ -15,17 +15,33 @@ export const groupBookings = (bookings) => {
     // Helper to normalize time to HH:MM
     const normalizeTime = (t) => t.slice(0, 5);
 
-    // Sort by Date -> Tool -> Time
-    const sorted = [...bookings].sort((a, b) => {
+    const ranges = [];
+    const slots = [];
+
+    bookings.forEach(b => {
+        if (b.end_time || b.endTime) {
+            ranges.push({
+                ...b,
+                startTime: normalizeTime(b.time || b.startTime),
+                endTime: normalizeTime(b.end_time || b.endTime),
+                ids: [b.id]
+            });
+        } else {
+            slots.push(b);
+        }
+    });
+
+    // Sort slots by Date -> Tool -> Time
+    const sortedSlots = [...slots].sort((a, b) => {
         if (a.date !== b.date) return a.date.localeCompare(b.date);
         if (a.tool_id !== b.tool_id) return a.tool_id - b.tool_id;
         return normalizeTime(a.time).localeCompare(normalizeTime(b.time));
     });
 
-    const groups = [];
+    const groupedSlots = [];
     let currentGroup = null;
 
-    sorted.forEach(booking => {
+    sortedSlots.forEach(booking => {
         const normalizedTime = normalizeTime(booking.time);
 
         if (!currentGroup) {
@@ -49,7 +65,7 @@ export const groupBookings = (bookings) => {
             currentGroup.ids.push(booking.id);
             currentGroup.endTime = getNextSlotTime(normalizedTime);
         } else {
-            groups.push(currentGroup);
+            groupedSlots.push(currentGroup);
             currentGroup = {
                 ...booking,
                 ids: [booking.id],
@@ -59,8 +75,9 @@ export const groupBookings = (bookings) => {
         }
     });
 
-    if (currentGroup) groups.push(currentGroup);
-    return groups;
+    if (currentGroup) groupedSlots.push(currentGroup);
+
+    return [...ranges, ...groupedSlots];
 };
 
 export const generateSlots = (date, startTime, endTime) => {
@@ -91,19 +108,36 @@ export const generateSlots = (date, startTime, endTime) => {
     return slots;
 };
 
-export const checkCollision = (newSlots, existingBookings, ignoredIds = []) => {
-    // Normalize time helper
-    const normalizeTime = (t) => t.slice(0, 5);
+export const checkCollision = (newBooking, existingBookings, ignoredIds = []) => {
+    // Helper to get minutes
+    const getMinutes = (timeStr) => {
+        const [h, m] = timeStr.split(':').map(Number);
+        return (h * 60) + m;
+    };
 
-    for (const slot of newSlots) {
-        const collision = existingBookings.find(b => {
-            if (ignoredIds.includes(b.id)) return false; // Ignore the booking being moved/resized
-            return b.date === slot.date && normalizeTime(b.time) === normalizeTime(slot.time) && b.tool_id === slot.tool_id;
-        });
+    const newStart = getMinutes(newBooking.startTime || newBooking.time);
+    const newEnd = getMinutes(newBooking.endTime);
 
-        if (collision) return true;
-    }
-    return false;
+    return existingBookings.some(b => {
+        if (ignoredIds.includes(b.id)) return false;
+        if (b.date !== newBooking.date) return false;
+        if (b.tool_id !== newBooking.tool_id) return false;
+
+        // Handle existing booking as range or slot
+        let bStart, bEnd;
+        if (b.endTime) {
+            // It's a range
+            bStart = getMinutes(b.startTime || b.time);
+            bEnd = getMinutes(b.endTime);
+        } else {
+            // It's a slot (old format)
+            bStart = getMinutes(b.time);
+            bEnd = bStart + 30;
+        }
+
+        // Check overlap
+        return (newStart < bEnd && newEnd > bStart);
+    });
 };
 
 export const calculateEventLayout = (bookings) => {

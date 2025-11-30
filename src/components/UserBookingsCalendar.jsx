@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { groupBookings, generateSlots, checkCollision, calculateEventLayout } from '../utils/bookingUtils';
+import { groupBookings, checkCollision, calculateEventLayout } from '../utils/bookingUtils';
 
 const UserBookingsCalendar = ({ bookings, allBookings, onUpdate }) => {
     // Initialize week start to current week's Monday
@@ -262,19 +262,21 @@ const UserBookingsCalendar = ({ bookings, allBookings, onUpdate }) => {
             console.log('Validation:', { isValidTime, isFuture, isEndTimeValid, isActive });
 
             if (isValidTime && isFuture && isEndTimeValid) {
-                // Generate new slots
-                const newSlots = generateSlots(data.currentDate, newStartTime, newEndTime).map(s => ({
-                    ...s,
+                // Create new booking object
+                const newBooking = {
+                    date: data.currentDate,
+                    startTime: newStartTime,
+                    endTime: newEndTime,
                     tool_id: data.originalBooking.tool_id
-                }));
+                };
 
                 // Check collisions against ALL bookings
-                const hasCollision = checkCollision(newSlots, allBookings || bookings, data.originalBooking.ids);
+                const hasCollision = checkCollision(newBooking, allBookings || bookings, data.originalBooking.ids);
 
                 if (!hasCollision) {
-                    console.log('Updating booking...', data.originalBooking.ids, newSlots);
+                    console.log('Updating booking...', data.originalBooking.ids, newBooking);
                     // Commit Change
-                    await onUpdate(data.originalBooking.ids, newSlots);
+                    await onUpdate(data.originalBooking.ids, newBooking);
                 } else {
                     console.log("Collision detected");
                 }

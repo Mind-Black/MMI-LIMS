@@ -103,7 +103,7 @@ const Dashboard = ({ user, onLogout }) => {
         }
     };
 
-    const handleUpdateBooking = async (oldIds, newSlots) => {
+    const handleUpdateBooking = async (oldIds, newBookingData) => {
         try {
             // 1. Delete old slots
             const { error: deleteError, count: deletedCount } = await supabase
@@ -125,14 +125,17 @@ const Dashboard = ({ user, onLogout }) => {
             const oldBooking = bookings.find(b => b.id === oldIds[0]);
             if (!oldBooking) throw new Error("Original booking not found");
 
-            const bookingsToInsert = newSlots.map(slot => ({
+            const bookingsToProcess = Array.isArray(newBookingData) ? newBookingData : [newBookingData];
+
+            const bookingsToInsert = bookingsToProcess.map(b => ({
                 tool_id: oldBooking.tool_id,
                 tool_name: oldBooking.tool_name,
                 user_id: oldBooking.user_id,
                 user_name: oldBooking.user_name,
                 project: oldBooking.project,
-                date: slot.date,
-                time: slot.time,
+                date: b.date,
+                time: b.startTime || b.time,
+                end_time: b.endTime || b.end_time,
                 created_at: oldBooking.created_at
             }));
 
