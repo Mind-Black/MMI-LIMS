@@ -102,6 +102,18 @@ const Dashboard = ({ user, onLogout }) => {
     const handleBookTool = async (bookingData) => {
         const newBookings = Array.isArray(bookingData) ? bookingData : [bookingData];
 
+        // Validate past bookings
+        const now = new Date();
+        const hasPastBooking = newBookings.some(b => {
+            const bookingEnd = new Date(`${b.date}T${b.end_time || b.endTime}`);
+            return bookingEnd < now;
+        });
+
+        if (hasPastBooking) {
+            showToast('Cannot create bookings in the past.', 'error');
+            return;
+        }
+
         try {
             const { data, error } = await supabase
                 .from('bookings')
@@ -162,6 +174,17 @@ const Dashboard = ({ user, onLogout }) => {
             if (!oldBooking) throw new Error("Original booking not found");
 
             const bookingsToProcess = Array.isArray(newBookingData) ? newBookingData : [newBookingData];
+
+            // Validate past bookings
+            const now = new Date();
+            const hasPastBooking = bookingsToProcess.some(b => {
+                const bookingEnd = new Date(`${b.date}T${b.end_time || b.endTime}`);
+                return bookingEnd < now;
+            });
+
+            if (hasPastBooking) {
+                throw new Error('Cannot move booking to the past.');
+            }
 
             const bookingsToInsert = bookingsToProcess.map(b => ({
                 tool_id: oldBooking.tool_id,

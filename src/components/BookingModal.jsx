@@ -72,10 +72,15 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
             return 'Invalid Date';
         }
     };
-
     const getMinutes = (timeStr) => {
         const [h, m] = timeStr.split(':').map(Number);
         return (h * 60) + m;
+    };
+
+    const isSlotInPast = (dateStr, timeStr) => {
+        const now = new Date();
+        const slotDate = new Date(`${dateStr}T${timeStr}`);
+        return slotDate < now;
     };
 
     const isSlotBooked = (dateStr, timeStr) => {
@@ -177,6 +182,10 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
         // Don't start selection if clicking on an existing booking (handled by stopPropagation, but safety check)
         const timeStr = timeSlots[timeIndex];
         if (isSlotBooked(dateStr, timeStr)) return;
+        if (isSlotInPast(dateStr, timeStr)) {
+            showToast('Cannot book in the past.', 'error');
+            return;
+        }
 
         setIsSelecting(true);
         const dIndex = weekDates.findIndex(d => formatDate(d) === dateStr);
@@ -215,7 +224,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
             for (let t = minT; t <= maxT; t++) {
                 const dStr = formatDate(weekDates[d]);
                 const tStr = timeSlots[t];
-                if (!isSlotBooked(dStr, tStr)) {
+                if (!isSlotBooked(dStr, tStr) && !isSlotInPast(dStr, tStr)) {
                     newSlots.push({ date: dStr, time: tStr });
                 }
             }
@@ -490,10 +499,11 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                         <div className="relative">
                                             {timeSlots.map((time, tIndex) => {
                                                 const isSelected = selectedSlots.some(s => s.date === dateStr && s.time === time);
+                                                const isPast = isSlotInPast(dateStr, time);
                                                 return (
                                                     <div
                                                         key={time}
-                                                        className={`h-12 border-b ${isSelected ? 'bg-blue-200' : ''}`}
+                                                        className={`h-12 border-b ${isSelected ? 'bg-blue-200' : ''} ${isPast ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                                                         onMouseDown={() => handleGridMouseDown(dateStr, tIndex)}
                                                         onMouseEnter={() => handleMouseEnter(dateStr, tIndex)}
                                                     ></div>
