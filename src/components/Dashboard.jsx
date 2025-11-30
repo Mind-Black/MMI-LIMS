@@ -205,10 +205,7 @@ const Dashboard = ({ user, onLogout }) => {
                     <button onClick={() => setActiveTab('tools')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'tools' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
                         <i className="fas fa-tools w-8"></i> Tool List
                     </button>
-                    <button onClick={() => setActiveTab('bookings')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'bookings' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
-                        <i className="fas fa-calendar-alt w-8"></i> My Bookings
-                        {myGroupedBookings.length > 0 && <span className="ml-auto bg-blue-600 text-white text-xs rounded-full px-2 py-0.5">{myGroupedBookings.length}</span>}
-                    </button>
+
                     {profile?.access_level === 'admin' && (
                         <button onClick={() => setActiveTab('users')} className={`w-full flex items-center p-3 rounded transition ${activeTab === 'users' ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>
                             <i className="fas fa-users w-8"></i> Users
@@ -260,31 +257,14 @@ const Dashboard = ({ user, onLogout }) => {
                                 </div>
                             </div>
 
-                            <div className="bg-white rounded-lg shadow-sm border">
-                                <div className="p-4 border-b font-bold text-gray-800">
-                                    Upcoming Bookings
-                                </div>
-                                <div className="p-4">
-                                    {myGroupedBookings.length === 0 ? (
-                                        <p className="text-gray-500 text-sm italic">No upcoming bookings.</p>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            {myGroupedBookings.slice(0, 5).map(b => (
-                                                <div key={b.ids[0]} className="flex justify-between items-center p-3 bg-gray-50 rounded border-l-4 border-blue-500">
-                                                    <div>
-                                                        <div className="font-bold text-gray-800">{b.tool_name}</div>
-                                                        <div className="text-xs text-gray-500">
-                                                            {b.date} @ {b.startTime} - {b.endTime}
-                                                        </div>
-                                                    </div>
-                                                    <button onClick={() => initiateCancel(b.ids)} className="text-red-500 hover:text-red-700 text-sm">
-                                                        <i className="fas fa-times"></i>
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
+                            <div className="bg-white rounded-lg shadow-sm border p-4">
+                                <h3 className="font-bold text-gray-800 mb-4">My Bookings</h3>
+                                <BookingList
+                                    bookings={myBookings}
+                                    allBookings={bookings}
+                                    onCancel={initiateCancel}
+                                    onUpdate={handleUpdateBooking}
+                                />
                             </div>
                         </div>
                     )}
@@ -299,15 +279,7 @@ const Dashboard = ({ user, onLogout }) => {
                         />
                     )}
 
-                    {/* TAB: BOOKINGS */}
-                    {activeTab === 'bookings' && (
-                        <BookingList
-                            bookings={myBookings}
-                            allBookings={bookings}
-                            onCancel={initiateCancel}
-                            onUpdate={handleUpdateBooking}
-                        />
-                    )}
+
 
                     {/* TAB: ALL BOOKINGS (ADMIN ONLY) */}
                     {activeTab === 'all_bookings' && profile?.access_level === 'admin' && (
