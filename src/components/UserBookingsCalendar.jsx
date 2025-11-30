@@ -1,14 +1,7 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { groupBookings, checkCollision, calculateEventLayout } from '../utils/bookingUtils';
-import { useToast } from '../context/ToastContext';
+import React, { useMemo } from 'react';
+import { groupBookings, calculateEventLayout } from '../utils/bookingUtils';
 
-const UserBookingsCalendar = ({ bookings, allBookings, onUpdate, currentWeekStart, onWeekChange }) => {
-    // Week start is now controlled by parent
-    const { showToast } = useToast();
-
-    // Interaction State
-    const [interaction, setInteraction] = useState(null);
-    const interactionRef = useRef(null); // Store data for event handlers
+const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBookingClick }) => {
 
     // Helper to get dates for the week
     const weekDates = useMemo(() => {
@@ -83,222 +76,6 @@ const UserBookingsCalendar = ({ bookings, allBookings, onUpdate, currentWeekStar
         };
     };
 
-    // Interaction Handlers
-    const handleMouseDown = (e, booking, type) => {
-        console.log('MouseDown:', type, booking.ids[0]);
-        e.stopPropagation(); // Prevent bubbling
-
-        if (!onUpdate) {
-            console.error('onUpdate prop is missing!');
-            return;
-        }
-
-        // Check constraints
-        const now = new Date();
-        const bookingStart = new Date(`${booking.date}T${booking.startTime}`);
-        const bookingEnd = new Date(`${booking.date}T${booking.endTime}`);
-
-        // Prevent modifying past bookings
-        if (bookingEnd < now) {
-            showToast('Cannot modify past bookings.', 'error');
-            return;
-        }
-
-        // Active booking constraints
-        const isActive = bookingStart <= now && bookingEnd > now;
-        if (isActive) {
-            if (type === 'move') {
-                showToast('Cannot move an active booking.', 'error');
-                return;
-            }
-            if (type === 'resize-top') {
-                showToast('Cannot change start time of an active booking.', 'error');
-                return;
-            }
-        }
-
-        const rect = e.currentTarget.parentElement.getBoundingClientRect();
-        const startY = e.clientY;
-        const startX = e.clientX;
-
-        const initialData = {
-            type,
-            bookingId: booking.ids[0],
-            originalBooking: booking,
-            startY,
-            startX,
-            initialTop: parseFloat(getEventStyle(booking).top),
-            initialHeight: parseFloat(getEventStyle(booking).height),
-            currentTop: parseFloat(getEventStyle(booking).top),
-            currentHeight: parseFloat(getEventStyle(booking).height),
-            currentStartTime: booking.startTime,
-            currentEndTime: booking.endTime,
-            currentDate: booking.date,
-            dayWidth: rect.width
-        };
-
-        console.log('Starting interaction', initialData);
-
-        interactionRef.current = initialData;
-        setInteraction(initialData);
-    };
-
-    useEffect(() => {
-        if (!interaction) return;
-
-        const handleMouseMove = (e) => {
-            const data = interactionRef.current;
-            if (!data) return;
-
-            const deltaY = e.clientY - data.startY;
-            const deltaX = e.clientX - data.startX;
-
-            // Snap to grid (30 mins = 64px)
-            const snappedDeltaY = Math.round(deltaY / PIXELS_PER_30_MINS) * PIXELS_PER_30_MINS;
-
-            // Calculate Day Change for Move
-            let dayIndexDelta = 0;
-            if (data.type === 'move') {
-                dayIndexDelta = Math.round(deltaX / data.dayWidth);
-            }
-
-            let newTop = data.initialTop;
-            let newHeight = data.initialHeight;
-            let newDate = data.currentDate;
-
-            if (data.type === 'move') {
-                newTop += snappedDeltaY;
-                // Calculate new date
-                const currentDayIndex = weekDates.findIndex(d => formatDate(d) === data.originalBooking.date);
-                const newDayIndex = currentDayIndex + dayIndexDelta;
-                if (newDayIndex >= 0 && newDayIndex < 7) {
-                    newDate = formatDate(weekDates[newDayIndex]);
-                }
-            } else if (data.type === 'resize-bottom') {
-                newHeight += snappedDeltaY;
-            } else if (data.type === 'resize-top') {
-                newTop += snappedDeltaY;
-                newHeight -= snappedDeltaY;
-            }
-
-            // Min height constraint (30 mins)
-            if (newHeight < PIXELS_PER_30_MINS) {
-                const heightDiff = PIXELS_PER_30_MINS - newHeight;
-                newHeight = PIXELS_PER_30_MINS;
-                if (data.type === 'resize-top') {
-                    // If resizing top and hit min height, adjust top to keep bottom fixed
-                    newTop -= heightDiff;
-                }
-            }
-
-            // Update ref with latest values
-            interactionRef.current = {
-                ...data,
-                currentTop: newTop,
-                currentHeight: newHeight,
-                currentDate: newDate
-            };
-
-            // Update state for rendering
-            setInteraction(prev => ({
-                ...prev,
-                currentTop: newTop,
-                currentHeight: newHeight,
-                currentDate: newDate
-            }));
-        };
-
-        const handleMouseUp = async () => {
-            const data = interactionRef.current;
-            if (!data) return;
-
-            console.log('MouseUp Data:', data);
-
-            // Calculate new times based on pixels
-            const startOffsetMins = (data.currentTop / PIXELS_PER_30_MINS) * 30;
-            const durationMins = (data.currentHeight / PIXELS_PER_30_MINS) * 30;
-
-            // Round to nearest 30 mins to avoid floating point issues
-            const roundTo30 = (mins) => Math.round(mins / 30) * 30;
-
-            const startTotalMins = roundTo30((START_HOUR * 60) + startOffsetMins);
-            const endTotalMins = roundTo30(startTotalMins + durationMins);
-
-            const formatTime = (totalMins) => {
-                let h = Math.floor(totalMins / 60);
-                let m = Math.round(totalMins % 60);
-
-                if (m === 60) {
-                    h += 1;
-                    m = 0;
-                }
-
-                return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-            };
-
-            const newStartTime = formatTime(startTotalMins);
-            const newEndTime = formatTime(endTotalMins);
-
-            console.log('Calculated Times:', { startTotalMins, endTotalMins, newStartTime, newEndTime });
-
-            // Validation
-            const now = new Date();
-            const newStartDateTime = new Date(`${data.currentDate}T${newStartTime}`);
-
-            // 1. Check bounds (08:00 - 20:00)
-            const isValidTime = startTotalMins >= (8 * 60) && endTotalMins <= (20 * 60);
-
-            // 2. Check past
-            const isFuture = newStartDateTime >= now;
-
-            // 3. Active booking constraints (End time must be > now)
-            const isActive = new Date(`${data.originalBooking.date}T${data.originalBooking.startTime}`) <= now && new Date(`${data.originalBooking.date}T${data.originalBooking.endTime}`) > now;
-            const isEndTimeValid = !isActive || new Date(`${data.currentDate}T${newEndTime}`) > now;
-
-            console.log('Validation:', { isValidTime, isFuture, isEndTimeValid, isActive });
-
-            if (isValidTime && isFuture && isEndTimeValid) {
-                // Create new booking object
-                const newBooking = {
-                    date: data.currentDate,
-                    startTime: newStartTime,
-                    endTime: newEndTime,
-                    tool_id: data.originalBooking.tool_id
-                };
-
-                // Check collisions against ALL bookings
-                const hasCollision = checkCollision(newBooking, allBookings || bookings, data.originalBooking.ids);
-
-                if (!hasCollision) {
-                    console.log('Updating booking...', data.originalBooking.ids, newBooking);
-                    // Commit Change
-                    await onUpdate(data.originalBooking.ids, newBooking);
-                } else {
-                    console.log("Collision detected");
-                    showToast('Booking overlaps with another booking.', 'error');
-                }
-            } else {
-                console.log("Invalid time or moved to past");
-                if (!isValidTime) showToast('Booking is outside of operating hours (08:00 - 20:00).', 'error');
-                else if (!isFuture) showToast('Cannot move booking to the past.', 'error');
-                else if (!isEndTimeValid) showToast('Cannot shorten active booking end time to be in the past.', 'error');
-            }
-
-            setInteraction(null);
-            interactionRef.current = null;
-        };
-
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
-
-        return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [interaction ? true : false]); // Only run on mount/unmount of interaction
-
-
     // Navigation
     const handlePrevWeek = () => {
         const newDate = new Date(currentWeekStart);
@@ -349,10 +126,6 @@ const UserBookingsCalendar = ({ bookings, allBookings, onUpdate, currentWeekStar
                             // Calculate Layout for this day
                             const positionedBookings = calculateEventLayout(dayBookings);
 
-                            // Check if this day is the target of the current interaction
-                            const isTargetDay = interaction && interaction.currentDate === dateStr;
-                            const interactingBooking = interaction && interaction.originalBooking;
-
                             return (
                                 <div key={i} className="flex-1 min-w-[100px] border-r last:border-0 relative">
                                     {/* Day Header */}
@@ -367,57 +140,19 @@ const UserBookingsCalendar = ({ bookings, allBookings, onUpdate, currentWeekStar
                                         ))}
 
                                         {/* Events Overlay */}
-                                        {positionedBookings.map(booking => {
-                                            const isInteracting = interaction && interaction.bookingId === booking.ids[0];
-                                            if (isInteracting) return null; // Don't render original if interacting
-
-                                            const canInteract = !!onUpdate;
-
-                                            return (
-                                                <div
-                                                    key={booking.ids[0]}
-                                                    className={`absolute bg-blue-100 border border-blue-300 rounded p-1 text-xs overflow-hidden transition-shadow group ${canInteract ? 'hover:z-10 hover:shadow-md cursor-pointer' : ''}`}
-                                                    style={getEventStyle(booking)}
-                                                    onMouseDown={(e) => canInteract && handleMouseDown(e, booking, 'move')}
-                                                >
-                                                    {/* Top Handle */}
-                                                    {canInteract && (
-                                                        <div
-                                                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 bg-blue-400/20"
-                                                            onMouseDown={(e) => handleMouseDown(e, booking, 'resize-top')}
-                                                        ></div>
-                                                    )}
-
-                                                    <div className="font-bold text-blue-900 truncate pointer-events-none">{booking.tool_name}</div>
-                                                    <div className="text-blue-700 truncate text-[10px] pointer-events-none">{booking.project}</div>
-                                                    <div className="text-blue-600 text-[10px] pointer-events-none">{booking.startTime} - {booking.endTime}</div>
-
-                                                    {/* Bottom Handle */}
-                                                    {canInteract && (
-                                                        <div
-                                                            className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 bg-blue-400/20"
-                                                            onMouseDown={(e) => handleMouseDown(e, booking, 'resize-bottom')}
-                                                        ></div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-
-                                        {/* Interaction Ghost */}
-                                        {isTargetDay && (
+                                        {positionedBookings.map(booking => (
                                             <div
-                                                className="absolute bg-blue-200 border border-blue-500 border-dashed rounded p-1 text-xs overflow-hidden z-50 opacity-80 pointer-events-none"
-                                                style={{
-                                                    top: `${interaction.currentTop}px`,
-                                                    height: `${interaction.currentHeight - 1}px`,
-                                                    left: '2px',
-                                                    right: '2px'
-                                                }}
+                                                key={booking.ids[0]}
+                                                className="absolute bg-blue-100 border border-blue-300 rounded p-1 text-xs overflow-hidden transition-shadow hover:z-10 hover:shadow-md cursor-pointer"
+                                                style={getEventStyle(booking)}
+                                                onClick={() => onBookingClick && onBookingClick(booking)}
+                                                title="Click to edit booking"
                                             >
-                                                <div className="font-bold text-blue-900 truncate">{interactingBooking.tool_name}</div>
-                                                <div className="text-blue-700 truncate text-[10px]">{interactingBooking.project}</div>
+                                                <div className="font-bold text-blue-900 truncate pointer-events-none">{booking.tool_name}</div>
+                                                <div className="text-blue-700 truncate text-[10px] pointer-events-none">{booking.project}</div>
+                                                <div className="text-blue-600 text-[10px] pointer-events-none">{booking.startTime} - {booking.endTime}</div>
                                             </div>
-                                        )}
+                                        ))}
                                     </div>
                                 </div>
                             );

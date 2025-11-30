@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import logo from '../assets/ktu_mmi.svg';
-import { groupBookings } from '../utils/bookingUtils';
+import { groupBookings, getNextSlotTime } from '../utils/bookingUtils';
 import BookingModal from './BookingModal';
 import ToolList from './ToolList';
 import BookingList from './BookingList';
@@ -15,7 +15,9 @@ const Dashboard = ({ user, onLogout }) => {
     const [tools, setTools] = useState([]);
     const [bookings, setBookings] = useState([]);
     const [profile, setProfile] = useState(null);
+
     const [selectedTool, setSelectedTool] = useState(null);
+    const [initialDate, setInitialDate] = useState(null);
 
     const [loading, setLoading] = useState(true);
 
@@ -109,6 +111,7 @@ const Dashboard = ({ user, onLogout }) => {
 
             setBookings([...bookings, ...data]);
             setSelectedTool(null);
+            setInitialDate(null);
             showToast(`Successfully created ${data.length} booking(s).`);
         } catch (error) {
             console.error('Error creating booking:', error);
@@ -207,6 +210,16 @@ const Dashboard = ({ user, onLogout }) => {
         } catch (error) {
             console.error('Error updating status:', error);
             showToast('Failed to update status.', 'error');
+        }
+    };
+
+    const handleBookingClick = (booking) => {
+        const tool = tools.find(t => t.id === booking.tool_id);
+        if (tool) {
+            setSelectedTool(tool);
+            setInitialDate(booking.date);
+        } else {
+            showToast('Tool details not found.', 'error');
         }
     };
 
@@ -319,6 +332,7 @@ const Dashboard = ({ user, onLogout }) => {
                                     allBookings={bookings}
                                     onCancel={initiateCancel}
                                     onUpdate={handleUpdateBooking}
+                                    onBookingClick={handleBookingClick}
                                     currentWeekStart={currentWeekStart}
                                     onWeekChange={setCurrentWeekStart}
                                 />
@@ -362,8 +376,10 @@ const Dashboard = ({ user, onLogout }) => {
                     user={user}
                     profile={profile}
                     existingBookings={bookings}
-                    onClose={() => setSelectedTool(null)}
+                    initialDate={initialDate}
+                    onClose={() => { setSelectedTool(null); setInitialDate(null); }}
                     onConfirm={handleBookTool}
+                    onUpdate={handleUpdateBooking}
                 />
             )}
         </div >

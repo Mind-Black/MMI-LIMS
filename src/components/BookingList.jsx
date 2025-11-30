@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import UserBookingsCalendar from './UserBookingsCalendar';
 import { groupBookings } from '../utils/bookingUtils';
 
-const BookingList = ({ bookings, onCancel, onUpdate, allBookings, isAdminView = false, currentWeekStart, onWeekChange }) => {
+const BookingList = ({ bookings, onCancel, onUpdate, allBookings, isAdminView = false, currentWeekStart, onWeekChange, onBookingClick }) => {
 
     const groupedBookings = useMemo(() => groupBookings(bookings), [bookings]);
 
@@ -14,6 +14,7 @@ const BookingList = ({ bookings, onCancel, onUpdate, allBookings, isAdminView = 
                 onUpdate={onUpdate}
                 currentWeekStart={currentWeekStart}
                 onWeekChange={onWeekChange}
+                onBookingClick={onBookingClick}
             />
 
             <h3 className="font-bold text-gray-800 pt-4 border-t">
