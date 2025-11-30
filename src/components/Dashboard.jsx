@@ -103,6 +103,61 @@ const Dashboard = ({ user, onLogout }) => {
         }
     };
 
+    const handleUpdateBooking = async (oldIds, newSlots) => {
+        try {
+            // 1. Delete old slots
+            const { error: deleteError, count: deletedCount } = await supabase
+                .from('bookings')
+                .delete({ count: 'exact' })
+                .in('id', oldIds);
+
+            console.log(`Deleted ${deletedCount} bookings with IDs:`, oldIds);
+
+            if (deleteError) throw deleteError;
+            if (deletedCount !== oldIds.length) {
+                console.warn(`Expected to delete ${oldIds.length} rows, but deleted ${deletedCount}`);
+                throw new Error(`Permission denied: Could not delete old booking. (Deleted ${deletedCount}/${oldIds.length})`);
+            }
+
+            // 2. Insert new slots
+            // Ensure new slots have all required fields (user_id, tool_id, etc.)
+            // We can get these from one of the old bookings (assuming they are consistent)
+            const oldBooking = bookings.find(b => b.id === oldIds[0]);
+            if (!oldBooking) throw new Error("Original booking not found");
+
+            const bookingsToInsert = newSlots.map(slot => ({
+                tool_id: oldBooking.tool_id,
+                tool_name: oldBooking.tool_name,
+                user_id: oldBooking.user_id,
+                user_name: oldBooking.user_name,
+                project: oldBooking.project,
+                date: slot.date,
+                time: slot.time,
+                created_at: oldBooking.created_at
+            }));
+
+            const { data: insertedData, error: insertError } = await supabase
+                .from('bookings')
+                .insert(bookingsToInsert)
+                .select();
+
+            if (insertError) throw insertError;
+
+            // 3. Update local state
+            // Remove old
+            const filteredBookings = bookings.filter(b => !oldIds.includes(b.id));
+            // Add new
+            setBookings([...filteredBookings, ...insertedData]);
+
+            showToast("Booking updated successfully.");
+        } catch (error) {
+            console.error('Error updating booking:', error);
+            showToast('Failed to update booking: ' + error.message, 'error');
+            // Ideally we should revert state here if partial failure, but for now we rely on user refresh or manual fix
+            // A transaction would be better but Supabase JS client doesn't support transactions directly on client side easily without RPC
+        }
+    };
+
     const handleStatusChange = async (toolId, newStatus) => {
         try {
             const { error } = await supabase
@@ -248,7 +303,9 @@ const Dashboard = ({ user, onLogout }) => {
                     {activeTab === 'bookings' && (
                         <BookingList
                             bookings={myBookings}
+                            allBookings={bookings}
                             onCancel={initiateCancel}
+                            onUpdate={handleUpdateBooking}
                         />
                     )}
 
@@ -257,6 +314,7 @@ const Dashboard = ({ user, onLogout }) => {
                         <BookingList
                             bookings={bookings}
                             onCancel={initiateCancel}
+                            onUpdate={handleUpdateBooking}
                             isAdminView={true}
                         />
                     )}

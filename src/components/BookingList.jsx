@@ -2,13 +2,13 @@ import React, { useMemo } from 'react';
 import UserBookingsCalendar from './UserBookingsCalendar';
 import { groupBookings } from '../utils/bookingUtils';
 
-const BookingList = ({ bookings, onCancel, isAdminView = false }) => {
+const BookingList = ({ bookings, onCancel, onUpdate, allBookings, isAdminView = false }) => {
 
     const groupedBookings = useMemo(() => groupBookings(bookings), [bookings]);
 
     return (
         <div className="space-y-6">
-            <UserBookingsCalendar bookings={bookings} />
+            <UserBookingsCalendar bookings={bookings} allBookings={allBookings || bookings} onUpdate={onUpdate} />
 
             <h3 className="font-bold text-gray-800 pt-4 border-t">
                 {isAdminView ? 'All Bookings List' : 'Booking List'}
