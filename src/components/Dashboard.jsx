@@ -21,6 +21,7 @@ const Dashboard = ({ user, onLogout }) => {
     const [initialDate, setInitialDate] = useState(null);
 
     const [loading, setLoading] = useState(true);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     // Week State
     const [currentWeekStart, setCurrentWeekStart] = useState(() => {
@@ -253,8 +254,16 @@ const Dashboard = ({ user, onLogout }) => {
 
     return (
         <div className="flex h-screen bg-gray-100">
+            {/* Mobile Sidebar Overlay */}
+            {isSidebarOpen && (
+                <div
+                    className="fixed inset-0 bg-black/50 z-20 lg:hidden"
+                    onClick={() => setIsSidebarOpen(false)}
+                ></div>
+            )}
+
             {/* Sidebar */}
-            <div className="w-64 bg-white dark:bg-gray-800 shadow-lg flex flex-col z-10 transition-colors">
+            <div className={`fixed inset-y-0 left-0 z-30 w-64 bg-white dark:bg-gray-800 shadow-lg flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <div className="h-16 flex items-center justify-center border-b border-blue-900 bg-blue-900 dark:bg-blue-950 text-white transition-colors">
                     <div className="font-bold text-xl tracking-wider flex items-center">
                         <img src={logo} alt="Logo" className="h-8 mr-2 brightness-0 invert" />
@@ -306,7 +315,15 @@ const Dashboard = ({ user, onLogout }) => {
             {/* Main Content */}
             <div className="flex-1 flex flex-col overflow-hidden bg-gray-100 dark:bg-gray-900 transition-colors">
                 <header className="h-16 bg-white dark:bg-gray-800 shadow-sm flex items-center justify-between px-6 transition-colors">
-                    <h2 className="text-xl font-bold text-gray-800 dark:text-white capitalize">{activeTab.replace('-', ' ')}</h2>
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={() => setIsSidebarOpen(true)}
+                            className="lg:hidden text-gray-600 dark:text-gray-300 hover:text-blue-900 dark:hover:text-blue-400"
+                        >
+                            <i className="fas fa-bars text-xl"></i>
+                        </button>
+                        <h2 className="text-xl font-bold text-gray-800 dark:text-white capitalize">{activeTab.replace('-', ' ')}</h2>
+                    </div>
                     <div className="flex items-center gap-4">
                         <span className="text-sm text-gray-500 dark:text-gray-400">Project: General</span>
                         <div className="h-8 w-8 bg-blue-900 dark:bg-blue-700 rounded-full flex items-center justify-center text-white font-bold">

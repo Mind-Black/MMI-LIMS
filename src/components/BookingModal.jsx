@@ -232,6 +232,64 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
         setSelectedSlots(newSlots);
     };
 
+    // --- Touch Handlers (Mobile Drag-to-Select) ---
+
+    const handleTouchStart = (e, dateStr, timeIndex) => {
+        if (!canBook) return;
+        // Prevent default to stop scrolling while dragging on the grid
+        // e.preventDefault(); // NOTE: We can't preventDefault on passive listeners (default in React 18+ for touch), 
+        // so we might need CSS 'touch-action: none' on the grid container or slots.
+
+        const timeStr = timeSlots[timeIndex];
+        if (isSlotBooked(dateStr, timeStr)) return;
+        if (isSlotInPast(dateStr, timeStr)) {
+            showToast('Cannot book in the past.', 'error');
+            return;
+        }
+
+        setIsSelecting(true);
+        const dIndex = weekDates.findIndex(d => formatDate(d) === dateStr);
+
+        const initialSelection = {
+            startDIndex: dIndex,
+            startTIndex: timeIndex,
+            currentDIndex: dIndex,
+            currentTIndex: timeIndex
+        };
+
+        selectionRef.current = initialSelection;
+        updateSelectedSlots(initialSelection);
+    };
+
+    const handleTouchMove = (e) => {
+        if (!isSelecting || !selectionRef.current) return;
+
+        // Get the element under the touch point
+        const touch = e.touches[0];
+        const element = document.elementFromPoint(touch.clientX, touch.clientY);
+
+        if (element && element.dataset.date && element.dataset.timeindex) {
+            const dateStr = element.dataset.date;
+            const timeIndex = parseInt(element.dataset.timeindex, 10);
+
+            const dIndex = weekDates.findIndex(d => formatDate(d) === dateStr);
+
+            // Only update if changed
+            if (dIndex !== -1 && (dIndex !== selectionRef.current.currentDIndex || timeIndex !== selectionRef.current.currentTIndex)) {
+                selectionRef.current.currentDIndex = dIndex;
+                selectionRef.current.currentTIndex = timeIndex;
+                updateSelectedSlots(selectionRef.current);
+            }
+        }
+    };
+
+    const handleTouchEnd = () => {
+        if (isSelecting) {
+            setIsSelecting(false);
+            selectionRef.current = null;
+        }
+    };
+
     // --- Global Mouse Handlers ---
 
     useEffect(() => {
@@ -429,7 +487,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden m-4">
                 {/* Header */}
                 <div className="bg-blue-900 text-white p-4 flex justify-between items-center shrink-0">
                     <h2 className="text-xl font-bold"><i className="fas fa-calendar-alt mr-2"></i>Weekly Schedule</h2>
@@ -437,10 +495,11 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                 </div>
 
                 {/* Tool Info & Controls */}
-                <div className="p-4 border-b bg-gray-50 flex justify-between items-center shrink-0">
-                    <div>
+                {/* Tool Info & Controls */}
+                <div className="p-4 border-b bg-gray-50 flex flex-col sm:flex-row justify-between items-center shrink-0 gap-4 sm:gap-0">
+                    <div className="text-center sm:text-left">
                         <h3 className="font-bold text-lg text-gray-800">{tool.name}</h3>
-                        <div className="flex gap-2 text-sm mt-1">
+                        <div className="flex gap-2 text-sm mt-1 justify-center sm:justify-start">
                             <StatusBadge status={tool.status} />
                             {hasLicense ?
                                 <span className="text-green-700 bg-green-100 px-2 rounded font-bold">Licensed</span> :
@@ -448,9 +507,9 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                             }
                         </div>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto justify-between sm:justify-end">
                         <button onClick={handlePrevWeek} className="p-2 hover:bg-gray-200 rounded"><i className="fas fa-chevron-left"></i></button>
-                        <div className="font-bold text-gray-700 w-48 text-center">
+                        <div className="font-bold text-gray-700 w-full sm:w-48 text-center text-sm sm:text-base">
                             {weekDates[0].toLocaleDateString()} - {weekDates[6].toLocaleDateString()}
                         </div>
                         <button onClick={handleNextWeek} className="p-2 hover:bg-gray-200 rounded"><i className="fas fa-chevron-right"></i></button>
@@ -503,9 +562,14 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                 return (
                                                     <div
                                                         key={time}
-                                                        className={`h-12 border-b ${isSelected ? 'bg-blue-200' : ''} ${isPast ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                                        data-date={dateStr}
+                                                        data-timeindex={tIndex}
+                                                        className={`h-12 border-b ${isSelected ? 'bg-blue-200' : ''} ${isPast ? 'bg-gray-100 cursor-not-allowed' : ''} touch-none`}
                                                         onMouseDown={() => handleGridMouseDown(dateStr, tIndex)}
                                                         onMouseEnter={() => handleMouseEnter(dateStr, tIndex)}
+                                                        onTouchStart={(e) => handleTouchStart(e, dateStr, tIndex)}
+                                                        onTouchMove={handleTouchMove}
+                                                        onTouchEnd={handleTouchEnd}
                                                     ></div>
                                                 );
                                             })}
@@ -572,8 +636,8 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 border-t bg-white flex justify-end gap-3 shrink-0 z-30">
-                    <div className="mr-auto flex items-center gap-4 text-sm">
+                <div className="p-4 border-t bg-white flex flex-col-reverse sm:flex-row justify-end gap-3 shrink-0 z-30">
+                    <div className="mr-auto flex flex-wrap items-center gap-4 text-sm mb-2 sm:mb-0">
                         <div className="flex items-center gap-1"><div className="w-4 h-4 bg-white border"></div> Available</div>
                         <div className="flex items-center gap-1"><div className="w-4 h-4 bg-blue-200 rounded"></div> Selected</div>
                         <div className="flex items-center gap-1"><div className="w-4 h-4 bg-blue-100 border border-blue-300 rounded"></div> My Booking</div>

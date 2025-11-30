@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import StatusBadge from './StatusBadge';
 
 const ToolTable = ({ toolsList, title, profile, onStatusChange, onBook }) => (
-    <div className="bg-white rounded shadow-sm overflow-hidden border mb-8">
+    <div className="bg-white rounded shadow-sm overflow-x-auto border mb-8">
         <div className="p-4 bg-gray-50 border-b font-bold text-gray-700">{title} ({toolsList.length})</div>
         <table className="w-full text-left border-collapse">
             <thead className="bg-gray-50 border-b">

@@ -16,7 +16,7 @@ const BookingList = ({ bookings, onCancel, onUpdate, allBookings, isAdminView = 
             ) : (
                 <div className="space-y-2">
                     {groupedBookings.map(b => (
-                        <div key={b.ids[0]} className="bg-white p-4 rounded shadow-sm border flex justify-between items-center">
+                        <div key={b.ids[0]} className="bg-white p-4 rounded shadow-sm border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-0">
                             <div>
                                 <div className="font-bold text-blue-900">{b.tool_name}</div>
                                 <div className="text-sm text-gray-600">
