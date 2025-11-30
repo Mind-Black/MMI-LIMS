@@ -116,7 +116,7 @@ export const checkCollision = (newBooking, existingBookings, ignoredIds = []) =>
     };
 
     const newStart = getMinutes(newBooking.startTime || newBooking.time);
-    const newEnd = getMinutes(newBooking.endTime);
+    const newEnd = getMinutes(newBooking.endTime || newBooking.end_time);
 
     return existingBookings.some(b => {
         if (ignoredIds.includes(b.id)) return false;
@@ -125,10 +125,12 @@ export const checkCollision = (newBooking, existingBookings, ignoredIds = []) =>
 
         // Handle existing booking as range or slot
         let bStart, bEnd;
-        if (b.endTime) {
+        const endTimeStr = b.endTime || b.end_time;
+
+        if (endTimeStr) {
             // It's a range
             bStart = getMinutes(b.startTime || b.time);
-            bEnd = getMinutes(b.endTime);
+            bEnd = getMinutes(endTimeStr);
         } else {
             // It's a slot (old format)
             bStart = getMinutes(b.time);

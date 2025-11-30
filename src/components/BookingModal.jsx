@@ -68,12 +68,51 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, existingBooking
         }
     };
 
+    const getMinutes = (timeStr) => {
+        const [h, m] = timeStr.split(':').map(Number);
+        return (h * 60) + m;
+    };
+
     const isSlotBooked = (dateStr, timeStr) => {
-        return existingBookings.some(b => b.date === dateStr && b.time.slice(0, 5) === timeStr && b.tool_id === tool.id);
+        const slotStart = getMinutes(timeStr);
+        const slotEnd = slotStart + 30;
+
+        return existingBookings.some(b => {
+            if (b.date !== dateStr || b.tool_id !== tool.id) return false;
+
+            const bStart = getMinutes(b.startTime || b.time);
+            let bEnd;
+            const endTimeStr = b.endTime || b.end_time;
+            if (endTimeStr) {
+                bEnd = getMinutes(endTimeStr);
+            } else {
+                bEnd = bStart + 30;
+            }
+
+            // Check overlap
+            return (slotStart < bEnd && slotEnd > bStart);
+        });
     };
 
     const getBooking = (dateStr, timeStr) => {
-        return existingBookings.find(b => b.date === dateStr && b.time.slice(0, 5) === timeStr && b.tool_id === tool.id);
+        const slotStart = getMinutes(timeStr);
+        const slotEnd = slotStart + 30;
+
+        return existingBookings.find(b => {
+            if (b.date !== dateStr || b.tool_id !== tool.id) return false;
+
+            const bStart = getMinutes(b.startTime || b.time);
+            let bEnd;
+            const endTimeStr = b.endTime || b.end_time;
+            if (endTimeStr) {
+                bEnd = getMinutes(endTimeStr);
+            } else {
+                bEnd = bStart + 30;
+            }
+
+            // Check overlap
+            return (slotStart < bEnd && slotEnd > bStart);
+        });
     };
 
     const isSlotSelected = (dateStr, timeStr) => {
@@ -199,6 +238,33 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, existingBooking
             end_time: range.endTime,
             created_at: now
         }));
+
+        // Final Collision Check
+        const hasCollision = newBookings.some(newB => {
+            const newStart = getMinutes(newB.time);
+            const newEnd = getMinutes(newB.end_time);
+
+            return existingBookings.some(b => {
+                if (b.date !== newB.date || b.tool_id !== newB.tool_id) return false;
+
+                const bStart = getMinutes(b.startTime || b.time);
+                let bEnd;
+                const endTimeStr = b.endTime || b.end_time;
+                if (endTimeStr) {
+                    bEnd = getMinutes(endTimeStr);
+                } else {
+                    bEnd = bStart + 30;
+                }
+
+                return (newStart < bEnd && newEnd > bStart);
+            });
+        });
+
+        if (hasCollision) {
+            showToast('One or more selected slots are already booked.', 'error');
+            setIsSubmitting(false);
+            return;
+        }
 
         await onConfirm(newBookings);
         setIsSubmitting(false);

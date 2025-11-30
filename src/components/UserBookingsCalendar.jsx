@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { groupBookings, checkCollision, calculateEventLayout } from '../utils/bookingUtils';
+import { useToast } from '../context/ToastContext';
 
 const UserBookingsCalendar = ({ bookings, allBookings, onUpdate, currentWeekStart, onWeekChange }) => {
     // Week start is now controlled by parent
+    const { showToast } = useToast();
 
     // Interaction State
     const [interaction, setInteraction] = useState(null);
@@ -98,7 +100,7 @@ const UserBookingsCalendar = ({ bookings, allBookings, onUpdate, currentWeekStar
 
         // Prevent modifying past bookings
         if (bookingEnd < now) {
-            console.log('Cannot modify past booking');
+            showToast('Cannot modify past bookings.', 'error');
             return;
         }
 
@@ -106,11 +108,11 @@ const UserBookingsCalendar = ({ bookings, allBookings, onUpdate, currentWeekStar
         const isActive = bookingStart <= now && bookingEnd > now;
         if (isActive) {
             if (type === 'move') {
-                console.log('Cannot move active booking');
+                showToast('Cannot move an active booking.', 'error');
                 return;
             }
             if (type === 'resize-top') {
-                console.log('Cannot resize start of active booking');
+                showToast('Cannot change start time of an active booking.', 'error');
                 return;
             }
         }
@@ -273,9 +275,13 @@ const UserBookingsCalendar = ({ bookings, allBookings, onUpdate, currentWeekStar
                     await onUpdate(data.originalBooking.ids, newBooking);
                 } else {
                     console.log("Collision detected");
+                    showToast('Booking overlaps with another booking.', 'error');
                 }
             } else {
                 console.log("Invalid time or moved to past");
+                if (!isValidTime) showToast('Booking is outside of operating hours (08:00 - 20:00).', 'error');
+                else if (!isFuture) showToast('Cannot move booking to the past.', 'error');
+                else if (!isEndTimeValid) showToast('Cannot shorten active booking end time to be in the past.', 'error');
             }
 
             setInteraction(null);
