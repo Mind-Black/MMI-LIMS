@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
+import logo from '../assets/ktu_mmi.svg';
 
 const LoginScreen = () => {
     const [loading, setLoading] = useState(false);
@@ -47,6 +48,7 @@ const LoginScreen = () => {
         <div className="min-h-screen flex items-center justify-center bg-gray-200">
             <div className="bg-white p-8 rounded-lg shadow-xl w-96 border-t-4 border-blue-900">
                 <div className="text-center mb-8">
+                    <img src={logo} alt="KTU MMI Logo" className="h-16 mx-auto mb-4" />
                     <h1 className="text-3xl font-bold text-blue-900">MMI-LIMS</h1>
                     <p className="text-gray-500 text-sm mt-1">Kaunas University of Technology Institute of Materials Science</p>
                 </div>

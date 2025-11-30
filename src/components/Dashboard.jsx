@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
+import logo from '../assets/ktu_mmi.svg';
 import { groupBookings } from '../utils/bookingUtils';
 import BookingModal from './BookingModal';
 import ToolList from './ToolList';
@@ -187,7 +188,10 @@ const Dashboard = ({ user, onLogout }) => {
             {/* Sidebar */}
             <div className="w-64 bg-white shadow-lg flex flex-col z-10">
                 <div className="h-16 flex items-center justify-center border-b border-blue-900 bg-blue-900 text-white">
-                    <div className="font-bold text-xl tracking-wider"><i className="fas fa-microscope mr-2"></i>MMI-LIMS</div>
+                    <div className="font-bold text-xl tracking-wider flex items-center">
+                        <img src={logo} alt="Logo" className="h-8 mr-2 brightness-0 invert" />
+                        MMI-LIMS
+                    </div>
                 </div>
 
                 <div className="p-4 border-b">
