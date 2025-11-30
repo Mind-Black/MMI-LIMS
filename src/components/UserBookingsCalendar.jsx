@@ -93,7 +93,7 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
         <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden h-[600px]">
             {/* Header */}
             <div className="p-1 border-b bg-gray-50 flex justify-between items-center shrink-0">
-                <h3 className="font-bold text-gray-800 text-lg">Weekly Schedule</h3>
+                {/* <h3 className="font-bold text-gray-800 text-lg">Weekly Schedule</h3> */}
                 <div className="flex items-center gap-4">
                     <button onClick={handlePrevWeek} className="p-2 hover:bg-gray-200 rounded"><i className="fas fa-chevron-left"></i></button>
                     <div className="font-bold text-gray-700 w-48 text-center">

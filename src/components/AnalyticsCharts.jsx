@@ -39,7 +39,7 @@ const AnalyticsCharts = ({ bookings, currentWeekStart }) => {
 
     return (
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border dark:border-gray-700 transition-colors">
-            <h3 className="text-gray-500 dark:text-gray-400 text-sm font-bold uppercase mb-4">Bookings this Week</h3>
+            {/* <h3 className="text-gray-500 dark:text-gray-400 text-sm font-bold uppercase mb-4">Bookings this Week</h3> */}
             <div className="flex justify-between h-32 gap-2">
                 {weeklyData.map((d, i) => (
                     <div key={i} className="flex flex-col items-center flex-1 h-full justify-end group">
