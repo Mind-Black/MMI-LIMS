@@ -61,7 +61,7 @@ const UserBookingsCalendar = ({ bookings, allBookings, onUpdate }) => {
         return groupBookings(bookings);
     }, [bookings]);
 
-    const PIXELS_PER_30_MINS = 64;
+    const PIXELS_PER_30_MINS = 48;
     const START_HOUR = 8;
 
     const getEventStyle = (booking) => {
@@ -313,7 +313,7 @@ const UserBookingsCalendar = ({ bookings, allBookings, onUpdate }) => {
     return (
         <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden h-[600px]">
             {/* Header */}
-            <div className="p-4 border-b bg-gray-50 flex justify-between items-center shrink-0">
+            <div className="p-1 border-b bg-gray-50 flex justify-between items-center shrink-0">
                 <h3 className="font-bold text-gray-800 text-lg">Weekly Schedule</h3>
                 <div className="flex items-center gap-4">
                     <button onClick={handlePrevWeek} className="p-2 hover:bg-gray-200 rounded"><i className="fas fa-chevron-left"></i></button>
@@ -329,10 +329,10 @@ const UserBookingsCalendar = ({ bookings, allBookings, onUpdate }) => {
                 <div className="min-w-[800px] flex">
 
                     {/* Time Labels Column */}
-                    <div className="w-[80px] shrink-0 bg-gray-50 border-r sticky left-0 z-30">
+                    <div className="w-[50px] shrink-0 bg-gray-50 border-r sticky left-0 z-30">
                         <div className="h-10 border-b bg-gray-50"></div> {/* Header spacer */}
                         {timeSlots.map(time => (
-                            <div key={time} className="h-16 border-b text-right pr-2 text-xs text-gray-500 font-mono flex items-center justify-end">
+                            <div key={time} className="h-12 border-b text-right pr-2 text-xs text-gray-500 font-mono flex items-center justify-end">
                                 {time}
                             </div>
                         ))}
@@ -361,7 +361,7 @@ const UserBookingsCalendar = ({ bookings, allBookings, onUpdate }) => {
                                     {/* Grid Lines */}
                                     <div className="relative">
                                         {timeSlots.map(time => (
-                                            <div key={time} className="h-16 border-b"></div>
+                                            <div key={time} className="h-12 border-b"></div>
                                         ))}
 
                                         {/* Events Overlay */}
