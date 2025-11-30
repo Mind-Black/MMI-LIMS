@@ -1,12 +1,22 @@
-export const getNextSlotTime = (timeStr) => {
+export const timeToMinutes = (timeStr) => {
     const [h, m] = timeStr.split(':').map(Number);
-    let nextM = m + 30;
-    let nextH = h;
-    if (nextM >= 60) {
-        nextH++;
-        nextM = 0;
-    }
-    return `${nextH.toString().padStart(2, '0')}:${nextM.toString().padStart(2, '0')}`;
+    return (h * 60) + m;
+};
+
+export const minutesToTime = (totalMins) => {
+    let h = Math.floor(totalMins / 60);
+    let m = Math.round(totalMins % 60);
+    if (m === 60) { h += 1; m = 0; }
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+};
+
+export const roundToNearestSlot = (minutes, slotSize = 30) => {
+    return Math.round(minutes / slotSize) * slotSize;
+};
+
+export const getNextSlotTime = (timeStr) => {
+    const mins = timeToMinutes(timeStr);
+    return minutesToTime(mins + 30);
 };
 
 export const groupBookings = (bookings) => {

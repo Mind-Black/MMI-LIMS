@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import StatusBadge from './StatusBadge';
 import { useToast } from '../context/ToastContext';
 import { getNextSlotTime, groupBookings, checkCollision, calculateEventLayout } from '../utils/bookingUtils';
+import { useBookingInteraction } from '../hooks/useBookingInteraction';
 
 const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, existingBookings = [], initialDate }) => {
     // Initialize week start to current week's Monday
@@ -16,8 +17,9 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Interaction State (for moving/resizing existing bookings)
-    const [interaction, setInteraction] = useState(null);
-    const interactionRef = useRef(null);
+    // Interaction State (for moving/resizing existing bookings)
+    // const [interaction, setInteraction] = useState(null); // Removed in favor of hook
+    // const interactionRef = useRef(null); // Removed in favor of hook
 
     // Selection State (for creating new bookings)
     const [isSelecting, setIsSelecting] = useState(false);
@@ -45,6 +47,16 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
         }
         return dates;
     }, [currentWeekStart]);
+
+    // Use the new hook
+    const { interaction, startInteraction } = useBookingInteraction({
+        weekDates,
+        existingBookings,
+        user,
+        isAdmin,
+        onUpdate,
+        showToast
+    });
 
     // Helper to generate 30-min slots from 08:00 to 20:00
     const timeSlots = useMemo(() => {
@@ -137,42 +149,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
     };
 
     // --- Interaction Handlers (Move/Resize Existing) ---
-
-    const handleBookingMouseDown = (e, booking, type) => {
-        e.stopPropagation();
-
-        // Permission check: Can only edit own bookings unless admin
-        const isOwnBooking = booking.user_id === user.id;
-        if (!isAdmin && !isOwnBooking) {
-            showToast('You can only edit your own bookings.', 'error');
-            return;
-        }
-
-        const now = new Date();
-        const bookingEnd = new Date(`${booking.date}T${booking.endTime}`);
-        if (bookingEnd < now) {
-            showToast('Cannot modify past bookings.', 'error');
-            return;
-        }
-
-        const rect = e.currentTarget.parentElement.getBoundingClientRect();
-        const initialData = {
-            type,
-            bookingId: booking.ids[0],
-            originalBooking: booking,
-            startY: e.clientY,
-            startX: e.clientX,
-            initialTop: parseFloat(getEventStyle(booking).top),
-            initialHeight: parseFloat(getEventStyle(booking).height),
-            currentTop: parseFloat(getEventStyle(booking).top),
-            currentHeight: parseFloat(getEventStyle(booking).height),
-            currentDate: booking.date,
-            dayWidth: rect.width
-        };
-
-        interactionRef.current = initialData;
-        setInteraction(initialData);
-    };
+    // Moved to useBookingInteraction hook
 
     // --- Selection Handlers (Create New) ---
 
@@ -293,120 +270,20 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
     // --- Global Mouse Handlers ---
 
     useEffect(() => {
-        const handleMouseMove = (e) => {
-            // Handle Interaction (Move/Resize)
-            if (interactionRef.current) {
-                const data = interactionRef.current;
-                const deltaY = e.clientY - data.startY;
-                const deltaX = e.clientX - data.startX;
-                const snappedDeltaY = Math.round(deltaY / PIXELS_PER_30_MINS) * PIXELS_PER_30_MINS;
-
-                let dayIndexDelta = 0;
-                if (data.type === 'move') {
-                    dayIndexDelta = Math.round(deltaX / data.dayWidth);
-                }
-
-                let newTop = data.initialTop;
-                let newHeight = data.initialHeight;
-                let newDate = data.currentDate;
-
-                if (data.type === 'move') {
-                    newTop += snappedDeltaY;
-                    const currentDayIndex = weekDates.findIndex(d => formatDate(d) === data.originalBooking.date);
-                    const newDayIndex = currentDayIndex + dayIndexDelta;
-                    if (newDayIndex >= 0 && newDayIndex < 7) {
-                        newDate = formatDate(weekDates[newDayIndex]);
-                    }
-                } else if (data.type === 'resize-bottom') {
-                    newHeight += snappedDeltaY;
-                } else if (data.type === 'resize-top') {
-                    newTop += snappedDeltaY;
-                    newHeight -= snappedDeltaY;
-                }
-
-                if (newHeight < PIXELS_PER_30_MINS) {
-                    const heightDiff = PIXELS_PER_30_MINS - newHeight;
-                    newHeight = PIXELS_PER_30_MINS;
-                    if (data.type === 'resize-top') newTop -= heightDiff;
-                }
-
-                const newData = { ...data, currentTop: newTop, currentHeight: newHeight, currentDate: newDate };
-                interactionRef.current = newData;
-                setInteraction(newData);
-            }
-        };
-
         const handleMouseUp = async () => {
             // End Selection
             if (isSelecting) {
                 setIsSelecting(false);
                 selectionRef.current = null;
             }
-
-            // End Interaction
-            if (interactionRef.current) {
-                const data = interactionRef.current;
-
-                // Calculate new times
-                const startOffsetMins = (data.currentTop / PIXELS_PER_30_MINS) * 30;
-                const durationMins = (data.currentHeight / PIXELS_PER_30_MINS) * 30;
-                const roundTo30 = (mins) => Math.round(mins / 30) * 30;
-                const startTotalMins = roundTo30((START_HOUR * 60) + startOffsetMins);
-                const endTotalMins = roundTo30(startTotalMins + durationMins);
-
-                const formatTime = (totalMins) => {
-                    let h = Math.floor(totalMins / 60);
-                    let m = Math.round(totalMins % 60);
-                    if (m === 60) { h += 1; m = 0; }
-                    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-                };
-
-                const newStartTime = formatTime(startTotalMins);
-                const newEndTime = formatTime(endTotalMins);
-
-                // Validation
-                const now = new Date();
-                const newStartDateTime = new Date(`${data.currentDate}T${newStartTime}`);
-                const isValidTime = startTotalMins >= (8 * 60) && endTotalMins <= (20 * 60);
-                const isFuture = newStartDateTime >= now;
-
-                const isActive = new Date(`${data.originalBooking.date}T${data.originalBooking.startTime}`) <= now && new Date(`${data.originalBooking.date}T${data.originalBooking.endTime}`) > now;
-                const isEndTimeValid = !isActive || new Date(`${data.currentDate}T${newEndTime}`) > now;
-
-                if (isValidTime && isFuture && isEndTimeValid) {
-                    const newBooking = {
-                        date: data.currentDate,
-                        startTime: newStartTime,
-                        endTime: newEndTime,
-                        tool_id: data.originalBooking.tool_id
-                    };
-
-                    const hasCollision = checkCollision(newBooking, existingBookings, data.originalBooking.ids);
-
-                    if (!hasCollision) {
-                        await onUpdate(data.originalBooking.ids, newBooking);
-                    } else {
-                        showToast('Booking overlaps with another booking.', 'error');
-                    }
-                } else {
-                    if (!isValidTime) showToast('Booking is outside of operating hours.', 'error');
-                    else if (!isFuture) showToast('Cannot move booking to the past.', 'error');
-                    else if (!isEndTimeValid) showToast('Cannot shorten active booking end time to be in the past.', 'error');
-                }
-
-                setInteraction(null);
-                interactionRef.current = null;
-            }
         };
 
-        window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
 
         return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [isSelecting, existingBookings, onUpdate, showToast]);
+    }, [isSelecting]);
 
 
     // Navigation
@@ -589,13 +466,13 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                             ${isOwnBooking ? 'bg-blue-100 border-blue-300' : 'bg-gray-100 border-gray-300'}
                                                             ${canEdit ? 'hover:z-10 hover:shadow-md cursor-pointer' : ''}`}
                                                         style={getEventStyle(booking)}
-                                                        onMouseDown={(e) => canEdit && handleBookingMouseDown(e, booking, 'move')}
+                                                        onMouseDown={(e) => canEdit && startInteraction(e, booking, 'move')}
                                                         title={`Booked by: ${booking.user_name}\nProject: ${booking.project}`}
                                                     >
                                                         {canEdit && (
                                                             <div
                                                                 className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 bg-blue-400/20"
-                                                                onMouseDown={(e) => { e.stopPropagation(); handleBookingMouseDown(e, booking, 'resize-top'); }}
+                                                                onMouseDown={(e) => { e.stopPropagation(); startInteraction(e, booking, 'resize-top'); }}
                                                             ></div>
                                                         )}
 
@@ -605,7 +482,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                         {canEdit && (
                                                             <div
                                                                 className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 bg-blue-400/20"
-                                                                onMouseDown={(e) => { e.stopPropagation(); handleBookingMouseDown(e, booking, 'resize-bottom'); }}
+                                                                onMouseDown={(e) => { e.stopPropagation(); startInteraction(e, booking, 'resize-bottom'); }}
                                                             ></div>
                                                         )}
                                                     </div>
@@ -615,7 +492,11 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                             {/* Interaction Ghost */}
                                             {isTargetDay && (
                                                 <div
-                                                    className="absolute bg-blue-200 border border-blue-500 border-dashed rounded p-1 text-xs overflow-hidden z-50 opacity-80 pointer-events-none"
+                                                    className={`absolute border border-dashed rounded p-1 text-xs overflow-hidden z-50 opacity-80 pointer-events-none
+                                                        ${interaction.isValid
+                                                            ? 'bg-blue-200 border-blue-500'
+                                                            : 'bg-red-200 border-red-500'
+                                                        }`}
                                                     style={{
                                                         top: `${interaction.currentTop}px`,
                                                         height: `${interaction.currentHeight - 1}px`,
@@ -623,8 +504,12 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                         right: '2px'
                                                     }}
                                                 >
-                                                    <div className="font-bold text-blue-900 truncate">{interactingBooking.user_name}</div>
-                                                    <div className="text-blue-700 truncate text-[10px]">{interactingBooking.project}</div>
+                                                    <div className={`font-bold truncate ${interaction.isValid ? 'text-blue-900' : 'text-red-900'}`}>
+                                                        {interactingBooking.user_name}
+                                                    </div>
+                                                    <div className={`truncate text-[10px] ${interaction.isValid ? 'text-blue-700' : 'text-red-700'}`}>
+                                                        {interactingBooking.project}
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>

@@ -1,0 +1,195 @@
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { timeToMinutes, minutesToTime, roundToNearestSlot, checkCollision } from '../utils/bookingUtils';
+
+const PIXELS_PER_30_MINS = 48;
+const START_HOUR = 8;
+
+export const useBookingInteraction = ({
+    weekDates,
+    existingBookings,
+    user,
+    isAdmin,
+    onUpdate,
+    showToast
+}) => {
+    const [interaction, setInteraction] = useState(null);
+    const interactionRef = useRef(null);
+
+    const formatDate = (date) => {
+        try {
+            return date.toISOString().split('T')[0];
+        } catch (e) {
+            return '';
+        }
+    };
+
+    const startInteraction = (e, booking, type) => {
+        e.stopPropagation();
+
+        // Permission check
+        const isOwnBooking = booking.user_id === user.id;
+        if (!isAdmin && !isOwnBooking) {
+            showToast('You can only edit your own bookings.', 'error');
+            return;
+        }
+
+        const now = new Date();
+        const bookingEnd = new Date(`${booking.date}T${booking.endTime}`);
+        if (bookingEnd < now) {
+            showToast('Cannot modify past bookings.', 'error');
+            return;
+        }
+
+        const rect = e.currentTarget.parentElement.getBoundingClientRect();
+
+        // Calculate initial visual properties
+        const startHour = parseInt(booking.startTime.split(':')[0]);
+        const startMin = parseInt(booking.startTime.split(':')[1]);
+        const endHour = parseInt(booking.endTime.split(':')[0]);
+        const endMin = parseInt(booking.endTime.split(':')[1]);
+        const startOffset = (startHour - START_HOUR) * 60 + startMin;
+        const endOffset = (endHour - START_HOUR) * 60 + endMin;
+        const duration = endOffset - startOffset;
+        const top = (startOffset / 30) * PIXELS_PER_30_MINS;
+        const height = (duration / 30) * PIXELS_PER_30_MINS;
+
+        const initialData = {
+            type,
+            bookingId: booking.ids[0],
+            originalBooking: booking,
+            startY: e.clientY,
+            startX: e.clientX,
+            initialTop: top,
+            initialHeight: height,
+            currentTop: top,
+            currentHeight: height,
+            currentDate: booking.date,
+            dayWidth: rect.width,
+            isValid: true // Initial state is valid
+        };
+
+        interactionRef.current = initialData;
+        setInteraction(initialData);
+    };
+
+    useEffect(() => {
+        const handleMouseMove = (e) => {
+            if (!interactionRef.current) return;
+
+            const data = interactionRef.current;
+            const deltaY = e.clientY - data.startY;
+            const deltaX = e.clientX - data.startX;
+            const snappedDeltaY = roundToNearestSlot((deltaY / PIXELS_PER_30_MINS) * 30, 30) / 30 * PIXELS_PER_30_MINS;
+
+            let dayIndexDelta = 0;
+            if (data.type === 'move') {
+                dayIndexDelta = Math.round(deltaX / data.dayWidth);
+            }
+
+            let newTop = data.initialTop;
+            let newHeight = data.initialHeight;
+            let newDate = data.currentDate;
+
+            if (data.type === 'move') {
+                newTop += snappedDeltaY;
+                const currentDayIndex = weekDates.findIndex(d => formatDate(d) === data.originalBooking.date);
+                const newDayIndex = currentDayIndex + dayIndexDelta;
+                if (newDayIndex >= 0 && newDayIndex < 7) {
+                    newDate = formatDate(weekDates[newDayIndex]);
+                }
+            } else if (data.type === 'resize-bottom') {
+                newHeight += snappedDeltaY;
+            } else if (data.type === 'resize-top') {
+                newTop += snappedDeltaY;
+                newHeight -= snappedDeltaY;
+            }
+
+            if (newHeight < PIXELS_PER_30_MINS) {
+                const heightDiff = PIXELS_PER_30_MINS - newHeight;
+                newHeight = PIXELS_PER_30_MINS;
+                if (data.type === 'resize-top') newTop -= heightDiff;
+            }
+
+            // --- Real-time Validation ---
+            const startOffsetMins = (newTop / PIXELS_PER_30_MINS) * 30;
+            const durationMins = (newHeight / PIXELS_PER_30_MINS) * 30;
+            const startTotalMins = roundToNearestSlot((START_HOUR * 60) + startOffsetMins);
+            const endTotalMins = roundToNearestSlot(startTotalMins + durationMins);
+
+            const newStartTime = minutesToTime(startTotalMins);
+            const newEndTime = minutesToTime(endTotalMins);
+
+            const now = new Date();
+            const newStartDateTime = new Date(`${newDate}T${newStartTime}`);
+            const isValidTime = startTotalMins >= (8 * 60) && endTotalMins <= (20 * 60);
+            const isFuture = newStartDateTime >= now;
+
+            // Check if end time is valid (for shortening active bookings)
+            const isActive = new Date(`${data.originalBooking.date}T${data.originalBooking.startTime}`) <= now && new Date(`${data.originalBooking.date}T${data.originalBooking.endTime}`) > now;
+            const isEndTimeValid = !isActive || new Date(`${newDate}T${newEndTime}`) > now;
+
+            let isValid = isValidTime && isFuture && isEndTimeValid;
+
+            if (isValid) {
+                const tempBooking = {
+                    date: newDate,
+                    startTime: newStartTime,
+                    endTime: newEndTime,
+                    tool_id: data.originalBooking.tool_id
+                };
+                const hasCollision = checkCollision(tempBooking, existingBookings, data.originalBooking.ids);
+                if (hasCollision) isValid = false;
+            }
+
+            const newData = {
+                ...data,
+                currentTop: newTop,
+                currentHeight: newHeight,
+                currentDate: newDate,
+                isValid,
+                newStartTime,
+                newEndTime
+            };
+
+            interactionRef.current = newData;
+            setInteraction(newData);
+        };
+
+        const handleMouseUp = async () => {
+            if (!interactionRef.current) return;
+
+            const data = interactionRef.current;
+
+            if (data.isValid) {
+                const newBooking = {
+                    date: data.currentDate,
+                    startTime: data.newStartTime,
+                    endTime: data.newEndTime,
+                    tool_id: data.originalBooking.tool_id
+                };
+                await onUpdate(data.originalBooking.ids, newBooking);
+            } else {
+                // Optional: Show specific error toast based on why it failed, 
+                // but since we have visual feedback (red ghost), generic might be fine or we can skip toast.
+                // For now, let's keep it simple or re-implement the specific checks if needed.
+                // The user asked for visual feedback, so the red ghost is the primary signal.
+            }
+
+            setInteraction(null);
+            interactionRef.current = null;
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [weekDates, existingBookings, onUpdate, showToast]);
+
+    return {
+        interaction,
+        startInteraction
+    };
+};
