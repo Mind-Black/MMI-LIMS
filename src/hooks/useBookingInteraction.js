@@ -9,7 +9,7 @@ export const useBookingInteraction = ({
     existingBookings,
     user,
     isAdmin,
-    onUpdate,
+    onInteractionEnd,
     showToast
 }) => {
     const [interaction, setInteraction] = useState(null);
@@ -90,7 +90,8 @@ export const useBookingInteraction = ({
 
             const deltaY = e.clientY - data.startY;
             const deltaX = e.clientX - data.startX;
-            const snappedDeltaY = roundToNearestSlot((deltaY / PIXELS_PER_30_MINS) * 30, 30) / 30 * PIXELS_PER_30_MINS;
+            // Simplify snapping: round deltaY to nearest 48px (PIXELS_PER_30_MINS)
+            const snappedDeltaY = Math.round(deltaY / PIXELS_PER_30_MINS) * PIXELS_PER_30_MINS;
 
             let dayIndexDelta = 0;
             if (data.type === 'move') {
@@ -101,8 +102,14 @@ export const useBookingInteraction = ({
             let newHeight = data.initialHeight;
             let newDate = data.currentDate;
 
+            // Visual position (smooth)
+            let visualTop = data.initialTop;
+            let visualHeight = data.initialHeight;
+
             if (data.type === 'move') {
                 newTop += snappedDeltaY;
+                visualTop = newTop; // Snapped movement
+
                 const currentDayIndex = weekDates.findIndex(d => formatDate(d) === data.originalBooking.date);
                 const newDayIndex = currentDayIndex + dayIndexDelta;
                 if (newDayIndex >= 0 && newDayIndex < 7) {
@@ -110,9 +117,12 @@ export const useBookingInteraction = ({
                 }
             } else if (data.type === 'resize-bottom') {
                 newHeight += snappedDeltaY;
+                visualHeight = newHeight;
             } else if (data.type === 'resize-top') {
                 newTop += snappedDeltaY;
                 newHeight -= snappedDeltaY;
+                visualTop = newTop;
+                visualHeight = newHeight;
             }
 
             if (newHeight < PIXELS_PER_30_MINS) {
@@ -120,6 +130,13 @@ export const useBookingInteraction = ({
                 newHeight = PIXELS_PER_30_MINS;
                 if (data.type === 'resize-top') newTop -= heightDiff;
             }
+            // Constrain visual height minimum
+            if (visualHeight < PIXELS_PER_30_MINS) {
+                const vDiff = PIXELS_PER_30_MINS - visualHeight;
+                visualHeight = PIXELS_PER_30_MINS;
+                if (data.type === 'resize-top') visualTop -= vDiff;
+            }
+
 
             // --- Real-time Validation ---
             const startOffsetMins = (newTop / PIXELS_PER_30_MINS) * 30;
@@ -148,14 +165,30 @@ export const useBookingInteraction = ({
                     endTime: newEndTime,
                     tool_id: data.originalBooking.tool_id
                 };
-                const hasCollision = checkCollision(tempBooking, existingBookings, data.originalBooking.ids);
-                if (hasCollision) isValid = false;
+                // Ensure we pass all IDs to ignore (handle grouped bookings)
+                const ignoredIds = data.originalBooking.ids || [data.originalBooking.id];
+                const hasCollision = checkCollision(tempBooking, existingBookings, ignoredIds);
+
+                if (hasCollision) {
+                    isValid = false;
+                    console.log('Validation failed: Collision detected', { tempBooking, ignoredIds });
+                }
+            } else {
+                console.log('Validation failed:', {
+                    isValidTime,
+                    isFuture,
+                    isEndTimeValid,
+                    newDate,
+                    newStartTime,
+                    now: now.toISOString(),
+                    startDateTime: newStartDateTime.toISOString()
+                });
             }
 
             const newData = {
                 ...data,
-                currentTop: newTop,
-                currentHeight: newHeight,
+                currentTop: data.type === 'move' || data.type === 'resize-top' ? visualTop : data.initialTop,
+                currentHeight: visualHeight,
                 currentDate: newDate,
                 isValid,
                 newStartTime,
@@ -166,19 +199,22 @@ export const useBookingInteraction = ({
             setInteraction(newData);
         };
 
-        const handleMouseUp = async () => {
+        const handleMouseUp = () => {
             if (!interactionRef.current) return;
 
             const data = interactionRef.current;
 
             if (data.hasMoved && data.isValid) {
                 const newBooking = {
+                    ...data.originalBooking,
                     date: data.currentDate,
                     startTime: data.newStartTime,
                     endTime: data.newEndTime,
-                    tool_id: data.originalBooking.tool_id
+                    // Sync legacy fields if they exist, to ensure UI updates correctly
+                    time: data.newStartTime,
+                    end_time: data.newEndTime,
                 };
-                await onUpdate(data.originalBooking.ids, newBooking);
+                onInteractionEnd(newBooking);
             }
 
             // If we dragged (hasMoved), delay clearing interaction to prevent the subsequent 'click' event
@@ -187,7 +223,7 @@ export const useBookingInteraction = ({
                 setTimeout(() => {
                     setInteraction(null);
                     interactionRef.current = null;
-                }, 50);
+                }, 100);
             } else {
                 // If we didn't move, it was a click. Clear immediately so the click handler works.
                 setInteraction(null);
@@ -202,7 +238,7 @@ export const useBookingInteraction = ({
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [weekDates, existingBookings, onUpdate, showToast]);
+    }, [weekDates, existingBookings, onInteractionEnd, showToast]);
 
     return {
         interaction,

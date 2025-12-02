@@ -3,7 +3,6 @@ import StatusBadge from './StatusBadge';
 import { useToast } from '../context/ToastContext';
 import { getNextSlotTime, groupBookings, checkCollision, calculateEventLayout } from '../utils/bookingUtils';
 import { useBookingInteraction } from '../hooks/useBookingInteraction';
-import BookingEditPopup from './BookingEditPopup';
 
 const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, existingBookings = [], initialDate }) => {
     // Initialize week start to current week's Monday
@@ -18,7 +17,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
 
     const [selectedSlots, setSelectedSlots] = useState([]); // Array of {date, time}
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [editingBooking, setEditingBooking] = useState(null); // Booking being edited via popup
+    const [editingBooking, setEditingBooking] = useState(null); // Booking being edited locally
     const [selectedProject, setSelectedProject] = useState('General'); // Default to General
 
     // Selection State (for creating new bookings)
@@ -47,16 +46,6 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
         }
         return dates;
     }, [currentWeekStart]);
-
-    // Use the new hook
-    const { interaction, startInteraction } = useBookingInteraction({
-        weekDates,
-        existingBookings,
-        user,
-        isAdmin,
-        onUpdate,
-        showToast
-    });
 
     // Helper to generate 30-min slots from 08:00 to 20:00
     const timeSlots = useMemo(() => {
@@ -116,11 +105,48 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
     };
 
     // Group bookings for display
+    // If we are editing, we want to show the edited version instead of the original
+    const displayBookings = useMemo(() => {
+        if (!editingBooking) return existingBookings;
+
+        // Get all IDs associated with the booking being edited
+        const editIds = editingBooking.ids || [editingBooking.id];
+        const primaryId = editIds[0];
+
+        if (!primaryId) return existingBookings;
+
+        const updated = existingBookings.map(b => {
+            // If it's the primary ID, replace with edited version
+            if (b.id === primaryId) {
+                // console.log('Replacing primary ID', primaryId, 'with', editingBooking);
+                return editingBooking;
+            }
+            // If it's one of the other IDs in the group, hide it (return null and filter)
+            if (editIds.includes(b.id)) return null;
+            return b;
+        }).filter(Boolean);
+
+        return updated;
+    }, [existingBookings, editingBooking]);
+
     const groupedBookings = useMemo(() => {
         // Filter for this tool only
-        const toolBookings = existingBookings.filter(b => b.tool_id === tool.id);
+        const toolBookings = displayBookings.filter(b => b.tool_id === tool.id);
         return groupBookings(toolBookings);
-    }, [existingBookings, tool.id]);
+    }, [displayBookings, tool.id]);
+
+    // Use the new hook
+    const { interaction, startInteraction } = useBookingInteraction({
+        weekDates,
+        existingBookings: displayBookings, // Use displayBookings to avoid colliding with hidden ghosts
+        user,
+        isAdmin,
+        onInteractionEnd: (newBooking) => {
+            console.log('onInteractionEnd called with:', newBooking);
+            setEditingBooking(newBooking);
+        },
+        showToast
+    });
 
     const PIXELS_PER_30_MINS = 48;
     const START_HOUR = 8;
@@ -151,17 +177,32 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
     const handleBookingClick = (e, booking) => {
         e.stopPropagation();
         // If interaction is active (dragging), don't open popup
-        if (interaction) return;
+        if (interaction) {
+            console.log('handleBookingClick blocked by interaction');
+            return;
+        }
+
+        console.log('handleBookingClick fired', booking);
 
         // Permission check
         const isOwnBooking = booking.user_id === user.id;
         if (!isAdmin && !isOwnBooking) return;
 
-        setEditingBooking(booking);
+        // Start editing mode
+        // We need to ensure we have a single ID to track
+        const bookingId = booking.ids[0];
+        const singleBooking = {
+            ...booking,
+            id: bookingId,
+            // Ensure we have flat structure if needed, but 'booking' from groupBookings is already good
+        };
+
+        setEditingBooking(singleBooking);
+        setSelectedProject(booking.project);
+        setSelectedSlots([]); // Clear selection
     };
 
-    const handleSaveEdit = async (oldIds, newBooking) => {
-        await onUpdate(oldIds, newBooking);
+    const handleCancelEdit = () => {
         setEditingBooking(null);
     };
 
@@ -316,6 +357,25 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
     };
 
     const handleConfirmBooking = async () => {
+        if (editingBooking) {
+            // Update Mode
+            setIsSubmitting(true);
+
+            // We need to pass all original IDs so we can clean them up if needed
+            const oldIds = editingBooking.ids || [editingBooking.id];
+
+            // Construct the update object
+            const updateData = {
+                ...editingBooking,
+                project: selectedProject // Use the currently selected project
+            };
+
+            await onUpdate(oldIds, updateData);
+            setIsSubmitting(false);
+            setEditingBooking(null);
+            return;
+        }
+
         if (selectedSlots.length === 0) {
             showToast('Please select at least one time slot.', 'error');
             return;
@@ -477,7 +537,9 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                         key={booking.ids[0]}
                                                         className={`absolute border rounded p-1 text-xs overflow-hidden transition-shadow group 
                                                             ${isOwnBooking ? 'bg-blue-100 border-blue-300' : 'bg-gray-100 border-gray-300'}
-                                                            ${canEdit ? 'hover:z-10 hover:shadow-md cursor-pointer' : ''}`}
+                                                            ${canEdit ? 'hover:z-10 hover:shadow-md cursor-pointer' : ''}
+                                                            ${editingBooking && editingBooking.id === booking.ids[0] ? 'ring-2 ring-blue-500 z-20' : ''}
+                                                            `}
                                                         style={getEventStyle(booking)}
                                                         onMouseDown={(e) => canEdit && startInteraction(e, booking, 'move')}
                                                         onClick={(e) => handleBookingClick(e, booking)}
@@ -485,7 +547,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                     >
                                                         {canEdit && (
                                                             <div
-                                                                className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 bg-blue-400/20"
+                                                                className="absolute top-0 left-0 right-0 h-3 z-20 cursor-ns-resize opacity-0 group-hover:opacity-100 bg-blue-400/20"
                                                                 onMouseDown={(e) => { e.stopPropagation(); startInteraction(e, booking, 'resize-top'); }}
                                                             ></div>
                                                         )}
@@ -495,7 +557,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
 
                                                         {canEdit && (
                                                             <div
-                                                                className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 bg-blue-400/20"
+                                                                className="absolute bottom-0 left-0 right-0 h-3 z-20 cursor-ns-resize opacity-0 group-hover:opacity-100 bg-blue-400/20"
                                                                 onMouseDown={(e) => { e.stopPropagation(); startInteraction(e, booking, 'resize-bottom'); }}
                                                             ></div>
                                                         )}
@@ -557,27 +619,19 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                         </select>
                     </div>
 
-                    <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                    <button onClick={editingBooking ? handleCancelEdit : onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
                     <button
-                        disabled={selectedSlots.length === 0 || isSubmitting}
+                        disabled={(selectedSlots.length === 0 && !editingBooking) || isSubmitting}
                         onClick={handleConfirmBooking}
-                        className={`px-6 py-2 rounded text-white font-bold transition flex items-center gap-2 ${selectedSlots.length === 0 || isSubmitting ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                        className={`px-6 py-2 rounded text-white font-bold transition flex items-center gap-2 ${(selectedSlots.length === 0 && !editingBooking) || isSubmitting ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
                     >
                         {isSubmitting && <i className="fas fa-spinner fa-spin"></i>}
-                        {isSubmitting ? 'Booking...' : 'Confirm Booking'}
+                        {isSubmitting ? (editingBooking ? 'Updating...' : 'Booking...') : (editingBooking ? 'Update Booking' : 'Confirm Booking')}
                     </button>
                 </div>
             </div>
 
-            {editingBooking && (
-                <BookingEditPopup
-                    booking={editingBooking}
-                    existingBookings={existingBookings}
-                    onSave={handleSaveEdit}
-                    onCancel={() => setEditingBooking(null)}
-                    projects={profile?.projects}
-                />
-            )}
+
         </div>
     );
 };

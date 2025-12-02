@@ -154,70 +154,64 @@ const Dashboard = ({ user, onLogout }) => {
 
     const handleUpdateBooking = async (oldIds, newBookingData) => {
         try {
-            // 1. Delete old slots
-            const { error: deleteError, count: deletedCount } = await supabase
-                .from('bookings')
-                .delete({ count: 'exact' })
-                .in('id', oldIds);
+            // We expect a single booking ID for updates now, but we might receive multiple if it was a group
+            const bookingId = oldIds[0];
+            if (!bookingId) throw new Error("No booking ID provided for update");
 
-            console.log(`Deleted ${deletedCount} bookings with IDs:`, oldIds);
+            // If there are multiple IDs (legacy slots), we delete the extras and update the first one
+            if (oldIds.length > 1) {
+                const idsToDelete = oldIds.slice(1);
+                const { error: deleteError } = await supabase
+                    .from('bookings')
+                    .delete()
+                    .in('id', idsToDelete);
 
-            if (deleteError) throw deleteError;
-            if (deletedCount !== oldIds.length) {
-                console.warn(`Expected to delete ${oldIds.length} rows, but deleted ${deletedCount}`);
-                throw new Error(`Permission denied: Could not delete old booking. (Deleted ${deletedCount}/${oldIds.length})`);
+                if (deleteError) {
+                    console.error("Error deleting secondary slots:", deleteError);
+                    // Continue anyway to try to update the main one
+                }
             }
 
-            // 2. Insert new slots
-            // Ensure new slots have all required fields (user_id, tool_id, etc.)
-            // We can get these from one of the old bookings (assuming they are consistent)
-            const oldBooking = bookings.find(b => b.id === oldIds[0]);
-            if (!oldBooking) throw new Error("Original booking not found");
-
             const bookingsToProcess = Array.isArray(newBookingData) ? newBookingData : [newBookingData];
+            const newBooking = bookingsToProcess[0]; // We expect single booking update
 
             // Validate past bookings
             const now = new Date();
-            const hasPastBooking = bookingsToProcess.some(b => {
-                const bookingEnd = new Date(`${b.date}T${b.end_time || b.endTime}`);
-                return bookingEnd < now;
-            });
-
-            if (hasPastBooking) {
+            const bookingEnd = new Date(`${newBooking.date}T${newBooking.end_time || newBooking.endTime}`);
+            if (bookingEnd < now) {
                 throw new Error('Cannot move booking to the past.');
             }
 
-            const bookingsToInsert = bookingsToProcess.map(b => ({
-                tool_id: oldBooking.tool_id,
-                tool_name: oldBooking.tool_name,
-                user_id: oldBooking.user_id,
-                user_name: oldBooking.user_name,
-                project: b.project || oldBooking.project,
-                date: b.date,
-                time: b.startTime || b.time,
-                end_time: b.endTime || b.end_time,
-                created_at: oldBooking.created_at
-            }));
+            const updateData = {
+                project: newBooking.project,
+                date: newBooking.date,
+                time: newBooking.startTime || newBooking.time,
+                end_time: newBooking.endTime || newBooking.end_time,
+            };
 
-            const { data: insertedData, error: insertError } = await supabase
+            const { data, error } = await supabase
                 .from('bookings')
-                .insert(bookingsToInsert)
+                .update(updateData)
+                .eq('id', bookingId)
                 .select();
 
-            if (insertError) throw insertError;
+            if (error) throw error;
 
-            // 3. Update local state
-            // Remove old
-            const filteredBookings = bookings.filter(b => !oldIds.includes(b.id));
-            // Add new
-            setBookings([...filteredBookings, ...insertedData]);
+            // Update local state
+            setBookings(prev => {
+                // Remove deleted ones
+                let updated = prev;
+                if (oldIds.length > 1) {
+                    updated = prev.filter(b => !oldIds.slice(1).includes(b.id));
+                }
+                // Update modified one
+                return updated.map(b => b.id === bookingId ? { ...b, ...updateData } : b);
+            });
 
             showToast("Booking updated successfully.");
         } catch (error) {
             console.error('Error updating booking:', error);
             showToast('Failed to update booking: ' + error.message, 'error');
-            // Ideally we should revert state here if partial failure, but for now we rely on user refresh or manual fix
-            // A transaction would be better but Supabase JS client doesn't support transactions directly on client side easily without RPC
         }
     };
 
