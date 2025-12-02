@@ -1,16 +1,76 @@
-# React + Vite
+# MMI-LIMS (Laboratory Information Management System)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A comprehensive Laboratory Information Management System built with React, Vite, Tailwind CSS, and Supabase. This application helps manage laboratory resources, bookings, users, and analytics.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Authentication**: Secure user authentication and session management using Supabase Auth.
+- **Dashboard**: Centralized hub for quick access to key metrics and recent activities.
+- **Booking Management**: 
+  - Interactive calendar for viewing and managing bookings.
+  - Create, update, and delete bookings.
+  - Conflict detection and resolution.
+- **Tool Management**: Inventory system for laboratory tools and equipment.
+- **User Management**: Administration interface for managing user roles and permissions.
+- **Analytics**: Visual insights into tool usage and booking trends.
+- **Responsive Design**: Optimized for various screen sizes using Tailwind CSS.
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Frontend Framework**: [React](https://react.dev/)
+- **Build Tool**: [Vite](https://vitejs.dev/)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+- **Backend & Database**: [Supabase](https://supabase.com/)
+- **Icons**: [Lucide React](https://lucide.dev/)
 
-## Expanding the ESLint configuration
+## Prerequisites
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Before you begin, ensure you have the following installed:
+- [Node.js](https://nodejs.org/) (v16 or higher)
+- [npm](https://www.npmjs.com/) (usually comes with Node.js)
+
+## Installation
+
+1.  **Clone the repository**
+    ```bash
+    git clone <repository-url>
+    cd MMI-LIMS
+    ```
+
+2.  **Install dependencies**
+    ```bash
+    npm install
+    ```
+
+3.  **Environment Setup**
+    Create a `.env` file in the root directory and add your Supabase credentials:
+    ```env
+    VITE_SUPABASE_URL=your_supabase_url
+    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+    ```
+
+4.  **Run the development server**
+    ```bash
+    npm run dev
+    ```
+
+## Scripts
+
+- `npm run dev`: Starts the development server.
+- `npm run build`: Builds the app for production.
+- `npm run lint`: Runs ESLint to check for code quality issues.
+- `npm run preview`: Locally preview the production build.
+
+## Project Structure
+
+```
+src/
+├── assets/         # Static assets (images, etc.)
+├── components/     # Reusable UI components
+├── context/        # React Context providers (Theme, Toast)
+├── hooks/          # Custom React hooks
+├── utils/          # Utility functions
+├── App.jsx         # Main application component
+├── main.jsx        # Entry point
+└── supabaseClient.js # Supabase client configuration
+```
