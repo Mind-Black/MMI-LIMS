@@ -209,6 +209,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
     // --- Selection Handlers (Create New) ---
 
     const handleGridMouseDown = (dateStr, timeIndex) => {
+        setEditingBooking(null);
         if (!canBook) return;
 
         // Don't start selection if clicking on an existing booking (handled by stopPropagation, but safety check)
@@ -267,6 +268,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
     // --- Touch Handlers (Mobile Drag-to-Select) ---
 
     const handleTouchStart = (e, dateStr, timeIndex) => {
+        setEditingBooking(null);
         if (!canBook) return;
         // Prevent default to stop scrolling while dragging on the grid
         // e.preventDefault(); // NOTE: We can't preventDefault on passive listeners (default in React 18+ for touch), 
@@ -438,7 +440,10 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden m-4 transition-colors border dark:border-gray-700">
+            <div
+                className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden m-4 transition-colors border dark:border-gray-700"
+                onClick={() => setEditingBooking(null)}
+            >
                 {/* Header */}
                 <div className="bg-blue-900 dark:bg-blue-950 text-white p-4 flex justify-between items-center shrink-0 transition-colors">
                     <h2 className="text-xl font-bold"><i className="fas fa-calendar-alt mr-2"></i>Weekly Schedule</h2>
@@ -610,6 +615,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                         <select
                             value={selectedProject}
                             onChange={(e) => setSelectedProject(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
                             className="border dark:border-gray-600 rounded p-1 text-sm focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
                         >
                             <option value="General">General</option>
@@ -622,7 +628,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                     <button onClick={editingBooking ? handleCancelEdit : onClose} className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">Cancel</button>
                     <button
                         disabled={(selectedSlots.length === 0 && !editingBooking) || isSubmitting}
-                        onClick={handleConfirmBooking}
+                        onClick={(e) => { e.stopPropagation(); handleConfirmBooking(); }}
                         className={`px-6 py-2 rounded text-white font-bold transition flex items-center gap-2 ${(selectedSlots.length === 0 && !editingBooking) || isSubmitting ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
                     >
                         {isSubmitting && <i className="fas fa-spinner fa-spin"></i>}
