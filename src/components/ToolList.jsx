@@ -85,7 +85,9 @@ const ToolList = ({ tools, profile, onStatusChange, onBook }) => {
 
     const filteredTools = tools.filter(t => {
         const matchesCategory = filterCategory === 'All' || t.category === filterCategory;
-        const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) || t.id.toString().includes(searchQuery);
+        const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            t.id.toString().includes(searchQuery) ||
+            (t.description && t.description.toLowerCase().includes(searchQuery.toLowerCase()));
         return matchesCategory && matchesSearch;
     });
 
@@ -98,7 +100,7 @@ const ToolList = ({ tools, profile, onStatusChange, onBook }) => {
                 <div className="flex-1">
                     <input
                         type="text"
-                        placeholder="Search tool name or ID..."
+                        placeholder="Search tool name, ID, or description..."
                         className="w-full border dark:border-gray-600 p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
