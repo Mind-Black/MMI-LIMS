@@ -164,10 +164,13 @@ export const useBookingInteraction = ({
             const now = new Date();
             const newStartDateTime = new Date(`${newDate}T${newStartTime}`);
             const isValidTime = startTotalMins >= (8 * 60) && endTotalMins <= (20 * 60);
-            const isFuture = newStartDateTime >= now;
 
             // Check if end time is valid (for shortening active bookings)
             const isActive = new Date(`${data.originalBooking.date}T${data.originalBooking.startTime}`) <= now && new Date(`${data.originalBooking.date}T${data.originalBooking.endTime}`) > now;
+
+            // If active, start time is allowed to be in the past. Otherwise, it must be future.
+            const isFuture = isActive ? true : newStartDateTime >= now;
+
             const isEndTimeValid = !isActive || new Date(`${newDate}T${newEndTime}`) > now;
 
             let isValid = isValidTime && isFuture && isEndTimeValid;

@@ -137,6 +137,21 @@ const Dashboard = ({ user, onLogout }) => {
     };
 
     const initiateCancel = (ids) => {
+        const idsToCheck = Array.isArray(ids) ? ids : [ids];
+        const bookingsToCheck = bookings.filter(b => idsToCheck.includes(b.id));
+
+        const now = new Date();
+        const hasInProgress = bookingsToCheck.some(b => {
+            const start = new Date(`${b.date}T${b.time}`);
+            const end = new Date(`${b.date}T${b.end_time}`);
+            return start <= now && end > now;
+        });
+
+        if (hasInProgress) {
+            showToast('Cannot cancel an in-progress booking.', 'error');
+            return;
+        }
+
         setBookingIdToCancel(ids);
         setConfirmModalOpen(true);
     };
