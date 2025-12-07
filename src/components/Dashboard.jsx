@@ -39,8 +39,8 @@ const Dashboard = ({ user, onLogout }) => {
 
     // Fetch Data
     useEffect(() => {
-        const fetchData = async () => {
-            setLoading(true);
+        const fetchData = async (isBackground = false) => {
+            if (!isBackground) setLoading(true);
             try {
                 // Fetch Tools
                 const { data: toolsData, error: toolsError } = await supabase
@@ -71,13 +71,24 @@ const Dashboard = ({ user, onLogout }) => {
 
             } catch (error) {
                 console.error('Error fetching data:', error);
-                showToast('Error fetching data: ' + error.message, 'error');
+                // Only show toast on initial load to avoid spamming
+                if (!isBackground) {
+                    showToast('Error fetching data: ' + error.message, 'error');
+                }
             } finally {
-                setLoading(false);
+                if (!isBackground) setLoading(false);
             }
         };
 
+        // Initial fetch
         fetchData();
+
+        // Set up polling
+        const intervalId = setInterval(() => {
+            fetchData(true);
+        }, 10000); // 10 seconds
+
+        return () => clearInterval(intervalId);
     }, [user.id, showToast]);
 
     // Memoized grouped bookings
