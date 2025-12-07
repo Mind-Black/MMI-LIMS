@@ -67,12 +67,16 @@ export const useBookingInteraction = ({
         const top = (startOffset / 30) * PIXELS_PER_30_MINS;
         const height = (duration / 30) * PIXELS_PER_30_MINS;
 
+        // Handle both mouse and touch events
+        const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+        const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+
         const initialData = {
             type,
             bookingId: booking.ids[0],
             originalBooking: booking,
-            startY: e.clientY,
-            startX: e.clientX,
+            startY: clientY,
+            startX: clientX,
             initialTop: top,
             initialHeight: height,
             currentTop: top,
@@ -84,26 +88,43 @@ export const useBookingInteraction = ({
         };
 
         interactionRef.current = initialData;
-        // Don't setInteraction here. Wait for movement threshold.
+
+        // For touch events (long press), show visual feedback immediately.
+        // For mouse, wait for movement threshold to distinguish from click.
+        if (e.type.includes('touch')) {
+            setInteraction(initialData);
+        }
     };
 
     useEffect(() => {
-        const handleMouseMove = (e) => {
+        const handleMove = (e) => {
             if (!interactionRef.current) return;
 
             const data = interactionRef.current;
 
+            // Get coordinates based on event type
+            let clientX, clientY;
+            if (e.type === 'touchmove') {
+                // Prevent scrolling while dragging
+                if (e.cancelable) e.preventDefault();
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+
             // Check threshold if not yet moved
             if (!data.hasMoved) {
-                const dist = Math.sqrt(Math.pow(e.clientX - data.startX, 2) + Math.pow(e.clientY - data.startY, 2));
+                const dist = Math.sqrt(Math.pow(clientX - data.startX, 2) + Math.pow(clientY - data.startY, 2));
                 if (dist < 5) return; // 5px threshold
 
                 data.hasMoved = true;
                 setInteraction(data); // Start visual interaction now
             }
 
-            const deltaY = e.clientY - data.startY;
-            const deltaX = e.clientX - data.startX;
+            const deltaY = clientY - data.startY;
+            const deltaX = clientX - data.startX;
             // Simplify snapping: round deltaY to nearest 48px (PIXELS_PER_30_MINS)
             const snappedDeltaY = Math.round(deltaY / PIXELS_PER_30_MINS) * PIXELS_PER_30_MINS;
 
@@ -216,7 +237,7 @@ export const useBookingInteraction = ({
             setInteraction(newData);
         };
 
-        const handleMouseUp = () => {
+        const handleUp = () => {
             if (!interactionRef.current) return;
 
             const data = interactionRef.current;
@@ -248,12 +269,17 @@ export const useBookingInteraction = ({
             }
         };
 
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleUp);
+        // Add touch listeners with passive: false to allow preventing scroll
+        window.addEventListener('touchmove', handleMove, { passive: false });
+        window.addEventListener('touchend', handleUp);
 
         return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('mousemove', handleMove);
+            window.removeEventListener('mouseup', handleUp);
+            window.removeEventListener('touchmove', handleMove);
+            window.removeEventListener('touchend', handleUp);
         };
     }, [weekDates, existingBookings, onInteractionEnd, showToast]);
 

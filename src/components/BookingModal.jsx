@@ -23,6 +23,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
     // Selection State (for creating new bookings)
     const [isSelecting, setIsSelecting] = useState(false);
     const selectionRef = useRef(null); // { startDIndex, startTIndex, currentDIndex, currentTIndex }
+    const longPressTimer = useRef(null);
 
     const { showToast } = useToast();
 
@@ -262,86 +263,213 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                 }
             }
         }
+
         setSelectedSlots(newSlots);
     };
 
-    // --- Touch Handlers (Mobile Drag-to-Select) ---
+    // --- Touch Handlers (Mobile Drag-to-Select & Long Press) ---
 
-    const handleTouchStart = (e, dateStr, timeIndex) => {
-        setEditingBooking(null);
-        if (!canBook) return;
-        // Prevent default to stop scrolling while dragging on the grid
-        // e.preventDefault(); // NOTE: We can't preventDefault on passive listeners (default in React 18+ for touch), 
-        // so we might need CSS 'touch-action: none' on the grid container or slots.
+    // Effect to handle touch moves when selecting (prevents scrolling)
+    useEffect(() => {
+        if (!isSelecting) return;
 
-        const timeStr = timeSlots[timeIndex];
-        if (isSlotBooked(dateStr, timeStr)) return;
-        if (isSlotInPast(dateStr, timeStr)) {
-            showToast('Cannot book in the past.', 'error');
-            return;
-        }
+        const handleWindowTouchMove = (e) => {
+            // Prevent scrolling
+            if (e.cancelable) e.preventDefault();
 
-        setIsSelecting(true);
-        const dIndex = weekDates.findIndex(d => formatDate(d) === dateStr);
+            const touch = e.touches[0];
+            const element = document.elementFromPoint(touch.clientX, touch.clientY);
 
-        const initialSelection = {
-            startDIndex: dIndex,
-            startTIndex: timeIndex,
-            currentDIndex: dIndex,
-            currentTIndex: timeIndex
+            if (element && element.dataset.date && element.dataset.timeindex) {
+                const dateStr = element.dataset.date;
+                const timeIndex = parseInt(element.dataset.timeindex, 10);
+
+                const dIndex = weekDates.findIndex(d => formatDate(d) === dateStr);
+
+                if (dIndex !== -1 && selectionRef.current) {
+                    if (dIndex !== selectionRef.current.currentDIndex || timeIndex !== selectionRef.current.currentTIndex) {
+                        selectionRef.current.currentDIndex = dIndex;
+                        selectionRef.current.currentTIndex = timeIndex;
+                        updateSelectedSlots(selectionRef.current);
+                    }
+                }
+            }
         };
 
-        selectionRef.current = initialSelection;
-        updateSelectedSlots(initialSelection);
-    };
-
-    const handleTouchMove = (e) => {
-        if (!isSelecting || !selectionRef.current) return;
-
-        // Get the element under the touch point
-        const touch = e.touches[0];
-        const element = document.elementFromPoint(touch.clientX, touch.clientY);
-
-        if (element && element.dataset.date && element.dataset.timeindex) {
-            const dateStr = element.dataset.date;
-            const timeIndex = parseInt(element.dataset.timeindex, 10);
-
-            const dIndex = weekDates.findIndex(d => formatDate(d) === dateStr);
-
-            // Only update if changed
-            if (dIndex !== -1 && (dIndex !== selectionRef.current.currentDIndex || timeIndex !== selectionRef.current.currentTIndex)) {
-                selectionRef.current.currentDIndex = dIndex;
-                selectionRef.current.currentTIndex = timeIndex;
-                updateSelectedSlots(selectionRef.current);
-            }
-        }
-    };
-
-    const handleTouchEnd = () => {
-        if (isSelecting) {
+        const handleWindowTouchEnd = () => {
             setIsSelecting(false);
             selectionRef.current = null;
+        };
+
+        // Add non-passive listener to allow preventing default
+        window.addEventListener('touchmove', handleWindowTouchMove, { passive: false });
+        window.addEventListener('touchend', handleWindowTouchEnd);
+
+        return () => {
+            window.removeEventListener('touchmove', handleWindowTouchMove);
+            window.removeEventListener('touchend', handleWindowTouchEnd);
+        };
+    }, [isSelecting, weekDates]);
+
+    // Grid Touch Handlers
+    const handleGridTouchStart = (e, dateStr, timeIndex) => {
+        e.persist();
+
+        longPressTimer.current = setTimeout(() => {
+            setEditingBooking(null);
+            if (!canBook) return;
+
+            const timeStr = timeSlots[timeIndex];
+            if (isSlotBooked(dateStr, timeStr)) return;
+            if (isSlotInPast(dateStr, timeStr)) {
+                showToast('Cannot book in the past.', 'error');
+                return;
+            }
+
+            setIsSelecting(true);
+            const dIndex = weekDates.findIndex(d => formatDate(d) === dateStr);
+
+            const initialSelection = {
+                startDIndex: dIndex,
+                startTIndex: timeIndex,
+                currentDIndex: dIndex,
+                currentTIndex: timeIndex
+            };
+
+            selectionRef.current = initialSelection;
+            updateSelectedSlots(initialSelection);
+
+            if (navigator.vibrate) navigator.vibrate(50);
+
+        }, 500);
+    };
+
+    const handleGridTouchMove = (e) => {
+        // Only used to cancel the timer if we scroll before selection starts
+        if (!isSelecting && longPressTimer.current) {
+            clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
         }
     };
 
-    // --- Global Mouse Handlers ---
+    const handleGridTouchEnd = () => {
+        if (longPressTimer.current) {
+            clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
+        }
+    };
 
+
+
+    // --- Touch Handlers (Mobile Drag-to-Select & Long Press) ---
+
+    // Effect to handle touch moves when selecting (prevents scrolling)
     useEffect(() => {
-        const handleMouseUp = async () => {
-            // End Selection
-            if (isSelecting) {
-                setIsSelecting(false);
-                selectionRef.current = null;
+        if (!isSelecting) return;
+
+        const handleWindowTouchMove = (e) => {
+            // Prevent scrolling
+            if (e.cancelable) e.preventDefault();
+
+            const touch = e.touches[0];
+            const element = document.elementFromPoint(touch.clientX, touch.clientY);
+
+            if (element && element.dataset.date && element.dataset.timeindex) {
+                const dateStr = element.dataset.date;
+                const timeIndex = parseInt(element.dataset.timeindex, 10);
+
+                const dIndex = weekDates.findIndex(d => formatDate(d) === dateStr);
+
+                if (dIndex !== -1 && selectionRef.current) {
+                    if (dIndex !== selectionRef.current.currentDIndex || timeIndex !== selectionRef.current.currentTIndex) {
+                        selectionRef.current.currentDIndex = dIndex;
+                        selectionRef.current.currentTIndex = timeIndex;
+                        updateSelectedSlots(selectionRef.current);
+                    }
+                }
             }
         };
 
-        window.addEventListener('mouseup', handleMouseUp);
+        const handleWindowTouchEnd = () => {
+            setIsSelecting(false);
+            selectionRef.current = null;
+        };
+
+        // Add non-passive listener to allow preventing default
+        window.addEventListener('touchmove', handleWindowTouchMove, { passive: false });
+        window.addEventListener('touchend', handleWindowTouchEnd);
 
         return () => {
-            window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('touchmove', handleWindowTouchMove);
+            window.removeEventListener('touchend', handleWindowTouchEnd);
         };
-    }, [isSelecting]);
+    }, [isSelecting, weekDates]);
 
+
+
+    // Booking Touch Handlers
+    const touchStartRef = useRef(null);
+
+    const handleBookingTouchStart = (e, booking, type) => {
+        e.stopPropagation();
+
+        const target = e.currentTarget;
+        const touch = e.touches[0];
+        const clientX = touch.clientX;
+        const clientY = touch.clientY;
+
+        touchStartRef.current = { x: clientX, y: clientY };
+
+        longPressTimer.current = setTimeout(() => {
+            const isOwnBooking = booking.user_id === user.id;
+            if (!isAdmin && !isOwnBooking) return;
+
+            const syntheticEvent = {
+                stopPropagation: () => { },
+                currentTarget: target,
+                type: 'touchstart',
+                touches: [{ clientX, clientY }]
+            };
+
+            startInteraction(syntheticEvent, booking, type);
+            longPressTimer.current = null; // Mark as fired
+
+            if (navigator.vibrate) navigator.vibrate(50);
+        }, 500);
+    };
+
+    const handleBookingTouchMove = (e) => {
+        if (longPressTimer.current && touchStartRef.current) {
+            // If the event is not cancelable, the browser has already claimed it for scrolling
+            if (!e.cancelable) {
+                clearTimeout(longPressTimer.current);
+                longPressTimer.current = null;
+                touchStartRef.current = null;
+                return;
+            }
+
+            const touch = e.touches[0];
+            const moveX = touch.clientX;
+            const moveY = touch.clientY;
+            const diffX = Math.abs(moveX - touchStartRef.current.x);
+            const diffY = Math.abs(moveY - touchStartRef.current.y);
+
+            // Only cancel if moved more than 5px (reduced from 10px to prevent scroll conflict)
+            if (diffX > 5 || diffY > 5) {
+                clearTimeout(longPressTimer.current);
+                longPressTimer.current = null;
+                touchStartRef.current = null;
+            }
+        }
+    };
+
+    const handleBookingTouchEnd = () => {
+        if (longPressTimer.current) {
+            clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
+        }
+        touchStartRef.current = null;
+    };
 
     // Navigation
     const handlePrevWeek = () => {
@@ -360,16 +488,11 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
 
     const handleConfirmBooking = async () => {
         if (editingBooking) {
-            // Update Mode
             setIsSubmitting(true);
-
-            // We need to pass all original IDs so we can clean them up if needed
             const oldIds = editingBooking.ids || [editingBooking.id];
-
-            // Construct the update object
             const updateData = {
                 ...editingBooking,
-                project: selectedProject // Use the currently selected project
+                project: selectedProject
             };
 
             await onUpdate(oldIds, updateData);
@@ -386,7 +509,6 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
         setIsSubmitting(true);
         const now = new Date().toISOString();
 
-        // Group selected slots into ranges
         const sortedSlots = [...selectedSlots].sort((a, b) => {
             if (a.date !== b.date) return a.date.localeCompare(b.date);
             return a.time.localeCompare(b.time);
@@ -424,7 +546,6 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
             created_at: now
         }));
 
-        // Final Collision Check
         const hasCollision = newBookings.some(newB => checkCollision(newB, existingBookings));
 
         if (hasCollision) {
@@ -519,12 +640,12 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                         key={time}
                                                         data-date={dateStr}
                                                         data-timeindex={tIndex}
-                                                        className={`h-12 border-b dark:border-gray-700 ${isSelected ? 'bg-blue-200 dark:bg-blue-800' : ''} ${isPast ? 'bg-gray-200 dark:bg-black/40 cursor-not-allowed' : ''} touch-none transition-colors`}
+                                                        className={`h-12 border-b dark:border-gray-700 ${isSelected ? 'bg-blue-200 dark:bg-blue-800' : ''} ${isPast ? 'bg-gray-200 dark:bg-black/40 cursor-not-allowed' : ''} transition-colors`}
                                                         onMouseDown={() => handleGridMouseDown(dateStr, tIndex)}
                                                         onMouseEnter={() => handleMouseEnter(dateStr, tIndex)}
-                                                        onTouchStart={(e) => handleTouchStart(e, dateStr, tIndex)}
-                                                        onTouchMove={handleTouchMove}
-                                                        onTouchEnd={handleTouchEnd}
+                                                        onTouchStart={(e) => handleGridTouchStart(e, dateStr, tIndex)}
+                                                        onTouchMove={handleGridTouchMove}
+                                                        onTouchEnd={handleGridTouchEnd}
                                                     ></div>
                                                 );
                                             })}
@@ -547,6 +668,9 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                             `}
                                                         style={getEventStyle(booking)}
                                                         onMouseDown={(e) => canEdit && startInteraction(e, booking, 'move')}
+                                                        onTouchStart={(e) => canEdit && handleBookingTouchStart(e, booking, 'move')}
+                                                        onTouchMove={handleBookingTouchMove}
+                                                        onTouchEnd={handleBookingTouchEnd}
                                                         onClick={(e) => handleBookingClick(e, booking)}
                                                         title={`Booked by: ${booking.user_name}\nProject: ${booking.project}`}
                                                     >
@@ -554,6 +678,9 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                             <div
                                                                 className="absolute top-0 left-0 right-0 h-3 z-20 cursor-ns-resize opacity-0 group-hover:opacity-100 bg-blue-400/20"
                                                                 onMouseDown={(e) => { e.stopPropagation(); startInteraction(e, booking, 'resize-top'); }}
+                                                                onTouchStart={(e) => { e.stopPropagation(); handleBookingTouchStart(e, booking, 'resize-top'); }}
+                                                                onTouchMove={handleBookingTouchMove}
+                                                                onTouchEnd={handleBookingTouchEnd}
                                                             ></div>
                                                         )}
 
@@ -564,6 +691,9 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                             <div
                                                                 className="absolute bottom-0 left-0 right-0 h-3 z-20 cursor-ns-resize opacity-0 group-hover:opacity-100 bg-blue-400/20"
                                                                 onMouseDown={(e) => { e.stopPropagation(); startInteraction(e, booking, 'resize-bottom'); }}
+                                                                onTouchStart={(e) => { e.stopPropagation(); handleBookingTouchStart(e, booking, 'resize-bottom'); }}
+                                                                onTouchMove={handleBookingTouchMove}
+                                                                onTouchEnd={handleBookingTouchEnd}
                                                             ></div>
                                                         )}
                                                     </div>
@@ -636,8 +766,6 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                     </button>
                 </div>
             </div>
-
-
         </div>
     );
 };
