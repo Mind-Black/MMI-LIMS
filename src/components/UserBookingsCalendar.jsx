@@ -90,16 +90,16 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
     };
 
     return (
-        <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden h-[600px]">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 flex flex-col overflow-hidden h-[600px] transition-colors">
             {/* Header */}
-            <div className="p-1 border-b bg-gray-50 flex justify-between items-center shrink-0">
+            <div className="p-1 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center shrink-0 transition-colors">
                 {/* <h3 className="font-bold text-gray-800 text-lg">Weekly Schedule</h3> */}
                 <div className="flex items-center gap-4">
-                    <button onClick={handlePrevWeek} className="p-2 hover:bg-gray-200 rounded"><i className="fas fa-chevron-left"></i></button>
-                    <div className="font-bold text-gray-700 w-48 text-center">
+                    <button onClick={handlePrevWeek} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded transition-colors"><i className="fas fa-chevron-left"></i></button>
+                    <div className="font-bold text-gray-700 dark:text-gray-200 w-48 text-center transition-colors">
                         {weekDates[0].toLocaleDateString()} - {weekDates[6].toLocaleDateString()}
                     </div>
-                    <button onClick={handleNextWeek} className="p-2 hover:bg-gray-200 rounded"><i className="fas fa-chevron-right"></i></button>
+                    <button onClick={handleNextWeek} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded transition-colors"><i className="fas fa-chevron-right"></i></button>
                 </div>
             </div>
 
@@ -108,10 +108,10 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
                 <div className="min-w-[800px] flex">
 
                     {/* Time Labels Column */}
-                    <div className="w-[50px] shrink-0 bg-gray-50 border-r sticky left-0 z-30">
-                        <div className="h-10 border-b bg-gray-50"></div> {/* Header spacer */}
+                    <div className="w-[50px] shrink-0 bg-gray-50 dark:bg-gray-900 border-r dark:border-gray-700 sticky left-0 z-30 transition-colors">
+                        <div className="h-10 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 transition-colors"></div> {/* Header spacer */}
                         {timeSlots.map(time => (
-                            <div key={time} className="h-12 border-b text-right pr-2 text-xs text-gray-500 font-mono flex items-center justify-end">
+                            <div key={time} className="h-12 border-b dark:border-gray-700 text-right pr-2 text-xs text-gray-500 dark:text-gray-400 font-mono flex items-center justify-end transition-colors">
                                 {time}
                             </div>
                         ))}
@@ -127,30 +127,30 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
                             const positionedBookings = calculateEventLayout(dayBookings);
 
                             return (
-                                <div key={i} className="flex-1 min-w-[100px] border-r last:border-0 relative">
+                                <div key={i} className="flex-1 min-w-[100px] border-r dark:border-gray-700 last:border-0 relative transition-colors">
                                     {/* Day Header */}
-                                    <div className="h-10 border-b bg-gray-50 text-center font-semibold text-gray-700 text-sm flex items-center justify-center sticky top-0 z-20">
+                                    <div className="h-10 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-center font-semibold text-gray-700 dark:text-gray-300 text-sm flex items-center justify-center sticky top-0 z-20 transition-colors">
                                         {displayDate(date)}
                                     </div>
 
                                     {/* Grid Lines */}
                                     <div className="relative">
                                         {timeSlots.map(time => (
-                                            <div key={time} className="h-12 border-b"></div>
+                                            <div key={time} className="h-12 border-b dark:border-gray-700 transition-colors"></div>
                                         ))}
 
                                         {/* Events Overlay */}
                                         {positionedBookings.map(booking => (
                                             <div
                                                 key={booking.ids[0]}
-                                                className="absolute bg-blue-100 border border-blue-300 rounded p-1 text-xs overflow-hidden transition-shadow hover:z-10 hover:shadow-md cursor-pointer"
+                                                className="absolute bg-blue-100 dark:bg-blue-900/50 border border-blue-300 dark:border-blue-700 rounded p-1 text-xs overflow-hidden transition-all hover:z-10 hover:shadow-md cursor-pointer"
                                                 style={getEventStyle(booking)}
                                                 onClick={() => onBookingClick && onBookingClick(booking)}
                                                 title="Click to edit booking"
                                             >
-                                                <div className="font-bold text-blue-900 truncate pointer-events-none">{booking.tool_name}</div>
-                                                <div className="text-blue-700 truncate text-[10px] pointer-events-none">{booking.project}</div>
-                                                <div className="text-blue-600 text-[10px] pointer-events-none">{booking.startTime} - {booking.endTime}</div>
+                                                <div className="font-bold text-blue-900 dark:text-blue-100 truncate pointer-events-none">{booking.tool_name}</div>
+                                                <div className="text-blue-700 dark:text-blue-300 truncate text-[10px] pointer-events-none">{booking.project}</div>
+                                                <div className="text-blue-600 dark:text-blue-400 text-[10px] pointer-events-none">{booking.startTime} - {booking.endTime}</div>
                                             </div>
                                         ))}
                                     </div>

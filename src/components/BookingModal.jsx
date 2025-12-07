@@ -437,18 +437,18 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
     };
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden m-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden m-4 transition-colors border dark:border-gray-700">
                 {/* Header */}
-                <div className="bg-blue-900 text-white p-4 flex justify-between items-center shrink-0">
+                <div className="bg-blue-900 dark:bg-blue-950 text-white p-4 flex justify-between items-center shrink-0 transition-colors">
                     <h2 className="text-xl font-bold"><i className="fas fa-calendar-alt mr-2"></i>Weekly Schedule</h2>
-                    <button onClick={onClose} className="hover:text-gray-300"><i className="fas fa-times text-xl"></i></button>
+                    <button onClick={onClose} className="hover:text-gray-300 transition-colors"><i className="fas fa-times text-xl"></i></button>
                 </div>
 
                 {/* Tool Info & Controls */}
-                <div className="p-4 border-b bg-gray-50 flex flex-col sm:flex-row justify-between items-center shrink-0 gap-4 sm:gap-0">
+                <div className="p-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row justify-between items-center shrink-0 gap-4 sm:gap-0 transition-colors">
                     <div className="text-center sm:text-left">
-                        <h3 className="font-bold text-lg text-gray-800">{tool.name}</h3>
+                        <h3 className="font-bold text-lg text-gray-800 dark:text-gray-200 transition-colors">{tool.name}</h3>
                         <div className="flex gap-2 text-sm mt-1 justify-center sm:justify-start">
                             <StatusBadge status={tool.status} />
                             {hasLicense ?
@@ -458,16 +458,16 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                         </div>
                     </div>
                     <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto justify-between sm:justify-end">
-                        <button onClick={handlePrevWeek} className="p-2 hover:bg-gray-200 rounded"><i className="fas fa-chevron-left"></i></button>
-                        <div className="font-bold text-gray-700 w-full sm:w-48 text-center text-sm sm:text-base">
+                        <button onClick={handlePrevWeek} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded transition-colors"><i className="fas fa-chevron-left"></i></button>
+                        <div className="font-bold text-gray-700 dark:text-gray-300 w-full sm:w-48 text-center text-sm sm:text-base transition-colors">
                             {weekDates[0].toLocaleDateString()} - {weekDates[6].toLocaleDateString()}
                         </div>
-                        <button onClick={handleNextWeek} className="p-2 hover:bg-gray-200 rounded"><i className="fas fa-chevron-right"></i></button>
+                        <button onClick={handleNextWeek} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded transition-colors"><i className="fas fa-chevron-right"></i></button>
                     </div>
                 </div>
 
                 {!canBook && (
-                    <div className="bg-red-50 border-b border-red-200 p-2 text-center text-red-700 text-sm font-bold shrink-0">
+                    <div className="bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-800 p-2 text-center text-red-700 dark:text-red-400 text-sm font-bold shrink-0 transition-colors">
                         {!isToolUp ? "Tool is currently down for maintenance." : "You do not have a license for this tool."}
                     </div>
                 )}
@@ -477,10 +477,10 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                     <div className="min-w-[800px] flex">
 
                         {/* Time Labels Column */}
-                        <div className="w-[50px] shrink-0 bg-gray-50 border-r sticky left-0 z-30">
-                            <div className="h-10 border-b bg-gray-50"></div>
+                        <div className="w-[50px] shrink-0 bg-gray-50 dark:bg-gray-900 border-r dark:border-gray-700 sticky left-0 z-30 transition-colors">
+                            <div className="h-10 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 transition-colors"></div>
                             {timeSlots.map(time => (
-                                <div key={time} className="h-12 border-b text-right pr-2 text-xs text-gray-500 font-mono flex items-center justify-end">
+                                <div key={time} className="h-12 border-b dark:border-gray-700 text-right pr-2 text-xs text-gray-500 dark:text-gray-400 font-mono flex items-center justify-end transition-colors">
                                     {time}
                                 </div>
                             ))}
@@ -498,9 +498,9 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                 const interactingBooking = interaction && interaction.originalBooking;
 
                                 return (
-                                    <div key={i} className="flex-1 min-w-[100px] border-r last:border-0 relative">
+                                    <div key={i} className="flex-1 min-w-[100px] border-r dark:border-gray-700 last:border-0 relative transition-colors">
                                         {/* Day Header */}
-                                        <div className="h-10 border-b bg-gray-50 text-center font-semibold text-gray-700 text-sm flex items-center justify-center sticky top-0 z-20">
+                                        <div className="h-10 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-center font-semibold text-gray-700 dark:text-gray-300 text-sm flex items-center justify-center sticky top-0 z-20 transition-colors">
                                             {displayDate(date)}
                                         </div>
 
@@ -514,7 +514,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                         key={time}
                                                         data-date={dateStr}
                                                         data-timeindex={tIndex}
-                                                        className={`h-12 border-b ${isSelected ? 'bg-blue-200' : ''} ${isPast ? 'bg-gray-100 cursor-not-allowed' : ''} touch-none`}
+                                                        className={`h-12 border-b dark:border-gray-700 ${isSelected ? 'bg-blue-200 dark:bg-blue-800' : ''} ${isPast ? 'bg-gray-200 dark:bg-black/40 cursor-not-allowed' : ''} touch-none transition-colors`}
                                                         onMouseDown={() => handleGridMouseDown(dateStr, tIndex)}
                                                         onMouseEnter={() => handleMouseEnter(dateStr, tIndex)}
                                                         onTouchStart={(e) => handleTouchStart(e, dateStr, tIndex)}
@@ -535,8 +535,8 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                 return (
                                                     <div
                                                         key={booking.ids[0]}
-                                                        className={`absolute border rounded p-1 text-xs overflow-hidden transition-shadow group 
-                                                            ${isOwnBooking ? 'bg-blue-100 border-blue-300' : 'bg-gray-100 border-gray-300'}
+                                                        className={`absolute border rounded p-1 text-xs overflow-hidden transition-all group 
+                                                            ${isOwnBooking ? 'bg-blue-100 dark:bg-blue-900/60 border-blue-300 dark:border-blue-700' : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600'}
                                                             ${canEdit ? 'hover:z-10 hover:shadow-md cursor-pointer' : ''}
                                                             ${editingBooking && editingBooking.id === booking.ids[0] ? 'ring-2 ring-blue-500 z-20' : ''}
                                                             `}
@@ -552,8 +552,8 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                             ></div>
                                                         )}
 
-                                                        <div className={`font-bold truncate pointer-events-none ${isOwnBooking ? 'text-blue-900' : 'text-gray-800'}`}>{booking.user_name}</div>
-                                                        <div className={`truncate text-[10px] pointer-events-none ${isOwnBooking ? 'text-blue-700' : 'text-gray-600'}`}>{booking.project}</div>
+                                                        <div className={`font-bold truncate pointer-events-none ${isOwnBooking ? 'text-blue-900 dark:text-blue-100' : 'text-gray-800 dark:text-gray-200'}`}>{booking.user_name}</div>
+                                                        <div className={`truncate text-[10px] pointer-events-none ${isOwnBooking ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'}`}>{booking.project}</div>
 
                                                         {canEdit && (
                                                             <div
@@ -597,20 +597,20 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 border-t bg-white flex flex-col-reverse sm:flex-row justify-end gap-3 shrink-0 z-30">
-                    <div className="mr-auto flex flex-wrap items-center gap-4 text-sm mb-2 sm:mb-0">
-                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-white border"></div> Available</div>
-                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-blue-200 rounded"></div> Selected</div>
-                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-blue-100 border border-blue-300 rounded"></div> My Booking</div>
-                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-gray-100 border border-gray-300 rounded"></div> Other's Booking</div>
+                <div className="p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col-reverse sm:flex-row justify-end gap-3 shrink-0 z-30 transition-colors">
+                    <div className="mr-auto flex flex-wrap items-center gap-4 text-sm mb-2 sm:mb-0 text-gray-600 dark:text-gray-400">
+                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-white dark:bg-gray-800 border dark:border-gray-600"></div> Available</div>
+                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-blue-200 dark:bg-blue-800 rounded"></div> Selected</div>
+                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-blue-100 dark:bg-blue-900/60 border border-blue-300 dark:border-blue-700 rounded"></div> My Booking</div>
+                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"></div> Other's Booking</div>
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <label className="text-sm font-medium text-gray-700">Project:</label>
+                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Project:</label>
                         <select
                             value={selectedProject}
                             onChange={(e) => setSelectedProject(e.target.value)}
-                            className="border rounded p-1 text-sm focus:ring-2 focus:ring-blue-500"
+                            className="border dark:border-gray-600 rounded p-1 text-sm focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
                         >
                             <option value="General">General</option>
                             {profile?.projects?.map((proj, idx) => (
@@ -619,7 +619,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                         </select>
                     </div>
 
-                    <button onClick={editingBooking ? handleCancelEdit : onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                    <button onClick={editingBooking ? handleCancelEdit : onClose} className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">Cancel</button>
                     <button
                         disabled={(selectedSlots.length === 0 && !editingBooking) || isSubmitting}
                         onClick={handleConfirmBooking}
