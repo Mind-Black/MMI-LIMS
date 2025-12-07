@@ -296,18 +296,20 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
             }
         };
 
-        const handleWindowTouchEnd = () => {
+        const handleSelectionEnd = () => {
             setIsSelecting(false);
             selectionRef.current = null;
         };
 
         // Add non-passive listener to allow preventing default
         window.addEventListener('touchmove', handleWindowTouchMove, { passive: false });
-        window.addEventListener('touchend', handleWindowTouchEnd);
+        window.addEventListener('touchend', handleSelectionEnd);
+        window.addEventListener('mouseup', handleSelectionEnd);
 
         return () => {
             window.removeEventListener('touchmove', handleWindowTouchMove);
-            window.removeEventListener('touchend', handleWindowTouchEnd);
+            window.removeEventListener('touchend', handleSelectionEnd);
+            window.removeEventListener('mouseup', handleSelectionEnd);
         };
     }, [isSelecting, weekDates]);
 
