@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import logo from '../assets/ktu_mmi.svg';
 import { groupBookings, getNextSlotTime } from '../utils/bookingUtils';
 import BookingModal from './BookingModal';
+import ConfirmModal from './ConfirmModal';
 import ToolList from './ToolList';
 import BookingList from './BookingList';
 import UserBookingsCalendar from './UserBookingsCalendar';
@@ -22,6 +23,8 @@ const Dashboard = ({ user, onLogout }) => {
 
     const [loading, setLoading] = useState(true);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+    const [bookingIdToCancel, setBookingIdToCancel] = useState(null);
 
     // Week State
     const [currentWeekStart, setCurrentWeekStart] = useState(() => {
@@ -133,22 +136,30 @@ const Dashboard = ({ user, onLogout }) => {
         }
     };
 
-    const initiateCancel = async (ids) => {
-        if (!confirm('Are you sure you want to cancel this booking?')) return;
+    const initiateCancel = (ids) => {
+        setBookingIdToCancel(ids);
+        setConfirmModalOpen(true);
+    };
+
+    const handleConfirmCancel = async () => {
+        if (!bookingIdToCancel) return;
 
         try {
             const { error } = await supabase
                 .from('bookings')
                 .delete()
-                .in('id', ids);
+                .in('id', bookingIdToCancel);
 
             if (error) throw error;
 
-            setBookings(bookings.filter(b => !ids.includes(b.id)));
+            setBookings(bookings.filter(b => !bookingIdToCancel.includes(b.id)));
             showToast("Booking has been cancelled.");
         } catch (error) {
             console.error('Error cancelling booking:', error);
             showToast('Failed to cancel booking.', 'error');
+        } finally {
+            setConfirmModalOpen(false);
+            setBookingIdToCancel(null);
         }
     };
 
@@ -472,6 +483,14 @@ const Dashboard = ({ user, onLogout }) => {
                     onUpdate={handleUpdateBooking}
                 />
             )}
+
+            <ConfirmModal
+                isOpen={confirmModalOpen}
+                title="Cancel Booking"
+                message="Are you sure you want to cancel this booking? This action cannot be undone."
+                onConfirm={handleConfirmCancel}
+                onCancel={() => { setConfirmModalOpen(false); setBookingIdToCancel(null); }}
+            />
         </div >
     );
 };

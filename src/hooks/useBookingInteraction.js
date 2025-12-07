@@ -34,10 +34,24 @@ export const useBookingInteraction = ({
         }
 
         const now = new Date();
+        const bookingStart = new Date(`${booking.date}T${booking.startTime}`);
         const bookingEnd = new Date(`${booking.date}T${booking.endTime}`);
+
         if (bookingEnd < now) {
             showToast('Cannot modify past bookings.', 'error');
             return;
+        }
+
+        const isInProgress = bookingStart <= now && bookingEnd > now;
+        if (isInProgress) {
+            if (type === 'move') {
+                showToast('Cannot move an in-progress booking. Only duration can be adjusted.', 'error');
+                return;
+            }
+            if (type === 'resize-top') {
+                showToast('Cannot change start time of an in-progress booking.', 'error');
+                return;
+            }
         }
 
         const rect = e.currentTarget.parentElement.getBoundingClientRect();
