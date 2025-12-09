@@ -21,7 +21,7 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
     // Helper to generate 30-min slots from 08:00 to 20:00
     const timeSlots = useMemo(() => {
         const slots = [];
-        for (let h = 8; h < 20; h++) {
+        for (let h = 7; h < 20; h++) {
             const hStr = h < 10 ? '0' + h : h;
             slots.push(`${hStr}:00`);
             slots.push(`${hStr}:30`);
