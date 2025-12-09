@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { timeToMinutes, minutesToTime, roundToNearestSlot, checkCollision } from '../utils/bookingUtils';
 
 const PIXELS_PER_30_MINS = 48;
-const START_HOUR = 8;
+const START_HOUR = 0;
 
 export const useBookingInteraction = ({
     weekDates,
