@@ -150,7 +150,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
     });
 
     const PIXELS_PER_30_MINS = 48;
-    const START_HOUR = 8;
+    const START_HOUR = 0;
 
     const getEventStyle = (booking) => {
         const startHour = parseInt(booking.startTime.split(':')[0]);
