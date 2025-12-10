@@ -125,7 +125,9 @@ const Dashboard = ({ user, onLogout }) => {
             return bookingEnd < now;
         });
 
-        if (hasPastBooking) {
+        const isAdminOverride = profile?.access_level === 'admin' && activeTab === 'all_bookings';
+
+        if (hasPastBooking && !isAdminOverride) {
             showToast('Cannot create bookings in the past.', 'error');
             return;
         }
