@@ -82,7 +82,14 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
     const isSlotInPast = (dateStr, timeStr) => {
         const now = new Date();
         const slotDate = new Date(`${dateStr}T${timeStr}`);
-        return slotDate < now;
+
+        // Calculate the start of the current half-hour slot
+        const currentSlotStart = new Date(now);
+        const currentMinutes = now.getMinutes();
+        const roundedMinutes = currentMinutes < 30 ? 0 : 30;
+        currentSlotStart.setMinutes(roundedMinutes, 0, 0);
+
+        return slotDate < currentSlotStart;
     };
 
     const isSlotBooked = (dateStr, timeStr) => {
@@ -660,6 +667,15 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                 const isOwnBooking = booking.user_id === user.id;
                                                 const canEdit = isAdmin || isOwnBooking;
 
+                                                const now = new Date();
+                                                const bookingStart = new Date(`${booking.date}T${booking.startTime}`);
+                                                const isStarted = bookingStart <= now;
+
+                                                // Disable moving/resizing start if booking has already started
+                                                const canMove = canEdit && !isStarted;
+                                                const canResizeTop = canEdit && !isStarted;
+                                                const canResizeBottom = canEdit; // Always allow extending/shortening end time
+
                                                 return (
                                                     <div
                                                         key={booking.ids[0]}
@@ -669,14 +685,14 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                             ${editingBooking && editingBooking.id === booking.ids[0] ? 'ring-2 ring-blue-500 z-20' : ''}
                                                             `}
                                                         style={getEventStyle(booking)}
-                                                        onMouseDown={(e) => canEdit && startInteraction(e, booking, 'move')}
-                                                        onTouchStart={(e) => canEdit && handleBookingTouchStart(e, booking, 'move')}
+                                                        onMouseDown={(e) => canMove && startInteraction(e, booking, 'move')}
+                                                        onTouchStart={(e) => canMove && handleBookingTouchStart(e, booking, 'move')}
                                                         onTouchMove={handleBookingTouchMove}
                                                         onTouchEnd={handleBookingTouchEnd}
                                                         onClick={(e) => handleBookingClick(e, booking)}
                                                         title={`Booked by: ${booking.user_name}\nProject: ${booking.project}`}
                                                     >
-                                                        {canEdit && (
+                                                        {canResizeTop && (
                                                             <div
                                                                 className="absolute top-0 left-0 right-0 h-3 z-20 cursor-ns-resize opacity-0 group-hover:opacity-100 bg-blue-400/20"
                                                                 onMouseDown={(e) => { e.stopPropagation(); startInteraction(e, booking, 'resize-top'); }}

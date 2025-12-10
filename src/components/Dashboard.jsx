@@ -236,7 +236,7 @@ const Dashboard = ({ user, onLogout }) => {
 
             // Update local state
             setBookings(prev => {
-                // Remove deleted ones
+                // Remove deleted ones (legacy handling)
                 let updated = prev;
                 if (oldIds.length > 1) {
                     updated = prev.filter(b => !oldIds.slice(1).includes(b.id));
