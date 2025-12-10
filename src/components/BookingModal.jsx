@@ -4,7 +4,7 @@ import { useToast } from '../context/ToastContext';
 import { getNextSlotTime, groupBookings, checkCollision, calculateEventLayout } from '../utils/bookingUtils';
 import { useBookingInteraction } from '../hooks/useBookingInteraction';
 
-const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, existingBookings = [], initialDate, isAdminOverride = false }) => {
+const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCancel, existingBookings = [], initialDate, isAdminOverride = false }) => {
     // Initialize week start to current week's Monday
     const [currentWeekStart, setCurrentWeekStart] = useState(() => {
         const d = initialDate ? new Date(initialDate) : new Date();
@@ -213,6 +213,14 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
 
     const handleCancelEdit = () => {
         setEditingBooking(null);
+    };
+
+    const handleCancelClick = (e, booking) => {
+        e.stopPropagation();
+        if (onCancel && booking && booking.ids) {
+            onCancel(booking.ids);
+            setEditingBooking(null); // Deselect after cancelling
+        }
     };
 
     // --- Selection Handlers (Create New) ---
@@ -704,7 +712,18 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                         )}
 
                                                         <div className={`font-bold truncate pointer-events-none ${isOwnBooking ? 'text-blue-900 dark:text-blue-100' : 'text-gray-800 dark:text-gray-200'}`}>{booking.user_name}</div>
+
                                                         <div className={`truncate text-[10px] pointer-events-none ${isOwnBooking ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'}`}>{booking.project}</div>
+
+                                                        {editingBooking && editingBooking.id === booking.ids[0] && (isAdmin || isOwnBooking) && (!isStarted || isAdminOverride) && (
+                                                            <div
+                                                                className="absolute top-0 right-0 p-1 cursor-pointer text-red-600 hover:text-red-800 bg-white/50 hover:bg-white rounded-bl z-30"
+                                                                onClick={(e) => handleCancelClick(e, booking)}
+                                                                title="Cancel Booking"
+                                                            >
+                                                                <i className="fas fa-times text-xs"></i>
+                                                            </div>
+                                                        )}
 
                                                         {canEdit && (
                                                             <div

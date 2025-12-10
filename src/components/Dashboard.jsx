@@ -512,6 +512,7 @@ const Dashboard = ({ user, onLogout }) => {
                     onClose={() => { setSelectedTool(null); setInitialDate(null); }}
                     onConfirm={handleBookTool}
                     onUpdate={handleUpdateBooking}
+                    onCancel={initiateCancel}
                     isAdminOverride={profile?.access_level === 'admin' && activeTab === 'all_bookings'}
                 />
             )}
