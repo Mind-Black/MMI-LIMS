@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import { groupBookings, calculateEventLayout } from '../utils/bookingUtils';
 
 const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBookingClick }) => {
+    const scrollContainerRef = useRef(null);
 
     // Helper to get dates for the week
     const weekDates = useMemo(() => {
@@ -29,6 +30,21 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
         return slots;
     }, []);
 
+    const PIXELS_PER_30_MINS = 48;
+    const START_HOUR = 0;
+
+    // Scroll to 9 AM on mount
+    useEffect(() => {
+        if (scrollContainerRef.current) {
+            // 9 AM is 9 hours from start (00:00)
+            const hoursFromStart = 9 - START_HOUR;
+            const slotsFromStart = hoursFromStart * 2; // 2 slots per hour
+            const pixelsToScroll = slotsFromStart * PIXELS_PER_30_MINS;
+
+            scrollContainerRef.current.scrollTop = pixelsToScroll;
+        }
+    }, []);
+
     const formatDate = (date) => {
         try {
             return date.toISOString().split('T')[0];
@@ -49,9 +65,6 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
     const groupedBookings = useMemo(() => {
         return groupBookings(bookings);
     }, [bookings]);
-
-    const PIXELS_PER_30_MINS = 48;
-    const START_HOUR = 0;
 
     const getEventStyle = (booking) => {
         const startHour = parseInt(booking.startTime.split(':')[0]);
@@ -90,7 +103,7 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
     };
 
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 flex flex-col overflow-hidden h-[600px] transition-colors">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 flex flex-col overflow-hidden h-[950px] transition-colors">
             {/* Header */}
             <div className="p-1 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center shrink-0 transition-colors">
                 {/* <h3 className="font-bold text-gray-800 text-lg">Weekly Schedule</h3> */}
@@ -104,7 +117,7 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
             </div>
 
             {/* Calendar Grid Container */}
-            <div className="flex-1 overflow-auto custom-scroll relative select-none">
+            <div ref={scrollContainerRef} className="flex-1 overflow-auto custom-scroll relative select-none">
                 <div className="min-w-[800px] flex">
 
                     {/* Time Labels Column */}

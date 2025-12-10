@@ -10,7 +10,7 @@ import UserBookingsCalendar from './UserBookingsCalendar';
 import UserManagement from './UserManagement';
 import { useToast } from '../context/ToastContext';
 import { useTheme } from '../context/ThemeContext';
-import AnalyticsCharts from './AnalyticsCharts';
+
 
 const Dashboard = ({ user, onLogout }) => {
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -372,87 +372,90 @@ const Dashboard = ({ user, onLogout }) => {
 
                     {/* TAB: DASHBOARD */}
                     {activeTab === 'dashboard' && (
-                        <div className="space-y-6">
-                            {/* Top Section: Charts & Quick Book */}
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                {/* Analytics Chart (2/3 width) */}
-                                <div className="lg:col-span-2">
-                                    <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">Bookings This Week</h3>
-                                    <AnalyticsCharts bookings={bookings} currentWeekStart={currentWeekStart} />
-                                </div>
-
-                                {/* Quick Book Section (1/3 width) */}
-                                <div className="lg:col-span-1">
-                                    {recentTools.length > 0 ? (
-                                        <div className="h-full flex flex-col">
-                                            <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">Quick Book</h3>
-                                            <div className="grid grid-cols-1 gap-4">
-                                                {recentTools.map(tool => (
-                                                    <div key={tool.id} className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border dark:border-gray-700 hover:shadow-md transition cursor-pointer flex justify-between items-center group" onClick={() => setSelectedTool(tool)}>
-                                                        <div>
-                                                            <div className="font-bold text-gray-800 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{tool.name}</div>
-                                                            <div className="text-xs text-gray-500 dark:text-gray-400">{tool.category}</div>
-                                                        </div>
-                                                        <div className="h-8 w-8 bg-blue-50 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:bg-blue-100 dark:group-hover:bg-blue-800/50 transition-colors">
-                                                            <i className="fas fa-plus"></i>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="h-full flex items-center justify-center text-gray-400 italic">
-                                            No recent tools found.
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* My Bookings Calendar Card */}
-                            <div>
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+                            {/* Left Column: My Bookings Calendar (2/3 width) */}
+                            <div className="lg:col-span-2 flex flex-col">
                                 <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">My Bookings Calendar</h3>
-                                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-4 transition-colors">
-                                    <UserBookingsCalendar
-                                        bookings={myBookings}
-                                        allBookings={bookings}
-                                        onUpdate={handleUpdateBooking}
-                                        currentWeekStart={currentWeekStart}
-                                        onWeekChange={setCurrentWeekStart}
-                                        onBookingClick={handleBookingClick}
-                                    />
-                                </div>
+                                <UserBookingsCalendar
+                                    bookings={myBookings}
+                                    allBookings={bookings}
+                                    onUpdate={handleUpdateBooking}
+                                    currentWeekStart={currentWeekStart}
+                                    onWeekChange={setCurrentWeekStart}
+                                    onBookingClick={handleBookingClick}
+                                />
                             </div>
 
-                            {/* Booking List Card */}
-                            <div>
-                                <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">Upcoming Bookings</h3>
-                                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-4 transition-colors mb-6">
-                                    <BookingList
-                                        bookings={myBookings.filter(b => {
-                                            const end = new Date(`${b.date}T${b.end_time || b.endTime}`);
-                                            return end >= new Date();
-                                        })}
-                                        allBookings={bookings}
-                                        onCancel={initiateCancel}
-                                        onUpdate={handleUpdateBooking}
-                                        onEdit={handleBookingClick}
-                                    />
+                            {/* Right Column: Panels (1/3 width) */}
+                            <div className="lg:col-span-1 flex flex-col gap-6">
+
+                                {/* Panel 1: Quick Book */}
+                                <div className="flex flex-col">
+                                    <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">Quick Book</h3>
+                                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 transition-colors flex flex-col max-h-[350px]">
+                                        <div className="overflow-y-auto p-4 custom-scroll">
+                                            {recentTools.length > 0 ? (
+                                                <div className="grid grid-cols-1 gap-4">
+                                                    {recentTools.map(tool => (
+                                                        <div key={tool.id} className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg border dark:border-gray-700 hover:shadow-md transition cursor-pointer flex justify-between items-center group" onClick={() => setSelectedTool(tool)}>
+                                                            <div>
+                                                                <div className="font-bold text-sm text-gray-800 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{tool.name}</div>
+                                                                <div className="text-xs text-gray-500 dark:text-gray-400">{tool.category}</div>
+                                                            </div>
+                                                            <div className="h-6 w-6 bg-white dark:bg-gray-800 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:bg-blue-100 dark:group-hover:bg-blue-800/50 transition-colors shadow-sm">
+                                                                <i className="fas fa-plus text-xs"></i>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center justify-center text-gray-400 italic py-4">
+                                                    No recent tools found.
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
 
-                                <h3 className="font-bold text-gray-600 dark:text-gray-400 mb-4">Past Bookings</h3>
-                                <div className="bg-gray-50 dark:bg-gray-900 rounded-lg shadow-sm border dark:border-gray-700 p-4 transition-colors">
-                                    <BookingList
-                                        bookings={myBookings.filter(b => {
-                                            const end = new Date(`${b.date}T${b.end_time || b.endTime}`);
-                                            return end < new Date();
-                                        })}
-                                        allBookings={bookings}
-                                        onCancel={initiateCancel}
-                                        onUpdate={handleUpdateBooking}
-                                        onEdit={handleBookingClick}
-                                        readOnly={true}
-                                    />
+                                {/* Panel 2: Upcoming Bookings */}
+                                <div className="flex flex-col">
+                                    <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">Upcoming Bookings</h3>
+                                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 transition-colors flex flex-col max-h-[350px]">
+                                        <div className="overflow-y-auto p-4 custom-scroll">
+                                            <BookingList
+                                                bookings={myBookings.filter(b => {
+                                                    const end = new Date(`${b.date}T${b.end_time || b.endTime}`);
+                                                    return end >= new Date();
+                                                })}
+                                                allBookings={bookings}
+                                                onCancel={initiateCancel}
+                                                onUpdate={handleUpdateBooking}
+                                                onEdit={handleBookingClick}
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
+
+                                {/* Panel 3: Past Bookings */}
+                                <div className="flex flex-col">
+                                    <h3 className="font-bold text-gray-600 dark:text-gray-400 mb-4">Past Bookings</h3>
+                                    <div className="bg-gray-50 dark:bg-gray-900 rounded-lg shadow-sm border dark:border-gray-700 transition-colors flex flex-col max-h-[350px]">
+                                        <div className="overflow-y-auto p-4 custom-scroll">
+                                            <BookingList
+                                                bookings={myBookings.filter(b => {
+                                                    const end = new Date(`${b.date}T${b.end_time || b.endTime}`);
+                                                    return end < new Date();
+                                                })}
+                                                allBookings={bookings}
+                                                onCancel={initiateCancel}
+                                                onUpdate={handleUpdateBooking}
+                                                onEdit={handleBookingClick}
+                                                readOnly={true}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
                             </div>
                         </div>
                     )}
