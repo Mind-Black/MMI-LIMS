@@ -9,6 +9,7 @@ export const useBookingInteraction = ({
     existingBookings,
     user,
     isAdmin,
+    isAdminOverride,
     onInteractionEnd,
     showToast
 }) => {
@@ -37,7 +38,7 @@ export const useBookingInteraction = ({
         const bookingStart = new Date(`${booking.date}T${booking.startTime}`);
         const bookingEnd = new Date(`${booking.date}T${booking.endTime}`);
 
-        if (bookingEnd < now) {
+        if (bookingEnd < now && !isAdminOverride) {
             showToast('Cannot modify past bookings.', 'error');
             return;
         }
@@ -45,8 +46,10 @@ export const useBookingInteraction = ({
         const isInProgress = bookingStart <= now && bookingEnd > now;
         if (isInProgress) {
             if (type === 'move') {
-                showToast('Cannot move an in-progress booking. Only duration can be adjusted.', 'error');
-                return;
+                if (!isAdminOverride) {
+                    showToast('Cannot move an in-progress booking. Only duration can be adjusted.', 'error');
+                    return;
+                }
             }
             if (type === 'resize-top') {
                 showToast('Cannot change start time of an in-progress booking.', 'error');
@@ -190,9 +193,9 @@ export const useBookingInteraction = ({
             const isActive = new Date(`${data.originalBooking.date}T${data.originalBooking.startTime}`) <= now && new Date(`${data.originalBooking.date}T${data.originalBooking.endTime}`) > now;
 
             // If active, start time is allowed to be in the past. Otherwise, it must be future.
-            const isFuture = isActive ? true : newStartDateTime >= now;
+            const isFuture = isActive || isAdminOverride ? true : newStartDateTime >= now;
 
-            const isEndTimeValid = !isActive || new Date(`${newDate}T${newEndTime}`) > now;
+            const isEndTimeValid = !isActive || isAdminOverride || new Date(`${newDate}T${newEndTime}`) > now;
 
             let isValid = isValidTime && isFuture && isEndTimeValid;
 

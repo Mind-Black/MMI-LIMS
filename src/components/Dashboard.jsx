@@ -158,7 +158,9 @@ const Dashboard = ({ user, onLogout }) => {
             return start <= now && end > now;
         });
 
-        if (hasInProgress) {
+        const isAdminOverride = profile?.access_level === 'admin' && activeTab === 'all_bookings';
+
+        if (hasInProgress && !isAdminOverride) {
             showToast('Cannot cancel an in-progress booking.', 'error');
             return;
         }
@@ -215,7 +217,10 @@ const Dashboard = ({ user, onLogout }) => {
             // Validate past bookings
             const now = new Date();
             const bookingEnd = new Date(`${newBooking.date}T${newBooking.end_time || newBooking.endTime}`);
-            if (bookingEnd < now) {
+
+            const isAdminOverride = profile?.access_level === 'admin' && activeTab === 'all_bookings';
+
+            if (bookingEnd < now && !isAdminOverride) {
                 throw new Error('Cannot move booking to the past.');
             }
 
@@ -507,6 +512,7 @@ const Dashboard = ({ user, onLogout }) => {
                     onClose={() => { setSelectedTool(null); setInitialDate(null); }}
                     onConfirm={handleBookTool}
                     onUpdate={handleUpdateBooking}
+                    isAdminOverride={profile?.access_level === 'admin' && activeTab === 'all_bookings'}
                 />
             )}
 

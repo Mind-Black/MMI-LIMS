@@ -4,7 +4,7 @@ import { useToast } from '../context/ToastContext';
 import { getNextSlotTime, groupBookings, checkCollision, calculateEventLayout } from '../utils/bookingUtils';
 import { useBookingInteraction } from '../hooks/useBookingInteraction';
 
-const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, existingBookings = [], initialDate }) => {
+const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, existingBookings = [], initialDate, isAdminOverride = false }) => {
     // Initialize week start to current week's Monday
     const [currentWeekStart, setCurrentWeekStart] = useState(() => {
         const d = initialDate ? new Date(initialDate) : new Date();
@@ -31,7 +31,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
     const isAdmin = profile?.access_level === 'admin';
     const hasLicense = Array.isArray(profile?.licenses) ? profile.licenses.includes(tool.id) : false;
     const isToolUp = tool.status === 'up';
-    const canBook = isAdmin || (hasLicense && isToolUp);
+    const canBook = isAdmin || (hasLicense && isToolUp) || isAdminOverride;
 
     // Helper to get dates for the week
     const weekDates = useMemo(() => {
@@ -149,6 +149,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
         existingBookings: displayBookings, // Use displayBookings to avoid colliding with hidden ghosts
         user,
         isAdmin,
+        isAdminOverride,
         onInteractionEnd: (newBooking) => {
             console.log('onInteractionEnd called with:', newBooking);
             setEditingBooking(newBooking);
@@ -223,7 +224,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
         // Don't start selection if clicking on an existing booking (handled by stopPropagation, but safety check)
         const timeStr = timeSlots[timeIndex];
         if (isSlotBooked(dateStr, timeStr)) return;
-        if (isSlotInPast(dateStr, timeStr)) {
+        if (isSlotInPast(dateStr, timeStr) && !isAdminOverride) {
             showToast('Cannot book in the past.', 'error');
             return;
         }
@@ -265,7 +266,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
             for (let t = minT; t <= maxT; t++) {
                 const dStr = formatDate(weekDates[d]);
                 const tStr = timeSlots[t];
-                if (!isSlotBooked(dStr, tStr) && !isSlotInPast(dStr, tStr)) {
+                if (!isSlotBooked(dStr, tStr) && (isAdminOverride || !isSlotInPast(dStr, tStr))) {
                     newSlots.push({ date: dStr, time: tStr });
                 }
             }
@@ -330,7 +331,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
 
             const timeStr = timeSlots[timeIndex];
             if (isSlotBooked(dateStr, timeStr)) return;
-            if (isSlotInPast(dateStr, timeStr)) {
+            if (isSlotInPast(dateStr, timeStr) && !isAdminOverride) {
                 showToast('Cannot book in the past.', 'error');
                 return;
             }
@@ -672,8 +673,8 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, exist
                                                 const isStarted = bookingStart <= now;
 
                                                 // Disable moving/resizing start if booking has already started
-                                                const canMove = canEdit && !isStarted;
-                                                const canResizeTop = canEdit && !isStarted;
+                                                const canMove = canEdit && (!isStarted || isAdminOverride);
+                                                const canResizeTop = canEdit && (!isStarted || isAdminOverride);
                                                 const canResizeBottom = canEdit; // Always allow extending/shortening end time
 
                                                 return (
