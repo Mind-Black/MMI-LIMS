@@ -20,6 +20,7 @@ const Dashboard = ({ user, onLogout }) => {
 
     const [selectedTool, setSelectedTool] = useState(null);
     const [initialDate, setInitialDate] = useState(null);
+    const [targetBooking, setTargetBooking] = useState(null);
 
     const [loading, setLoading] = useState(true);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -279,6 +280,7 @@ const Dashboard = ({ user, onLogout }) => {
         if (tool) {
             setSelectedTool(tool);
             setInitialDate(booking.date);
+            setTargetBooking(booking);
         } else {
             showToast('Tool details not found.', 'error');
         }
@@ -512,7 +514,8 @@ const Dashboard = ({ user, onLogout }) => {
                     profile={profile}
                     existingBookings={bookings}
                     initialDate={initialDate}
-                    onClose={() => { setSelectedTool(null); setInitialDate(null); }}
+                    initialBooking={targetBooking}
+                    onClose={() => { setSelectedTool(null); setInitialDate(null); setTargetBooking(null); }}
                     onConfirm={handleBookTool}
                     onUpdate={handleUpdateBooking}
                     onCancel={initiateCancel}

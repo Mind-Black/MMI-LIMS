@@ -4,7 +4,7 @@ import { useToast } from '../context/ToastContext';
 import { getNextSlotTime, groupBookings, checkCollision, calculateEventLayout } from '../utils/bookingUtils';
 import { useBookingInteraction } from '../hooks/useBookingInteraction';
 
-const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCancel, existingBookings = [], initialDate, isAdminOverride = false }) => {
+const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCancel, existingBookings = [], initialDate, initialBooking = null, isAdminOverride = false }) => {
     // Initialize week start to current week's Monday
     const [currentWeekStart, setCurrentWeekStart] = useState(() => {
         const d = initialDate ? new Date(initialDate) : new Date();
@@ -17,8 +17,12 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
 
     const [selectedSlots, setSelectedSlots] = useState([]); // Array of {date, time}
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [editingBooking, setEditingBooking] = useState(null); // Booking being edited locally
-    const [selectedProject, setSelectedProject] = useState('General'); // Default to General
+
+    // Initialize editing state if a booking is passed
+    const [editingBooking, setEditingBooking] = useState(initialBooking || null);
+    const [selectedProject, setSelectedProject] = useState(initialBooking ? initialBooking.project : 'General');
+
+    const scrollContainerRef = useRef(null);
 
     // Selection State (for creating new bookings)
     const [isSelecting, setIsSelecting] = useState(false);
@@ -58,6 +62,41 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
         }
         return slots;
     }, []);
+
+    const PIXELS_PER_30_MINS = 48;
+    const START_HOUR = 0;
+
+    // Scroll Logic
+    useEffect(() => {
+        if (scrollContainerRef.current) {
+            let targetHour = 9;
+            let targetMin = 0;
+
+            if (initialBooking) {
+                // If editing, scroll to booking start
+                const timeStr = initialBooking.time || initialBooking.startTime;
+                if (timeStr) {
+                    const [h, m] = timeStr.split(':').map(Number);
+                    targetHour = h;
+                    targetMin = m;
+                }
+            }
+
+            const hoursFromStart = targetHour - START_HOUR;
+            const minutesFromStart = targetMin;
+            // Calculate total minutes offset from start hour (00:00)
+            const totalMinutes = (hoursFromStart * 60) + minutesFromStart;
+
+            // Convert to pixels (PIXELS_PER_30_MINS = 48px for 30mins = 1.6px per minute)
+            const pixelsToScroll = (totalMinutes / 30) * PIXELS_PER_30_MINS;
+
+            // Add a little padding (e.g. 1 hour before) if possible, but keeping it simple for now
+            // Or if it's new booking (9am), exact scroll is fine. 
+            // If it's edit, maybe subtract a bit to see context? Let's just scroll to exact start for now as requested.
+
+            scrollContainerRef.current.scrollTop = pixelsToScroll;
+        }
+    }, []); // Run once on mount
 
     const formatDate = (date) => {
         try {
@@ -157,8 +196,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
         showToast
     });
 
-    const PIXELS_PER_30_MINS = 48;
-    const START_HOUR = 0;
+
 
     const getEventStyle = (booking) => {
         const startHour = parseInt(booking.startTime.split(':')[0]);
@@ -617,7 +655,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                 )}
 
                 {/* Calendar Grid Container */}
-                <div className="flex-1 overflow-auto custom-scroll relative select-none">
+                <div ref={scrollContainerRef} className="flex-1 overflow-auto custom-scroll relative select-none">
                     <div className="min-w-[800px] flex">
 
                         {/* Time Labels Column */}
