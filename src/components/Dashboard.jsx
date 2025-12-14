@@ -379,7 +379,64 @@ const Dashboard = ({ user, onLogout }) => {
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
                             {/* Left Column: My Bookings Calendar (2/3 width) */}
                             <div className="lg:col-span-2 flex flex-col">
-                                <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">My Bookings Calendar</h3>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="font-bold text-gray-800 dark:text-gray-200">My Bookings Calendar</h3>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    let token = profile?.calendar_token;
+                                                    if (!token) {
+                                                        token = crypto.randomUUID();
+                                                        const { error } = await supabase
+                                                            .from('profiles')
+                                                            .update({ calendar_token: token })
+                                                            .eq('id', user.id);
+
+                                                        if (error) throw error;
+                                                        setProfile({ ...profile, calendar_token: token });
+                                                    }
+
+                                                    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/serve-ics?token=${token}`;
+                                                    await navigator.clipboard.writeText(url);
+                                                    showToast('Calendar URL copied to clipboard!', 'success');
+                                                } catch (error) {
+                                                    console.error('Error getting calendar link:', error);
+                                                    showToast('Failed to generate calendar link', 'error');
+                                                }
+                                            }}
+                                            className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center gap-2 transition-colors"
+                                            title="Get synchronized calendar link (ICS)"
+                                        >
+                                            <i className="fas fa-sync-alt"></i> Sync Calendar
+                                        </button>
+                                        {profile?.calendar_token && (
+                                            <button
+                                                onClick={async () => {
+                                                    if (!confirm('Are you sure you want to reset your calendar link? The old link will stop working.')) return;
+                                                    try {
+                                                        const token = crypto.randomUUID();
+                                                        const { error } = await supabase
+                                                            .from('profiles')
+                                                            .update({ calendar_token: token })
+                                                            .eq('id', user.id);
+
+                                                        if (error) throw error;
+                                                        setProfile({ ...profile, calendar_token: token });
+                                                        showToast('Calendar link reset. Please copy the new link.', 'success');
+                                                    } catch (error) {
+                                                        console.error('Error resetting token:', error);
+                                                        showToast('Failed to reset link', 'error');
+                                                    }
+                                                }}
+                                                className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 flex items-center gap-2 transition-colors"
+                                                title="Reset calendar link"
+                                            >
+                                                <i className="fas fa-redo"></i>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
                                 <UserBookingsCalendar
                                     bookings={myBookings}
                                     allBookings={bookings}
