@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { groupBookings, calculateEventLayout } from '../utils/bookingUtils';
 
 const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBookingClick }) => {
@@ -32,6 +32,30 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
 
     const PIXELS_PER_30_MINS = 48;
     const START_HOUR = 0;
+
+    const [currentTime, setCurrentTime] = useState(new Date());
+
+    useEffect(() => {
+        // Update time every minute
+        const timer = setInterval(() => {
+            setCurrentTime(new Date());
+        }, 60000);
+        return () => clearInterval(timer);
+    }, []);
+
+    const getCurrentTimeTop = () => {
+        const hours = currentTime.getHours();
+        const minutes = currentTime.getMinutes();
+        const totalMinutes = (hours - START_HOUR) * 60 + minutes;
+        return (totalMinutes / 30) * PIXELS_PER_30_MINS;
+    };
+
+    const isToday = (date) => {
+        const today = new Date();
+        return date.getDate() === today.getDate() &&
+            date.getMonth() === today.getMonth() &&
+            date.getFullYear() === today.getFullYear();
+    };
 
     // Scroll to 9 AM on mount
     useEffect(() => {
@@ -151,6 +175,17 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
                                         {timeSlots.map(time => (
                                             <div key={time} className="h-12 border-b dark:border-gray-700 transition-colors"></div>
                                         ))}
+
+                                        {/* Current Time Indicator */}
+                                        {isToday(date) && (
+                                            <div
+                                                className="absolute w-full border-b-2 border-red-500 z-40 pointer-events-none"
+                                                style={{ top: `${getCurrentTimeTop()}px` }}
+                                                title="Current Time"
+                                            >
+                                                <div className="absolute -left-1 -top-[4px] w-2 h-2 bg-red-500 rounded-full"></div>
+                                            </div>
+                                        )}
 
                                         {/* Events Overlay */}
                                         {positionedBookings.map(booking => (

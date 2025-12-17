@@ -29,6 +29,13 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
     const selectionRef = useRef(null); // { startDIndex, startTIndex, currentDIndex, currentTIndex }
     const longPressTimer = useRef(null);
 
+    const [currentTime, setCurrentTime] = useState(new Date());
+
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+        return () => clearInterval(timer);
+    }, []);
+
     const { showToast } = useToast();
 
     // Validation
@@ -149,6 +156,21 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
 
             return (slotStart < bEnd && slotEnd > bStart);
         });
+
+    };
+
+    const getCurrentTimeTop = () => {
+        const hours = currentTime.getHours();
+        const minutes = currentTime.getMinutes();
+        const totalMinutes = (hours - START_HOUR) * 60 + minutes;
+        return (totalMinutes / 30) * PIXELS_PER_30_MINS;
+    };
+
+    const isToday = (date) => {
+        const today = new Date();
+        return date.getDate() === today.getDate() &&
+            date.getMonth() === today.getMonth() &&
+            date.getFullYear() === today.getFullYear();
     };
 
     // Group bookings for display
@@ -705,6 +727,16 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                                                     ></div>
                                                 );
                                             })}
+
+                                            {/* Current Time Indicator */}
+                                            {isToday(date) && (
+                                                <div
+                                                    className="absolute w-full border-b-2 border-red-500 z-40 pointer-events-none"
+                                                    style={{ top: `${getCurrentTimeTop()}px` }}
+                                                >
+                                                    <div className="absolute -left-1 -top-[4px] w-2 h-2 bg-red-500 rounded-full"></div>
+                                                </div>
+                                            )}
 
                                             {/* Existing Bookings Overlay */}
                                             {positionedBookings.map(booking => {
