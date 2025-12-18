@@ -1,9 +1,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { zonedTimeToUtc } from 'https://esm.sh/date-fns-tz@2.0.0'
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
+
+const TIMEZONE = 'Europe/Vilnius'
 
 Deno.serve(async (req) => {
     // Handle CORS preflight requests
@@ -75,10 +78,13 @@ Deno.serve(async (req) => {
             const toolName = booking.tools?.name || 'Unknown Tool'
             const location = booking.tools?.location || 'Lab'
 
-            // Format dates: YYYYMMDDTHHMMSSZ
-            // Assuming booking.date is YYYY-MM-DD and booking.time/end_time is HH:MM or HH:MM:SS
-            const startDateTime = new Date(`${booking.date}T${booking.time || booking.startTime}`)
-            const endDateTime = new Date(`${booking.date}T${booking.end_time || booking.endTime}`)
+            // Construct date string: YYYY-MM-DDTHH:MM:SS
+            const startDateStr = `${booking.date}T${booking.time || booking.startTime}`
+            const endDateStr = `${booking.date}T${booking.end_time || booking.endTime}`
+
+            // Convert Vilnius time to UTC Date object
+            const startDateTime = zonedTimeToUtc(startDateStr, TIMEZONE)
+            const endDateTime = zonedTimeToUtc(endDateStr, TIMEZONE)
 
             const formatICSDate = (date: Date) => {
                 return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
