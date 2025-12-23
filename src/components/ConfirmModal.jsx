@@ -28,10 +28,10 @@ const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel, showCheckbo
                     )}
                 </div>
                 <div className="mt-6 flex gap-3">
-                    <button onClick={onCancel} disabled={isLoading} className="w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-700 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 sm:text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    <button onClick={onCancel} disabled={isLoading} className="btn btn-secondary w-full">
                         Cancel
                     </button>
-                    <button onClick={onConfirm} disabled={isLoading} className="w-full inline-flex justify-center items-center gap-2 rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 hover:bg-red-700 text-base font-medium text-white sm:text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    <button onClick={onConfirm} disabled={isLoading} className="btn btn-danger w-full flex justify-center items-center gap-2">
                         {isLoading && <i className="fas fa-spinner fa-spin"></i>}
                         Confirm
                     </button>

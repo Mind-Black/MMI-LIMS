@@ -354,7 +354,7 @@ const Dashboard = ({ user, onLogout }) => {
 
             {/* Sidebar */}
             <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 shadow-lg flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="h-16 flex items-center justify-center border-b border-blue-900 bg-blue-900 dark:bg-blue-950 text-white transition-colors">
+                <div className="h-16 flex items-center justify-center border-b border-blue-900 lims-header transition-colors">
                     <div className="font-bold text-xl tracking-wider flex items-center">
                         <img src={logo} alt="Logo" className="h-8 mr-2 brightness-0 invert" />
                         MMI-LIMS
@@ -498,7 +498,7 @@ const Dashboard = ({ user, onLogout }) => {
                                 {/* Panel 1: Quick Book */}
                                 <div className="flex flex-col">
                                     <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">Quick Book</h3>
-                                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 transition-colors flex flex-col max-h-[350px]">
+                                    <div className="card max-h-[350px] flex flex-col p-0">
                                         <div className="overflow-y-auto p-4 custom-scroll">
                                             {recentTools.length > 0 ? (
                                                 <div className="grid grid-cols-1 gap-4">
@@ -526,7 +526,7 @@ const Dashboard = ({ user, onLogout }) => {
                                 {/* Panel 2: Upcoming Bookings */}
                                 <div className="flex flex-col">
                                     <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">Upcoming Bookings</h3>
-                                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 transition-colors flex flex-col max-h-[350px]">
+                                    <div className="card max-h-[350px] flex flex-col p-0">
                                         <div className="overflow-y-auto p-4 custom-scroll">
                                             <BookingList
                                                 bookings={myBookings.filter(b => {
@@ -580,7 +580,7 @@ const Dashboard = ({ user, onLogout }) => {
                     {activeTab === 'all_bookings' && profile?.access_level === 'admin' && (
                         <div>
                             <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">All Bookings List</h3>
-                            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-4 transition-colors">
+                            <div className="card p-4">
                                 <BookingList
                                     bookings={bookings}
                                     onCancel={initiateCancel}

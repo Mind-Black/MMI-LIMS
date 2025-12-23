@@ -16,7 +16,7 @@ const BookingList = ({ bookings, onCancel, onUpdate, onEdit, allBookings, isAdmi
             ) : (
                 <div className="space-y-2">
                     {groupedBookings.map(b => (
-                        <div key={b.ids[0]} className={`bg-white dark:bg-gray-800 p-4 rounded shadow-sm border dark:border-gray-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-0 transition-colors ${readOnly ? 'opacity-75 bg-gray-50 dark:bg-gray-900' : ''}`}>
+                        <div key={b.ids[0]} className={`card p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-0 ${readOnly ? 'opacity-75 bg-gray-50 dark:bg-gray-900' : ''}`}>
                             <div>
                                 <div className={`font-bold ${readOnly ? 'text-gray-700 dark:text-gray-300' : 'text-blue-900 dark:text-blue-100'}`}>{b.tool_name}</div>
                                 <div className="text-sm text-gray-600 dark:text-gray-400">
@@ -33,20 +33,18 @@ const BookingList = ({ bookings, onCancel, onUpdate, onEdit, allBookings, isAdmi
                                 <button
                                     onClick={() => onEdit(b)}
                                     disabled={readOnly}
-                                    className={`text-sm font-semibold border px-3 py-1 rounded transition-colors ${readOnly
-                                        ? 'text-gray-400 dark:text-gray-600 border-gray-200 dark:border-gray-700 cursor-not-allowed'
-                                        : 'text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 border-blue-200 dark:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900/30'}`}
+                                    className={`btn btn-sm cursor-pointer ${readOnly
+                                        ? 'border border-gray-200 text-gray-400 cursor-not-allowed'
+                                        : 'btn-outline-primary border-blue-200 text-blue-600 hover:bg-blue-50'}`}
                                 >
                                     Edit
                                 </button>
                                 <button
                                     onClick={() => onCancel(b.ids)}
                                     disabled={readOnly}
-                                    className={`text-sm font-semibold border px-3 py-1 rounded transition-colors ${readOnly
-                                        ? 'text-gray-400 dark:text-gray-600 border-gray-200 dark:border-gray-700 cursor-not-allowed'
-                                        : (isAdminView
-                                            ? 'text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20'
-                                            : 'text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20')}`}
+                                    className={`btn btn-sm ${readOnly
+                                        ? 'border border-gray-200 text-gray-400 cursor-not-allowed'
+                                        : 'btn-outline-danger'}`}
                                 >
                                     {isAdminView ? 'Delete' : 'Cancel'}
                                 </button>

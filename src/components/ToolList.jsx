@@ -13,8 +13,8 @@ const getToolImage = (id) => {
 };
 
 const ToolTable = ({ toolsList, title, profile, onStatusChange, onBook, expandedToolId, onToggleExpand }) => (
-    <div className="bg-white dark:bg-gray-800 rounded shadow-sm overflow-x-auto border dark:border-gray-700 mb-8 transition-colors">
-        <div className="p-4 bg-gray-50 dark:bg-gray-900 border-b dark:border-gray-700 font-bold text-gray-700 dark:text-gray-200 transition-colors">{title} ({toolsList.length})</div>
+    <div className="card mb-8">
+        <div className="card-header font-bold text-gray-700 dark:text-gray-200">{title} ({toolsList.length})</div>
         <table className="w-full text-left border-collapse">
             <thead className="bg-gray-50 dark:bg-gray-900 border-b dark:border-gray-700 transition-colors">
                 <tr>
@@ -51,7 +51,7 @@ const ToolTable = ({ toolsList, title, profile, onStatusChange, onBook, expanded
                                             <select
                                                 value={tool.status}
                                                 onChange={(e) => onStatusChange(tool.id, e.target.value)}
-                                                className="text-xs border dark:border-gray-600 rounded p-1 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                                                className="select-input text-xs p-1"
                                             >
                                                 <option value="up">Up</option>
                                                 <option value="down">Down</option>
@@ -72,7 +72,7 @@ const ToolTable = ({ toolsList, title, profile, onStatusChange, onBook, expanded
                                 <td className="p-3 text-right">
                                     <button
                                         onClick={(e) => { e.stopPropagation(); onBook(tool); }}
-                                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-medium shadow-sm transition-colors"
+                                        className="btn btn-primary btn-sm"
                                     >
                                         Book
                                     </button>
@@ -168,18 +168,18 @@ const ToolList = ({ tools, profile, onStatusChange, onBook }) => {
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-col md:flex-row gap-4 bg-white dark:bg-gray-800 p-4 rounded shadow-sm transition-colors">
+            <div className="flex flex-col md:flex-row gap-4 card p-4">
                 <div className="flex-1">
                     <input
                         type="text"
                         placeholder="Search tool name, ID, or description..."
-                        className="w-full border dark:border-gray-600 p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors"
+                        className="input-field"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
                 </div>
                 <select
-                    className="border dark:border-gray-600 p-2 rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-white transition-colors"
+                    className="select-input"
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value)}
                 >

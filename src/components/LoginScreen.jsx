@@ -84,7 +84,7 @@ const LoginScreen = () => {
                                 setLastName('');
                                 setJobTitle('');
                             }}
-                            className="w-full py-3 px-4 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all"
+                            className="btn btn-primary w-full"
                         >
                             Back to Sign In
                         </button>
@@ -96,60 +96,60 @@ const LoginScreen = () => {
                                 <>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                                            <label className="label">First Name</label>
                                             <input
                                                 type="text"
                                                 required
                                                 value={firstName}
                                                 onChange={(e) => setFirstName(e.target.value)}
-                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                                                className="input-field"
                                                 placeholder="John"
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                                            <label className="label">Last Name</label>
                                             <input
                                                 type="text"
                                                 required
                                                 value={lastName}
                                                 onChange={(e) => setLastName(e.target.value)}
-                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                                                className="input-field"
                                                 placeholder="Doe"
                                             />
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
+                                        <label className="label">Job Title</label>
                                         <input
                                             type="text"
                                             required
                                             value={jobTitle}
                                             onChange={(e) => setJobTitle(e.target.value)}
-                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                                            className="input-field"
                                             placeholder="Researcher"
                                         />
                                     </div>
                                 </>
                             )}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                                <label className="label">Email Address</label>
                                 <input
                                     type="email"
                                     required
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                                    className="input-field"
                                     placeholder="name@example.com"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                                <label className="label">Password</label>
                                 <input
                                     type="password"
                                     required
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                                    className="input-field"
                                     placeholder="••••••••"
                                 />
                             </div>
@@ -157,7 +157,7 @@ const LoginScreen = () => {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full py-3 px-4 bg-gradient-to-r from-blue-900 to-blue-800 text-white font-semibold rounded-lg shadow-md hover:from-blue-800 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transform transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed mt-6"
+                                className="btn btn-primary w-full mt-6"
                             >
                                 {loading ? (
                                     <span className="flex items-center justify-center">

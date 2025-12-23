@@ -150,7 +150,7 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
     return (
         <div className="space-y-6">
             <h3 className="font-bold text-gray-800 dark:text-gray-200 transition-colors">User Management</h3>
-            <div className="bg-white dark:bg-gray-800 rounded shadow-sm overflow-hidden border dark:border-gray-700 transition-colors">
+            <div className="card overflow-hidden">
                 <table className="w-full text-left border-collapse">
                     <thead className="bg-gray-50 dark:bg-gray-900 border-b dark:border-gray-700 transition-colors">
                         <tr>
@@ -188,7 +188,7 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
                                 <td className="p-4 text-right">
                                     <button
                                         onClick={() => setSelectedUser(selectedUser?.id === u.id ? null : u)}
-                                        className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-semibold text-sm transition-colors"
+                                        className="btn btn-sm btn-ghost"
                                     >
                                         {selectedUser?.id === u.id ? 'Close' : 'Manage'}
                                     </button>
@@ -200,12 +200,12 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
             </div>
 
             {selectedUser && (
-                <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-sm border border-blue-200 dark:border-blue-900 animate-fade-in transition-colors">
+                <div className="card p-6 animate-fade-in">
                     <div className="flex justify-between items-center mb-4">
                         <h4 className="font-bold text-lg text-gray-800 dark:text-gray-200">
                             Manage {selectedUser.first_name} {selectedUser.last_name}
                         </h4>
-                        <button onClick={() => setSelectedUser(null)} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                        <button onClick={() => setSelectedUser(null)} className="btn btn-ghost btn-sm">
                             <i className="fas fa-times"></i>
                         </button>
                     </div>
@@ -236,7 +236,7 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
                                 <input
                                     type="text"
                                     placeholder="New Project Name"
-                                    className="flex-1 border dark:border-gray-600 rounded px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                                    className="input-field py-1 text-sm flex-1"
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
                                             const val = e.target.value.trim();
@@ -257,7 +257,7 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
                                             input.value = '';
                                         }
                                     }}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm transition-colors"
+                                    className="btn btn-primary btn-sm"
                                 >
                                     Add
                                 </button>

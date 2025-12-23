@@ -1,0 +1,19 @@
+/* 
+ * Tool Component Styles
+ * Specific styles for the tool list and status badges.
+ */
+.tool-row:hover {
+    background-color: #f8fafc;
+}
+
+.dark .tool-row:hover {
+    background-color: #1f2937;
+}
+
+/* Status Badge */
+.status-dot {
+    height: 12px;
+    width: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}

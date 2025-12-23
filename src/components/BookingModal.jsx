@@ -915,7 +915,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                             value={selectedProject}
                             onChange={(e) => setSelectedProject(e.target.value)}
                             onClick={(e) => e.stopPropagation()}
-                            className="border dark:border-gray-600 rounded p-1 text-sm focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                            className="select-input text-sm"
                         >
                             <option value="General">General</option>
                             {profile?.projects?.map((proj, idx) => (
@@ -924,7 +924,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                         </select>
                     </div>
 
-                    <button onClick={onClose} className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">Cancel</button>
+                    <button onClick={onClose} className="btn btn-secondary">Cancel</button>
 
                     <button
                         disabled={(!editingBooking || editingBooking.user_id === user.id || isAdmin) && ((selectedSlots.length === 0 && !editingBooking) || isSubmitting)}
@@ -936,12 +936,12 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                                 handleConfirmBooking();
                             }
                         }}
-                        className={`px-6 py-2 rounded font-bold transition flex items-center justify-center gap-2 w-[200px]
+                        className={`btn w-[200px] flex items-center justify-center gap-2
                             ${(editingBooking && editingBooking.user_id !== user.id && (!isAdmin || !isBookingDirty))
-                                ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/50 dark:text-blue-300 dark:hover:bg-blue-900/70 border border-transparent'
+                                ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/50 dark:text-blue-300 dark:hover:bg-blue-900/70'
                                 : ((selectedSlots.length === 0 && !editingBooking) || isSubmitting
-                                    ? 'bg-gray-300 cursor-not-allowed text-white border border-transparent'
-                                    : 'bg-blue-600 hover:bg-blue-700 text-white border border-transparent')
+                                    ? 'bg-gray-300 cursor-not-allowed text-white'
+                                    : 'btn-primary')
                             }`}
                     >
                         {(editingBooking && editingBooking.user_id !== user.id && (!isAdmin || !isBookingDirty)) ? (
@@ -971,22 +971,22 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Send Message to {editingBooking?.user_name || 'User'}</h3>
 
                                 <div className="mb-4">
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
+                                    <label className="label">Subject</label>
                                     <input
                                         type="text"
                                         value={messageSubject}
                                         onChange={(e) => setMessageSubject(e.target.value)}
-                                        className="w-full border dark:border-gray-600 rounded p-2 focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                        className="input-field"
                                         placeholder="e.g. Question about your booking"
                                     />
                                 </div>
 
                                 <div className="mb-6">
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Message</label>
+                                    <label className="label">Message</label>
                                     <textarea
                                         value={messageBody}
                                         onChange={(e) => setMessageBody(e.target.value)}
-                                        className="w-full border dark:border-gray-600 rounded p-2 h-32 focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
+                                        className="input-field h-32 resize-none"
                                         placeholder="Type your message here..."
                                     ></textarea>
                                 </div>
@@ -994,14 +994,14 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                                 <div className="flex justify-end gap-3">
                                     <button
                                         onClick={() => setIsMessageModalOpen(false)}
-                                        className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                                        className="btn btn-secondary"
                                     >
                                         Cancel
                                     </button>
                                     <button
                                         onClick={handleSendMessage}
                                         disabled={isSendingMessage}
-                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="btn btn-primary flex items-center gap-2"
                                     >
                                         {isSendingMessage && <i className="fas fa-spinner fa-spin"></i>}
                                         Send
