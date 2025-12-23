@@ -26,8 +26,8 @@ const LoginScreen = () => {
                         data: {
                             first_name: firstName,
                             last_name: lastName,
-                            job_title: jobTitle,
-                            access_level: 'user' // Default role
+                            job_title: jobTitle
+                            // access_level removed for security. Handled by DB default.
                         }
                     }
                 });
