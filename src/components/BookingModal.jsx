@@ -907,26 +907,37 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                         </select>
                     </div>
 
-                    {editingBooking && editingBooking.user_id !== user.id && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); setIsMessageModalOpen(true); }}
-                            className="px-4 py-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors border border-blue-200 dark:border-blue-800"
-                        >
-                            <i className="fas fa-envelope mr-2"></i>Send Message
-                        </button>
-                    )}
+                    <button onClick={onClose} className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">Cancel</button>
 
-                    <button onClick={editingBooking ? handleCancelEdit : onClose} className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">Cancel</button>
-                    {(!editingBooking || editingBooking.user_id === user.id || isAdmin) && (
-                        <button
-                            disabled={(selectedSlots.length === 0 && !editingBooking) || isSubmitting}
-                            onClick={(e) => { e.stopPropagation(); handleConfirmBooking(); }}
-                            className={`px-6 py-2 rounded text-white font-bold transition flex items-center gap-2 ${(selectedSlots.length === 0 && !editingBooking) || isSubmitting ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
-                        >
-                            {isSubmitting && <i className="fas fa-spinner fa-spin"></i>}
-                            {isSubmitting ? (editingBooking ? 'Updating...' : 'Booking...') : (editingBooking ? 'Update Booking' : 'Confirm Booking')}
-                        </button>
-                    )}
+                    <button
+                        disabled={(!editingBooking || editingBooking.user_id === user.id || isAdmin) && ((selectedSlots.length === 0 && !editingBooking) || isSubmitting)}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (editingBooking && editingBooking.user_id !== user.id && !isAdmin) {
+                                setIsMessageModalOpen(true);
+                            } else {
+                                handleConfirmBooking();
+                            }
+                        }}
+                        className={`px-6 py-2 rounded font-bold transition flex items-center justify-center gap-2 w-[200px]
+                            ${(editingBooking && editingBooking.user_id !== user.id && !isAdmin)
+                                ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/50 dark:text-blue-300 dark:hover:bg-blue-900/70 border border-transparent'
+                                : ((selectedSlots.length === 0 && !editingBooking) || isSubmitting
+                                    ? 'bg-gray-300 cursor-not-allowed text-white border border-transparent'
+                                    : 'bg-blue-600 hover:bg-blue-700 text-white border border-transparent')
+                            }`}
+                    >
+                        {(editingBooking && editingBooking.user_id !== user.id && !isAdmin) ? (
+                            <>
+                                <i className="fas fa-envelope"></i> Send Message
+                            </>
+                        ) : (
+                            <>
+                                {isSubmitting && <i className="fas fa-spinner fa-spin"></i>}
+                                {isSubmitting ? (editingBooking ? 'Updating...' : 'Booking...') : (editingBooking ? 'Update Booking' : 'Confirm Booking')}
+                            </>
+                        )}
+                    </button>
                 </div>
 
                 {/* Message Modal */}
