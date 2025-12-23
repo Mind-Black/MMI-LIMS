@@ -1,6 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import StatusBadge from './StatusBadge';
 
+const toolImages = import.meta.glob('../assets/tool_images/*.{jpg,png,svg}', { eager: true, import: 'default' });
+
+const getToolImage = (id) => {
+    // Try to find an image with the ID as the filename
+    const imagePath = Object.keys(toolImages).find(path => {
+        const fileName = path.split('/').pop().split('.')[0];
+        return fileName === String(id);
+    });
+    return imagePath ? toolImages[imagePath] : null;
+};
+
 const ToolTable = ({ toolsList, title, profile, onStatusChange, onBook, expandedToolId, onToggleExpand }) => (
     <div className="bg-white dark:bg-gray-800 rounded shadow-sm overflow-x-auto border dark:border-gray-700 mb-8 transition-colors">
         <div className="p-4 bg-gray-50 dark:bg-gray-900 border-b dark:border-gray-700 font-bold text-gray-700 dark:text-gray-200 transition-colors">{title} ({toolsList.length})</div>
@@ -16,97 +27,110 @@ const ToolTable = ({ toolsList, title, profile, onStatusChange, onBook, expanded
                 </tr>
             </thead>
             <tbody>
-                {toolsList.map(tool => (
-                    <React.Fragment key={tool.id}>
-                        <tr
-                            onClick={() => onToggleExpand(tool.id)}
-                            className={`tool-row border-b dark:border-gray-700 last:border-0 transition-colors cursor-pointer hover:bg-blue-50/50 dark:hover:bg-blue-900/10 ${expandedToolId === tool.id ? 'bg-blue-50/30 dark:bg-blue-900/5' : ''}`}
-                        >
-                            <td className="p-3 text-gray-500 dark:text-gray-400 font-mono text-sm">{tool.id}</td>
-                            <td className="p-3">
-                                <div className="font-bold text-gray-800 dark:text-gray-200">{tool.name}</div>
-                            </td>
-                            <td className="p-3">
-                                <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-1 rounded text-xs font-semibold">
-                                    {tool.category}
-                                </span>
-                            </td>
-                            <td className="p-3">
-                                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                    <StatusBadge status={tool.status} />
-                                    {profile?.access_level === 'admin' && (
-                                        <select
-                                            value={tool.status}
-                                            onChange={(e) => onStatusChange(tool.id, e.target.value)}
-                                            className="text-xs border dark:border-gray-600 rounded p-1 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                                        >
-                                            <option value="up">Up</option>
-                                            <option value="down">Down</option>
-                                            <option value="service">Service</option>
-                                        </select>
-                                    )}
-                                </div>
-                            </td>
-                            <td className="p-3">
-                                {!tool.license_req ? (
-                                    <span className="text-green-600 dark:text-green-400 text-xs font-bold bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded">Not Required</span>
-                                ) : profile?.licenses?.includes(tool.id) ? (
-                                    <span className="text-green-700 dark:text-green-400 font-bold flex items-center gap-1 text-sm"><i className="fas fa-check-circle"></i> Active</span>
-                                ) : (
-                                    <span className="text-gray-400 dark:text-gray-500 flex items-center gap-1 text-sm"><i className="fas fa-times-circle"></i> Missing</span>
-                                )}
-                            </td>
-                            <td className="p-3 text-right">
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); onBook(tool); }}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-medium shadow-sm transition-colors"
-                                >
-                                    Book
-                                </button>
-                            </td>
-                        </tr>
-                        {expandedToolId === tool.id && (
-                            <tr className="bg-gray-50 dark:bg-gray-900/50 border-b dark:border-gray-700">
-                                <td colSpan="6" className="p-6">
-                                    <div className="flex flex-col md:flex-row gap-6 animate-fadeIn">
-                                        {/* Image Placeholder */}
-                                        <div className="w-full md:w-64 h-48 bg-gray-200 dark:bg-gray-800 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-600 shrink-0 border dark:border-gray-700">
-                                            <div className="text-center">
-                                                <i className="fas fa-camera text-4xl mb-2"></i>
-                                                <div className="text-xs">No Image Available</div>
-                                            </div>
-                                        </div>
-
-                                        {/* Details */}
-                                        <div className="flex-1">
-                                            <h4 className="font-bold text-lg text-gray-800 dark:text-gray-200 mb-2">{tool.name}</h4>
-
-                                            <div className="space-y-4">
-                                                <div>
-                                                    <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Description</div>
-                                                    <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">
-                                                        {tool.description || "No description provided."}
-                                                    </p>
-                                                </div>
-
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div>
-                                                        <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Category</div>
-                                                        <div className="text-sm text-gray-800 dark:text-gray-200 font-medium">{tool.category}</div>
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">System ID</div>
-                                                        <div className="text-sm font-mono text-gray-800 dark:text-gray-200">{tool.id}</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
+                {toolsList.map(tool => {
+                    const toolImage = getToolImage(tool.id);
+                    return (
+                        <React.Fragment key={tool.id}>
+                            <tr
+                                onClick={() => onToggleExpand(tool.id)}
+                                className={`tool-row border-b dark:border-gray-700 last:border-0 transition-colors cursor-pointer hover:bg-blue-50/50 dark:hover:bg-blue-900/10 ${expandedToolId === tool.id ? 'bg-blue-50/30 dark:bg-blue-900/5' : ''}`}
+                            >
+                                <td className="p-3 text-gray-500 dark:text-gray-400 font-mono text-sm">{tool.id}</td>
+                                <td className="p-3">
+                                    <div className="font-bold text-gray-800 dark:text-gray-200">{tool.name}</div>
+                                </td>
+                                <td className="p-3">
+                                    <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-1 rounded text-xs font-semibold">
+                                        {tool.category}
+                                    </span>
+                                </td>
+                                <td className="p-3">
+                                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                        <StatusBadge status={tool.status} />
+                                        {profile?.access_level === 'admin' && (
+                                            <select
+                                                value={tool.status}
+                                                onChange={(e) => onStatusChange(tool.id, e.target.value)}
+                                                className="text-xs border dark:border-gray-600 rounded p-1 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                                            >
+                                                <option value="up">Up</option>
+                                                <option value="down">Down</option>
+                                                <option value="service">Service</option>
+                                            </select>
+                                        )}
                                     </div>
                                 </td>
+                                <td className="p-3">
+                                    {!tool.license_req ? (
+                                        <span className="text-green-600 dark:text-green-400 text-xs font-bold bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded">Not Required</span>
+                                    ) : profile?.licenses?.includes(tool.id) ? (
+                                        <span className="text-green-700 dark:text-green-400 font-bold flex items-center gap-1 text-sm"><i className="fas fa-check-circle"></i> Active</span>
+                                    ) : (
+                                        <span className="text-gray-400 dark:text-gray-500 flex items-center gap-1 text-sm"><i className="fas fa-times-circle"></i> Missing</span>
+                                    )}
+                                </td>
+                                <td className="p-3 text-right">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onBook(tool); }}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-medium shadow-sm transition-colors"
+                                    >
+                                        Book
+                                    </button>
+                                </td>
                             </tr>
-                        )}
-                    </React.Fragment>
-                ))}
+                            {expandedToolId === tool.id && (
+                                <tr className="bg-gray-50 dark:bg-gray-900/50 border-b dark:border-gray-700">
+                                    <td colSpan="6" className="p-6">
+                                        <div className="flex flex-col md:flex-row gap-6 animate-fadeIn">
+                                            {/* Image or Placeholder */}
+                                            {toolImage ? (
+                                                <div className="w-full md:w-64 h-48 bg-white dark:bg-gray-800 rounded-lg flex items-center justify-center shrink-0 border dark:border-gray-700 overflow-hidden">
+                                                    <img
+                                                        src={toolImage}
+                                                        alt={tool.name}
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div className="w-full md:w-64 h-48 bg-gray-200 dark:bg-gray-800 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-600 shrink-0 border dark:border-gray-700">
+                                                    <div className="text-center">
+                                                        <i className="fas fa-camera text-4xl mb-2"></i>
+                                                        <div className="text-xs">No Image Available</div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Details */}
+                                            <div className="flex-1">
+                                                <h4 className="font-bold text-lg text-gray-800 dark:text-gray-200 mb-2">{tool.name}</h4>
+
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Description</div>
+                                                        <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">
+                                                            {tool.description || "No description provided."}
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Category</div>
+                                                            <div className="text-sm text-gray-800 dark:text-gray-200 font-medium">{tool.category}</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">System ID</div>
+                                                            <div className="text-sm font-mono text-gray-800 dark:text-gray-200">{tool.id}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
+                        </React.Fragment>
+                    );
+                })}
             </tbody>
         </table>
         {toolsList.length === 0 && (
