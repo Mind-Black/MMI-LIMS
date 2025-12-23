@@ -3,6 +3,7 @@ import StatusBadge from './StatusBadge';
 import { useToast } from '../context/ToastContext';
 import { getNextSlotTime, groupBookings, checkCollision, calculateEventLayout } from '../utils/bookingUtils';
 import { useBookingInteraction } from '../hooks/useBookingInteraction';
+import { supabase } from '../supabaseClient';
 
 const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCancel, existingBookings = [], initialDate, initialBooking = null, isAdminOverride = false }) => {
     // Initialize week start to current week's Monday
@@ -35,6 +36,50 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
         return () => clearInterval(timer);
     }, []);
+
+    // Message Modal State
+    const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
+    const [messageSubject, setMessageSubject] = useState('');
+    const [messageBody, setMessageBody] = useState('');
+    const [isSendingMessage, setIsSendingMessage] = useState(false);
+
+    const handleSendMessage = async () => {
+        if (!messageSubject.trim() || !messageBody.trim()) {
+            showToast('Please enter both subject and message.', 'error');
+            return;
+        }
+
+        setIsSendingMessage(true);
+        try {
+            if (!editingBooking) {
+                console.error('handleSendMessage: editingBooking is null');
+                showToast('Error: No booking selected.', 'error');
+                setIsSendingMessage(false);
+                return;
+            }
+
+            // Send message using userId (Edge function will handle email lookup)
+            const { error } = await supabase.functions.invoke('send-email', {
+                body: {
+                    userId: editingBooking.user_id,
+                    subject: `[MMI-LIMS] ${messageSubject}`,
+                    text: `Message regarding your booking for ${tool.name} on ${editingBooking.date} at ${editingBooking.time}:\n\n${messageBody}\n\n- Sent by ${profile?.first_name} ${profile?.last_name}`
+                }
+            });
+
+            if (error) throw error;
+
+            showToast('Message sent successfully.');
+            setIsMessageModalOpen(false);
+            setMessageSubject('');
+            setMessageBody('');
+        } catch (error) {
+            console.error('Error sending message:', error);
+            showToast('Failed to send message: ' + error.message, 'error');
+        } finally {
+            setIsSendingMessage(false);
+        }
+    };
 
     const { showToast } = useToast();
 
@@ -254,8 +299,8 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
         console.log('handleBookingClick fired', booking);
 
         // Permission check
-        const isOwnBooking = booking.user_id === user.id;
-        if (!isAdmin && !isOwnBooking) return;
+        // const isOwnBooking = booking.user_id === user.id;
+        // if (!isAdmin && !isOwnBooking) return; // Allow selection for messaging
 
         // Start editing mode
         // We need to ensure we have a single ID to track
@@ -863,16 +908,82 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                         </select>
                     </div>
 
+                    {editingBooking && editingBooking.user_id !== user.id && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setIsMessageModalOpen(true); }}
+                            className="px-4 py-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors border border-blue-200 dark:border-blue-800"
+                        >
+                            <i className="fas fa-envelope mr-2"></i>Send Message
+                        </button>
+                    )}
+
                     <button onClick={editingBooking ? handleCancelEdit : onClose} className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">Cancel</button>
-                    <button
-                        disabled={(selectedSlots.length === 0 && !editingBooking) || isSubmitting}
-                        onClick={(e) => { e.stopPropagation(); handleConfirmBooking(); }}
-                        className={`px-6 py-2 rounded text-white font-bold transition flex items-center gap-2 ${(selectedSlots.length === 0 && !editingBooking) || isSubmitting ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
-                    >
-                        {isSubmitting && <i className="fas fa-spinner fa-spin"></i>}
-                        {isSubmitting ? (editingBooking ? 'Updating...' : 'Booking...') : (editingBooking ? 'Update Booking' : 'Confirm Booking')}
-                    </button>
+                    {(!editingBooking || editingBooking.user_id === user.id || isAdmin) && (
+                        <button
+                            disabled={(selectedSlots.length === 0 && !editingBooking) || isSubmitting}
+                            onClick={(e) => { e.stopPropagation(); handleConfirmBooking(); }}
+                            className={`px-6 py-2 rounded text-white font-bold transition flex items-center gap-2 ${(selectedSlots.length === 0 && !editingBooking) || isSubmitting ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                        >
+                            {isSubmitting && <i className="fas fa-spinner fa-spin"></i>}
+                            {isSubmitting ? (editingBooking ? 'Updating...' : 'Booking...') : (editingBooking ? 'Update Booking' : 'Confirm Booking')}
+                        </button>
+                    )}
                 </div>
+
+                {/* Message Modal */}
+                {
+                    isMessageModalOpen && (
+                        <div
+                            className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] backdrop-blur-sm"
+                            onClick={(e) => { e.stopPropagation(); setIsMessageModalOpen(false); }}
+                        >
+                            <div
+                                className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md p-6 border dark:border-gray-700"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Send Message to User</h3>
+
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
+                                    <input
+                                        type="text"
+                                        value={messageSubject}
+                                        onChange={(e) => setMessageSubject(e.target.value)}
+                                        className="w-full border dark:border-gray-600 rounded p-2 focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                        placeholder="e.g. Question about your booking"
+                                    />
+                                </div>
+
+                                <div className="mb-6">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Message</label>
+                                    <textarea
+                                        value={messageBody}
+                                        onChange={(e) => setMessageBody(e.target.value)}
+                                        className="w-full border dark:border-gray-600 rounded p-2 h-32 focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
+                                        placeholder="Type your message here..."
+                                    ></textarea>
+                                </div>
+
+                                <div className="flex justify-end gap-3">
+                                    <button
+                                        onClick={() => setIsMessageModalOpen(false)}
+                                        className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleSendMessage}
+                                        disabled={isSendingMessage}
+                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold transition-colors flex items-center gap-2"
+                                    >
+                                        {isSendingMessage && <i className="fas fa-spinner fa-spin"></i>}
+                                        Send
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )
+                }
             </div>
         </div>
     );

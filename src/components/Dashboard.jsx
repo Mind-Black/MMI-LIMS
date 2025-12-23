@@ -26,6 +26,7 @@ const Dashboard = ({ user, onLogout }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [confirmModalOpen, setConfirmModalOpen] = useState(false);
     const [bookingIdToCancel, setBookingIdToCancel] = useState(null);
+    const [sendCancellationMessage, setSendCancellationMessage] = useState(false);
 
     // Week State
     const [currentWeekStart, setCurrentWeekStart] = useState(() => {
@@ -169,22 +170,83 @@ const Dashboard = ({ user, onLogout }) => {
         }
 
         setBookingIdToCancel(ids);
+        setSendCancellationMessage(false); // Reset default
         setConfirmModalOpen(true);
     };
 
     const handleConfirmCancel = async () => {
         if (!bookingIdToCancel) return;
 
+        const idsToCancel = Array.isArray(bookingIdToCancel) ? bookingIdToCancel : [bookingIdToCancel];
+
         try {
+            // Get booking details before deleting to know which tool it was
+            const { data: bookingsToDelete } = await supabase
+                .from('bookings')
+                .select('*')
+                .in('id', idsToCancel);
+
             const { error } = await supabase
                 .from('bookings')
                 .delete()
-                .in('id', bookingIdToCancel);
+                .in('id', idsToCancel);
 
             if (error) throw error;
 
-            setBookings(bookings.filter(b => !bookingIdToCancel.includes(b.id)));
+            setBookings(bookings.filter(b => !idsToCancel.includes(b.id)));
             showToast("Booking has been cancelled.");
+
+            // Send cancellation emails if requested
+            if (sendCancellationMessage && bookingsToDelete && bookingsToDelete.length > 0) {
+                const booking = bookingsToDelete[0];
+                const toolId = booking.tool_id;
+                const toolName = booking.tool_name;
+
+                console.log('Attempting to send cancellation emails for tool:', toolId, toolName);
+
+                // Fetch licensed users
+                // Note: .contains expects the column to be a JSON array and the value to be a JSON array contained within it.
+                // If licenses is [1, 2] (integers) and we pass ['1'] (string), it might fail depending on DB type.
+                // Let's try to handle both string and int for robustness if we are unsure.
+                // But first, let's just log what we find.
+
+                const { data: licensedProfiles, error: licenseError } = await supabase
+                    .from('profiles')
+                    .select('email, first_name, last_name, licenses');
+
+                if (licenseError) {
+                    console.error('Error fetching profiles for cancellation:', licenseError);
+                } else {
+                    // Filter in JS to be safe about types (int vs string)
+                    const recipients = licensedProfiles
+                        .filter(p => {
+                            if (!p.licenses || !Array.isArray(p.licenses)) return false;
+                            // Check if toolId is in licenses (loose equality for string/int)
+                            return p.licenses.some(id => id == toolId) && p.email && p.email !== user.email;
+                        })
+                        .map(p => p.email);
+
+                    console.log('Found recipients:', recipients);
+
+                    if (recipients.length > 0) {
+                        // Send emails
+                        for (const email of recipients) {
+                            const { error: sendError } = await supabase.functions.invoke('send-email', {
+                                body: {
+                                    to: email,
+                                    subject: `[MMI-LIMS] Booking Cancellation: ${toolName}`,
+                                    text: `A booking for ${toolName} on ${booking.date} at ${booking.time} has been cancelled by ${profile?.first_name} ${profile?.last_name}.\n\nThis slot is now available.`
+                                }
+                            });
+                            if (sendError) console.error('Error sending email to', email, sendError);
+                        }
+                        showToast(`Cancellation notification sent to ${recipients.length} users.`);
+                    } else {
+                        console.log('No licensed users found to notify (excluding self).');
+                    }
+                }
+            }
+
         } catch (error) {
             console.error('Error cancelling booking:', error);
             showToast('Failed to cancel booking.', 'error');
@@ -588,6 +650,10 @@ const Dashboard = ({ user, onLogout }) => {
                 message="Are you sure you want to cancel this booking? This action cannot be undone."
                 onConfirm={handleConfirmCancel}
                 onCancel={() => { setConfirmModalOpen(false); setBookingIdToCancel(null); }}
+                showCheckbox={true}
+                checkboxLabel="Send cancellation message to licensed users"
+                isCheckboxChecked={sendCancellationMessage}
+                onCheckboxChange={setSendCancellationMessage}
             />
         </div >
     );
