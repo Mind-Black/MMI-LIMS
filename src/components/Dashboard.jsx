@@ -27,6 +27,7 @@ const Dashboard = ({ user, onLogout }) => {
     const [confirmModalOpen, setConfirmModalOpen] = useState(false);
     const [bookingIdToCancel, setBookingIdToCancel] = useState(null);
     const [sendCancellationMessage, setSendCancellationMessage] = useState(false);
+    const [isCancelling, setIsCancelling] = useState(false);
 
     // Week State
     const [currentWeekStart, setCurrentWeekStart] = useState(() => {
@@ -177,6 +178,7 @@ const Dashboard = ({ user, onLogout }) => {
     const handleConfirmCancel = async () => {
         if (!bookingIdToCancel) return;
 
+        setIsCancelling(true);
         const idsToCancel = Array.isArray(bookingIdToCancel) ? bookingIdToCancel : [bookingIdToCancel];
 
         try {
@@ -231,6 +233,7 @@ const Dashboard = ({ user, onLogout }) => {
             console.error('Error cancelling booking:', error);
             showToast('Failed to cancel booking.', 'error');
         } finally {
+            setIsCancelling(false);
             setConfirmModalOpen(false);
             setBookingIdToCancel(null);
         }
@@ -634,6 +637,7 @@ const Dashboard = ({ user, onLogout }) => {
                 checkboxLabel="Send cancellation message to licensed users"
                 isCheckboxChecked={sendCancellationMessage}
                 onCheckboxChange={setSendCancellationMessage}
+                isLoading={isCancelling}
             />
         </div >
     );

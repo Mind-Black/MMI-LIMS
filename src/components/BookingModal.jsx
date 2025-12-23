@@ -50,6 +50,8 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
             return;
         }
 
+        if (isSendingMessage) return;
+
         setIsSendingMessage(true);
         try {
             if (!editingBooking) {
@@ -966,7 +968,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                                 className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md p-6 border dark:border-gray-700"
                                 onClick={(e) => e.stopPropagation()}
                             >
-                                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Send Message to User</h3>
+                                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Send Message to {editingBooking?.user_name || 'User'}</h3>
 
                                 <div className="mb-4">
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
@@ -999,7 +1001,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                                     <button
                                         onClick={handleSendMessage}
                                         disabled={isSendingMessage}
-                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold transition-colors flex items-center gap-2"
+                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         {isSendingMessage && <i className="fas fa-spinner fa-spin"></i>}
                                         Send
