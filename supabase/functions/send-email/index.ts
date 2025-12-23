@@ -59,7 +59,7 @@ serve(async (req) => {
         }
 
         const data = await resend.emails.send({
-            from: "MMI-LIMS <onboarding@resend.dev>", // Update this if you have a custom domain
+            from: "MMI-LIMS <no-reply@lims.gradientfab.com>", // Update this if you have a custom domain
             to: recipientEmail,
             subject: subject,
             html: html,

@@ -202,47 +202,27 @@ const Dashboard = ({ user, onLogout }) => {
                 const toolId = booking.tool_id;
                 const toolName = booking.tool_name;
 
-                console.log('Attempting to send cancellation emails for tool:', toolId, toolName);
+                console.log('Invoking notify-cancellation for tool:', toolId, toolName);
 
-                // Fetch licensed users
-                // Note: .contains expects the column to be a JSON array and the value to be a JSON array contained within it.
-                // If licenses is [1, 2] (integers) and we pass ['1'] (string), it might fail depending on DB type.
-                // Let's try to handle both string and int for robustness if we are unsure.
-                // But first, let's just log what we find.
+                const { data, error: notifyError } = await supabase.functions.invoke('notify-cancellation', {
+                    body: {
+                        toolId: toolId,
+                        toolName: toolName,
+                        bookingDate: booking.date,
+                        bookingTime: booking.time,
+                        cancelledByName: `${profile?.first_name} ${profile?.last_name}`,
+                        senderId: user.id
+                    }
+                });
 
-                const { data: licensedProfiles, error: licenseError } = await supabase
-                    .from('profiles')
-                    .select('email, first_name, last_name, licenses');
-
-                if (licenseError) {
-                    console.error('Error fetching profiles for cancellation:', licenseError);
+                if (notifyError) {
+                    console.error('Error invoking notify-cancellation:', notifyError);
+                    showToast('Booking cancelled, but failed to send notifications.', 'warning');
                 } else {
-                    // Filter in JS to be safe about types (int vs string)
-                    const recipients = licensedProfiles
-                        .filter(p => {
-                            if (!p.licenses || !Array.isArray(p.licenses)) return false;
-                            // Check if toolId is in licenses (loose equality for string/int)
-                            return p.licenses.some(id => id == toolId) && p.email && p.email !== user.email;
-                        })
-                        .map(p => p.email);
-
-                    console.log('Found recipients:', recipients);
-
-                    if (recipients.length > 0) {
-                        // Send emails
-                        for (const email of recipients) {
-                            const { error: sendError } = await supabase.functions.invoke('send-email', {
-                                body: {
-                                    to: email,
-                                    subject: `[MMI-LIMS] Booking Cancellation: ${toolName}`,
-                                    text: `A booking for ${toolName} on ${booking.date} at ${booking.time} has been cancelled by ${profile?.first_name} ${profile?.last_name}.\n\nThis slot is now available.`
-                                }
-                            });
-                            if (sendError) console.error('Error sending email to', email, sendError);
-                        }
-                        showToast(`Cancellation notification sent to ${recipients.length} users.`);
+                    if (data && data.count > 0) {
+                        showToast(`Cancellation notification sent to ${data.count} users.`);
                     } else {
-                        console.log('No licensed users found to notify (excluding self).');
+                        showToast('Booking cancelled. No other licensed users to notify.');
                     }
                 }
             }

@@ -52,7 +52,6 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
         setIsSendingMessage(true);
         try {
             if (!editingBooking) {
-                console.error('handleSendMessage: editingBooking is null');
                 showToast('Error: No booking selected.', 'error');
                 setIsSendingMessage(false);
                 return;
