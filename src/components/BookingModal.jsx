@@ -21,6 +21,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
 
     // Initialize editing state if a booking is passed
     const [editingBooking, setEditingBooking] = useState(initialBooking || null);
+    const [originalBookingState, setOriginalBookingState] = useState(initialBooking || null);
     const [selectedProject, setSelectedProject] = useState(initialBooking ? initialBooking.project : 'General');
 
     const scrollContainerRef = useRef(null);
@@ -311,12 +312,14 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
         };
 
         setEditingBooking(singleBooking);
+        setOriginalBookingState(singleBooking);
         setSelectedProject(booking.project);
         setSelectedSlots([]); // Clear selection
     };
 
     const handleCancelEdit = () => {
         setEditingBooking(null);
+        setOriginalBookingState(null);
     };
 
     const handleCancelClick = (e, booking) => {
@@ -620,6 +623,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
             await onUpdate(oldIds, updateData);
             setIsSubmitting(false);
             setEditingBooking(null);
+            setOriginalBookingState(null);
             return;
         }
 
@@ -678,8 +682,19 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
 
         await onConfirm(newBookings);
         setIsSubmitting(false);
+        await onConfirm(newBookings);
+        setIsSubmitting(false);
         setSelectedSlots([]);
     };
+
+    const isBookingDirty = useMemo(() => {
+        if (!editingBooking || !originalBookingState) return false;
+        if (selectedProject !== originalBookingState.project) return true;
+        if (editingBooking.date !== originalBookingState.date) return true;
+        if ((editingBooking.startTime || editingBooking.time) !== (originalBookingState.startTime || originalBookingState.time)) return true;
+        if ((editingBooking.endTime || editingBooking.end_time) !== (originalBookingState.endTime || originalBookingState.end_time)) return true;
+        return false;
+    }, [editingBooking, originalBookingState, selectedProject]);
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
@@ -913,21 +928,21 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                         disabled={(!editingBooking || editingBooking.user_id === user.id || isAdmin) && ((selectedSlots.length === 0 && !editingBooking) || isSubmitting)}
                         onClick={(e) => {
                             e.stopPropagation();
-                            if (editingBooking && editingBooking.user_id !== user.id && !isAdmin) {
+                            if (editingBooking && editingBooking.user_id !== user.id && (!isAdmin || !isBookingDirty)) {
                                 setIsMessageModalOpen(true);
                             } else {
                                 handleConfirmBooking();
                             }
                         }}
                         className={`px-6 py-2 rounded font-bold transition flex items-center justify-center gap-2 w-[200px]
-                            ${(editingBooking && editingBooking.user_id !== user.id && !isAdmin)
+                            ${(editingBooking && editingBooking.user_id !== user.id && (!isAdmin || !isBookingDirty))
                                 ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/50 dark:text-blue-300 dark:hover:bg-blue-900/70 border border-transparent'
                                 : ((selectedSlots.length === 0 && !editingBooking) || isSubmitting
                                     ? 'bg-gray-300 cursor-not-allowed text-white border border-transparent'
                                     : 'bg-blue-600 hover:bg-blue-700 text-white border border-transparent')
                             }`}
                     >
-                        {(editingBooking && editingBooking.user_id !== user.id && !isAdmin) ? (
+                        {(editingBooking && editingBooking.user_id !== user.id && (!isAdmin || !isBookingDirty)) ? (
                             <>
                                 <i className="fas fa-envelope"></i> Send Message
                             </>
