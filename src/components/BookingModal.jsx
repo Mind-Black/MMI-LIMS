@@ -684,8 +684,6 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
 
         await onConfirm(newBookings);
         setIsSubmitting(false);
-        await onConfirm(newBookings);
-        setIsSubmitting(false);
         setSelectedSlots([]);
     };
 
