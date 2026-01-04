@@ -26,6 +26,37 @@ serve(async (req) => {
         }
 
         const resend = new Resend(resendKey);
+
+        // Authenticate the user
+        const authHeader = req.headers.get('Authorization');
+        if (!authHeader) {
+            return new Response(
+                JSON.stringify({ error: "Missing Authorization header" }),
+                {
+                    status: 401,
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                }
+            );
+        }
+
+        const supabaseClient = createClient(
+            Deno.env.get("SUPABASE_URL") ?? "",
+            Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+            { global: { headers: { Authorization: authHeader } } }
+        );
+
+        const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+
+        if (authError || !user) {
+            return new Response(
+                JSON.stringify({ error: "Unauthorized", details: authError?.message }),
+                {
+                    status: 401,
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                }
+            );
+        }
+
         const { toolId, toolName, bookingDate, bookingTime, cancelledByName, senderId } = await req.json();
 
         if (!toolId || !toolName || !bookingDate || !bookingTime) {
