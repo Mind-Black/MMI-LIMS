@@ -29,6 +29,12 @@ const Dashboard = ({ user, onLogout }) => {
     const [sendCancellationMessage, setSendCancellationMessage] = useState(false);
     const [isCancelling, setIsCancelling] = useState(false);
 
+    // Filters for "All Bookings" (Admin)
+    const [filterStartDate, setFilterStartDate] = useState('');
+    const [filterEndDate, setFilterEndDate] = useState('');
+    const [filterUserName, setFilterUserName] = useState('');
+    const [filterToolId, setFilterToolId] = useState('');
+
     // Week State
     const [currentWeekStart, setCurrentWeekStart] = useState(() => {
         const d = new Date();
@@ -116,6 +122,29 @@ const Dashboard = ({ user, onLogout }) => {
         }
         return recent;
     }, [myBookings, tools]);
+
+    // Filtered bookings for Admin View
+    const filteredAllBookings = useMemo(() => {
+        if (!bookings) return [];
+        let result = bookings;
+
+        if (filterStartDate) {
+            result = result.filter(b => b.date >= filterStartDate);
+        }
+        if (filterEndDate) {
+            result = result.filter(b => b.date <= filterEndDate);
+        }
+        if (filterUserName) {
+            const lowerFilter = filterUserName.toLowerCase();
+            result = result.filter(b =>
+                (b.user_name && b.user_name.toLowerCase().includes(lowerFilter))
+            );
+        }
+        if (filterToolId) {
+            result = result.filter(b => String(b.tool_id) === String(filterToolId));
+        }
+        return result;
+    }, [bookings, filterStartDate, filterEndDate, filterUserName, filterToolId]);
 
     const handleBookTool = async (bookingData) => {
         const newBookings = Array.isArray(bookingData) ? bookingData : [bookingData];
@@ -580,9 +609,55 @@ const Dashboard = ({ user, onLogout }) => {
                     {activeTab === 'all_bookings' && profile?.access_level === 'admin' && (
                         <div>
                             <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">All Bookings List</h3>
+
+                            {/* Filters */}
+                            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border dark:border-gray-700 mb-4 grid grid-cols-1 md:grid-cols-4 gap-4 transition-colors">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
+                                    <input
+                                        type="date"
+                                        className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        value={filterStartDate}
+                                        onChange={(e) => setFilterStartDate(e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
+                                    <input
+                                        type="date"
+                                        className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        value={filterEndDate}
+                                        onChange={(e) => setFilterEndDate(e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">User Name</label>
+                                    <input
+                                        type="text"
+                                        className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        placeholder="Filter by user..."
+                                        value={filterUserName}
+                                        onChange={(e) => setFilterUserName(e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tool</label>
+                                    <select
+                                        className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        value={filterToolId}
+                                        onChange={(e) => setFilterToolId(e.target.value)}
+                                    >
+                                        <option value="">All Tools</option>
+                                        {tools.map(t => (
+                                            <option key={t.id} value={t.id}>{t.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
                             <div className="card p-4">
                                 <BookingList
-                                    bookings={bookings}
+                                    bookings={filteredAllBookings}
                                     onCancel={initiateCancel}
                                     onUpdate={handleUpdateBooking}
                                     onEdit={handleBookingClick}
