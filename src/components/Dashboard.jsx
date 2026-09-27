@@ -1,7 +1,14 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy } from 'react';
 import { supabase } from '../supabaseClient';
 import logo from '../assets/ktu_mmi.svg';
-import { LAB_TIMEZONE, formatLocalDate } from '../utils/bookingUtils';
+import {
+    LAB_TIMEZONE,
+    formatLocalDate,
+    getMonday,
+    addDays,
+    isBookingPast,
+    isBookingInProgress
+} from '../utils/bookingUtils';
 import BookingModal from './BookingModal';
 import ConfirmModal from './ConfirmModal';
 import ToolList from './ToolList';
@@ -28,7 +35,16 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const [activeTab, setActiveTab] = useState('dashboard');
     const [tools, setTools] = useState([]);
     const [bookings, setBookings] = useState([]);
+    const [userBookings, setUserBookings] = useState([]);
+    const [adminBookings, setAdminBookings] = useState([]);
+    const [loadingAdminBookings, setLoadingAdminBookings] = useState(false);
     const [hasCalendarToken, setHasCalendarToken] = useState(false);
+
+    // Calendar sync modal state (R12)
+    const [calendarModalOpen, setCalendarModalOpen] = useState(false);
+    const [calendarUrl, setCalendarUrl] = useState('');
+    const [isGeneratingToken, setIsGeneratingToken] = useState(false);
+    const [copyState, setCopyState] = useState({ copied: false, failed: false });
 
     const [selectedTool, setSelectedTool] = useState(null);
     const [initialDate, setInitialDate] = useState(null);
@@ -47,49 +63,57 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const [filterUserName, setFilterUserName] = useState('');
     const [filterToolId, setFilterToolId] = useState('');
 
-    // Week State (Monday as start of week)
-    const [currentWeekStart, setCurrentWeekStart] = useState(() => {
-        const d = new Date();
-        const day = d.getDay();
-        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-        d.setDate(diff);
-        d.setHours(0, 0, 0, 0);
-        return d;
-    });
+    // Week State (Monday as start of week without timezone distortion - Fixes R6)
+    const [currentWeekStart, setCurrentWeekStart] = useState(() => getMonday(new Date()));
 
     const { showToast } = useToast();
     const { theme, toggleTheme } = useTheme();
     const querySeqRef = useRef(0);
+    const isFetchingRef = useRef(false);
 
-    // Bounded Fetch Data (P1): fetch tools and relevant bookings window
+    // Bounded Fetch Data (Fixes R5, R10): separate calendar window from user history
     const fetchData = useCallback(async (isBackground = false) => {
+        if (isFetchingRef.current) return;
+        isFetchingRef.current = true;
         const currentSeq = ++querySeqRef.current;
         if (!isBackground) setLoading(true);
 
         try {
             // Calculate date window around visible week (-7 days to +14 days)
-            const windowStart = new Date(currentWeekStart);
-            windowStart.setDate(windowStart.getDate() - 7);
-            const windowEnd = new Date(currentWeekStart);
-            windowEnd.setDate(windowEnd.getDate() + 14);
-
+            const windowStart = addDays(currentWeekStart, -7);
+            const windowEnd = addDays(currentWeekStart, 14);
             const startStr = formatLocalDate(windowStart);
             const endStr = formatLocalDate(windowEnd);
 
-            // Fetch tools and bookings concurrently
-            const [toolsRes, bookingsRes, tokenRes] = await Promise.all([
+            // User history cutoff: last 60 days
+            const userHistoryCutoff = formatLocalDate(addDays(new Date(), -60));
+
+            // Fetch tools, calendar window bookings, user bookings, and calendar token status concurrently
+            const [toolsRes, bookingsRes, userBookingsRes, tokenRes] = await Promise.all([
                 supabase
                     .from('tools')
                     .select('id, name, category, status, location, license_req, description')
                     .order('id', { ascending: true }),
 
-                // Query bookings bounded to the active window or user's bookings
+                // Calendar window bookings (all users)
                 supabase
                     .from('bookings')
                     .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at')
-                    .or(`and(date.gte.${startStr},date.lte.${endStr}),user_id.eq.${user.id}`)
+                    .gte('date', startStr)
+                    .lte('date', endStr)
                     .order('date', { ascending: true })
-                    .order('time', { ascending: true }),
+                    .order('time', { ascending: true })
+                    .limit(1000),
+
+                // User's own bookings across a wider window for the My Bookings tab
+                supabase
+                    .from('bookings')
+                    .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at')
+                    .eq('user_id', user.id)
+                    .gte('date', userHistoryCutoff)
+                    .order('date', { ascending: true })
+                    .order('time', { ascending: true })
+                    .limit(500),
 
                 supabase.rpc('has_calendar_token')
             ]);
@@ -99,9 +123,11 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
 
             if (toolsRes.error) throw toolsRes.error;
             if (bookingsRes.error) throw bookingsRes.error;
+            if (userBookingsRes.error) throw userBookingsRes.error;
 
             if (toolsRes.data) setTools(toolsRes.data);
             if (bookingsRes.data) setBookings(bookingsRes.data);
+            if (userBookingsRes.data) setUserBookings(userBookingsRes.data);
             if (!tokenRes.error && tokenRes.data !== undefined) {
                 setHasCalendarToken(Boolean(tokenRes.data));
             }
@@ -113,7 +139,9 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 showToast('Error loading bookings: ' + error.message, 'error');
             }
         } finally {
-            if (!isBackground && currentSeq === querySeqRef.current) {
+            isFetchingRef.current = false;
+            // Always clear loading if this was the latest sequence (Fixes R10)
+            if (currentSeq === querySeqRef.current) {
                 setLoading(false);
             }
         }
@@ -143,10 +171,20 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
         };
     }, [fetchData]);
 
-    // Filter user's personal bookings
-    const myBookings = useMemo(() => {
-        return bookings.filter(b => b.user_id === user.id);
-    }, [bookings, user.id]);
+    // User's personal bookings (Fixes R5)
+    const myBookings = userBookings;
+
+    // Combined bookings for the calendar grid (merges visible window + user bookings)
+    const allCalendarBookings = useMemo(() => {
+        const map = new Map();
+        for (const b of bookings) {
+            map.set(b.id, b);
+        }
+        for (const b of userBookings) {
+            map.set(b.id, b);
+        }
+        return Array.from(map.values());
+    }, [bookings, userBookings]);
 
     // Quick Book: 3 most recently used tools by user
     const recentTools = useMemo(() => {
@@ -165,39 +203,53 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
         return recent;
     }, [myBookings, tools]);
 
-    // Filtered bookings for Admin View
-    const filteredAllBookings = useMemo(() => {
-        if (!bookings) return [];
-        let result = bookings;
+    // Server-side filtered query for Admin "All Bookings" tab (Fixes R5)
+    const fetchAdminBookings = useCallback(async () => {
+        if (profile?.access_level !== 'admin') return;
+        setLoadingAdminBookings(true);
+        try {
+            let query = supabase
+                .from('bookings')
+                .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at')
+                .order('date', { ascending: false })
+                .order('time', { ascending: false })
+                .limit(200);
 
-        if (filterStartDate) {
-            result = result.filter(b => b.date >= filterStartDate);
-        }
-        if (filterEndDate) {
-            result = result.filter(b => b.date <= filterEndDate);
-        }
-        if (filterUserName) {
-            const lowerFilter = filterUserName.toLowerCase();
-            result = result.filter(b =>
-                (b.user_name && b.user_name.toLowerCase().includes(lowerFilter))
-            );
-        }
-        if (filterToolId) {
-            result = result.filter(b => String(b.tool_id) === String(filterToolId));
-        }
-        return result;
-    }, [bookings, filterStartDate, filterEndDate, filterUserName, filterToolId]);
+            if (filterStartDate) {
+                query = query.gte('date', filterStartDate);
+            }
+            if (filterEndDate) {
+                query = query.lte('date', filterEndDate);
+            }
+            if (filterUserName.trim()) {
+                query = query.ilike('user_name', `%${filterUserName.trim()}%`);
+            }
+            if (filterToolId) {
+                query = query.eq('tool_id', filterToolId);
+            }
 
-    // Explicit mutation results for booking creation (L5)
+            const { data, error } = await query;
+            if (error) throw error;
+            setAdminBookings(data || []);
+        } catch (err) {
+            console.error('Error fetching admin bookings:', err);
+            showToast('Error loading all bookings: ' + err.message, 'error');
+        } finally {
+            setLoadingAdminBookings(false);
+        }
+    }, [profile?.access_level, filterStartDate, filterEndDate, filterUserName, filterToolId, showToast]);
+
+    useEffect(() => {
+        if (activeTab === 'all_bookings' && profile?.access_level === 'admin') {
+            fetchAdminBookings();
+        }
+    }, [activeTab, profile?.access_level, fetchAdminBookings]);
+
+    // Explicit mutation results for booking creation (L5, R6)
     const handleBookTool = async (bookingData) => {
         const newBookings = Array.isArray(bookingData) ? bookingData : [bookingData];
 
-        const now = new Date();
-        const hasPastBooking = newBookings.some(b => {
-            const bookingEnd = new Date(`${b.date}T${b.end_time || b.endTime}`);
-            return bookingEnd < now;
-        });
-
+        const hasPastBooking = newBookings.some(b => isBookingPast(b));
         const isAdminOverride = profile?.access_level === 'admin' && activeTab === 'all_bookings';
 
         if (hasPastBooking && !isAdminOverride) {
@@ -206,6 +258,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
         }
 
         try {
+            querySeqRef.current++; // Invalidate in-flight reads
             const { data, error } = await supabase
                 .from('bookings')
                 .insert(newBookings)
@@ -217,6 +270,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             }
 
             setBookings(prev => [...prev, ...data]);
+            setUserBookings(prev => [...prev, ...data]);
             setSelectedTool(null);
             setInitialDate(null);
             showToast(`Successfully created ${data.length} reservation(s).`, 'success');
@@ -231,7 +285,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
         }
     };
 
-    // Explicit mutation results for booking update (L1, L5)
+    // Explicit mutation results for booking update (L1, L5, R6)
     const handleUpdateBooking = async (oldIds, newBookingData) => {
         try {
             const bookingId = oldIds[0];
@@ -240,17 +294,17 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             const bookingsToProcess = Array.isArray(newBookingData) ? newBookingData : [newBookingData];
             const newBooking = bookingsToProcess[0];
 
-            const now = new Date();
-            const bookingEnd = new Date(`${newBooking.date}T${newBooking.end_time || newBooking.endTime}`);
             const isAdminOverride = profile?.access_level === 'admin' && activeTab === 'all_bookings';
 
-            if (bookingEnd < now && !isAdminOverride) {
+            if (isBookingPast(newBooking) && !isAdminOverride) {
                 throw new Error('Cannot move booking to the past.');
             }
 
             const startTime = (newBooking.startTime || newBooking.time).slice(0, 5);
             const endTime = (newBooking.endTime || newBooking.end_time).slice(0, 5);
             const project = newBooking.project || 'General Research';
+
+            querySeqRef.current++; // Invalidate in-flight reads
 
             // Attempt atomic RPC update first (guarantees transactional rollback if collision)
             const { data: rpcData, error: rpcError } = await supabase.rpc('update_booking_group', {
@@ -262,7 +316,6 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             });
 
             if (rpcError) {
-                // If RPC fails with specific error (e.g. exclusion violation)
                 throw rpcError;
             }
 
@@ -275,11 +328,15 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 project
             };
 
-            setBookings(prev => {
+            const updater = prev => {
                 const secondaryIds = oldIds.slice(1);
                 const filtered = secondaryIds.length > 0 ? prev.filter(b => !secondaryIds.includes(b.id)) : prev;
                 return filtered.map(b => b.id === bookingId ? { ...b, ...updatedRow } : b);
-            });
+            };
+
+            setBookings(updater);
+            setUserBookings(updater);
+            setAdminBookings(updater);
 
             showToast("Booking updated successfully.", 'success');
             return { success: true };
@@ -295,19 +352,20 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
 
     const initiateCancel = (ids) => {
         const idsToCheck = Array.isArray(ids) ? ids : [ids];
-        const bookingsToCheck = bookings.filter(b => idsToCheck.includes(b.id));
-
-        const now = new Date();
-        const hasInProgress = bookingsToCheck.some(b => {
-            const start = new Date(`${b.date}T${b.time}`);
-            const end = new Date(`${b.date}T${b.end_time}`);
-            return start <= now && end > now;
-        });
+        const allKnown = [...bookings, ...userBookings];
+        const bookingsToCheck = allKnown.filter(b => idsToCheck.includes(b.id));
 
         const isAdminOverride = profile?.access_level === 'admin' && activeTab === 'all_bookings';
 
+        const hasInProgress = bookingsToCheck.some(b => isBookingInProgress(b));
         if (hasInProgress && !isAdminOverride) {
             showToast('Cannot cancel an in-progress booking.', 'error');
+            return;
+        }
+
+        const hasPast = bookingsToCheck.some(b => isBookingPast(b));
+        if (hasPast && !isAdminOverride) {
+            showToast('Cannot cancel a past booking.', 'error');
             return;
         }
 
@@ -323,27 +381,58 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
         const idsToCancel = Array.isArray(bookingIdToCancel) ? bookingIdToCancel : [bookingIdToCancel];
 
         try {
-            const bookingsToDelete = bookings.filter(b => idsToCancel.includes(b.id));
+            querySeqRef.current++; // Invalidate in-flight background reads
+            let cancelledIds = [];
+            let eventIdToNotify = null;
 
-            const { error } = await supabase
-                .from('bookings')
-                .delete()
-                .in('id', idsToCancel);
+            for (let i = 0; i < idsToCancel.length; i++) {
+                const id = idsToCancel[i];
+                const shouldNotify = (i === 0 && sendCancellationMessage);
 
-            if (error) throw error;
+                // Use atomic cancel_booking RPC (creates cancellation_events row atomically and verifies authority)
+                const { data: cancelResult, error: rpcError } = await supabase.rpc('cancel_booking', {
+                    p_booking_id: id,
+                    p_notify_users: shouldNotify
+                });
 
-            setBookings(prev => prev.filter(b => !idsToCancel.includes(b.id)));
+                if (rpcError) {
+                    // Fallback to direct DELETE with affected row check if RPC not installed
+                    if (rpcError.message?.includes('function') && rpcError.message?.includes('does not exist')) {
+                        const { data: delData, error: delError } = await supabase
+                            .from('bookings')
+                            .delete()
+                            .eq('id', id)
+                            .select('id');
+                        if (delError) throw delError;
+                        if (!delData || delData.length === 0) {
+                            throw new Error('Cancellation failed or permission denied (0 rows affected)');
+                        }
+                        cancelledIds.push(id);
+                    } else {
+                        throw rpcError;
+                    }
+                } else {
+                    cancelledIds.push(id);
+                    if (cancelResult?.cancellation_event_id) {
+                        eventIdToNotify = cancelResult.cancellation_event_id;
+                    }
+                }
+            }
+
+            if (cancelledIds.length === 0) {
+                throw new Error('No bookings were cancelled.');
+            }
+
+            setBookings(prev => prev.filter(b => !cancelledIds.includes(b.id)));
+            setUserBookings(prev => prev.filter(b => !cancelledIds.includes(b.id)));
+            setAdminBookings(prev => prev.filter(b => !cancelledIds.includes(b.id)));
             showToast("Booking has been cancelled.", 'success');
 
-            // Send cancellation notification if requested (S4, P3)
-            if (sendCancellationMessage && bookingsToDelete.length > 0) {
-                const booking = bookingsToDelete[0];
+            // Send cancellation notification if requested and authorized event ID exists (Fixes R4)
+            if (eventIdToNotify) {
                 const { data, error: notifyError } = await supabase.functions.invoke('notify-cancellation', {
                     body: {
-                        toolId: booking.tool_id,
-                        toolName: booking.tool_name,
-                        bookingDate: booking.date,
-                        bookingTime: booking.time,
+                        cancellationEventId: eventIdToNotify
                     }
                 });
 
@@ -359,7 +448,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
 
         } catch (error) {
             console.error('Error cancelling booking:', error);
-            showToast('Failed to cancel booking: ' + error.message, 'error');
+            showToast('Failed to cancel booking: ' + (error.message || 'Unknown error'), 'error');
         } finally {
             setIsCancelling(false);
             setConfirmModalOpen(false);
@@ -367,20 +456,25 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
         }
     };
 
+    // Verify affected rows on status change (Fixes R9)
     const handleStatusChange = async (toolId, newStatus) => {
         try {
-            const { error } = await supabase
+            const { data, error } = await supabase
                 .from('tools')
                 .update({ status: newStatus })
-                .eq('id', toolId);
+                .eq('id', toolId)
+                .select('id');
 
             if (error) throw error;
+            if (!data || data.length === 0) {
+                throw new Error('Status update failed or permission denied (0 rows affected)');
+            }
 
             setTools(prev => prev.map(t => t.id === toolId ? { ...t, status: newStatus } : t));
             showToast(`Tool status updated to ${newStatus}`, 'success');
         } catch (error) {
             console.error('Error updating tool status:', error);
-            showToast('Failed to update status: ' + error.message, 'error');
+            showToast('Failed to update status: ' + (error.message || 'Unknown error'), 'error');
         }
     };
 
@@ -395,11 +489,15 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
         }
     };
 
-    // Calendar bearer token creation & rotation (S2)
+    // Calendar bearer token creation & rotation with explicit confirmation and clipboard fallback (Fixes R12)
+    const handleOpenCalendarModal = () => {
+        setCalendarModalOpen(true);
+        setCopyState({ copied: false, failed: false });
+    };
+
     const handleGenerateOrRotateCalendar = async (isReset = false) => {
-        if (isReset && !confirm('Are you sure you want to reset your calendar link? Any previously synced calendar apps will stop updating until you supply the new link.')) {
-            return;
-        }
+        setIsGeneratingToken(true);
+        setCopyState({ copied: false, failed: false });
 
         try {
             // Generate high-entropy bearer token
@@ -414,13 +512,34 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             if (error) throw error;
 
             setHasCalendarToken(true);
-            const calendarUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/serve-ics?token=${rawToken}`;
-            await navigator.clipboard.writeText(calendarUrl);
+            const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/serve-ics?token=${rawToken}`;
+            setCalendarUrl(url);
 
-            showToast(isReset ? 'Calendar link reset and copied to clipboard!' : 'Calendar link copied to clipboard!', 'success');
+            try {
+                await navigator.clipboard.writeText(url);
+                setCopyState({ copied: true, failed: false });
+                showToast(isReset ? 'Calendar link reset and copied to clipboard!' : 'Calendar link copied to clipboard!', 'success');
+            } catch {
+                setCopyState({ copied: false, failed: true });
+                showToast('Link generated. Please copy the URL manually below.', 'info');
+            }
         } catch (err) {
             console.error('Failed to configure calendar link:', err);
             showToast('Failed to generate calendar link: ' + (err.message || 'Unknown error'), 'error');
+        } finally {
+            setIsGeneratingToken(false);
+        }
+    };
+
+    const handleManualCopy = async () => {
+        if (!calendarUrl) return;
+        try {
+            await navigator.clipboard.writeText(calendarUrl);
+            setCopyState({ copied: true, failed: false });
+            showToast('Copied to clipboard!', 'success');
+        } catch {
+            setCopyState({ copied: false, failed: true });
+            showToast('Please select and copy the URL manually.', 'error');
         }
     };
 
@@ -557,26 +676,17 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <button
-                                            onClick={() => handleGenerateOrRotateCalendar(false)}
+                                            onClick={handleOpenCalendarModal}
                                             className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center gap-2 transition-colors px-2 py-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                                            title="Copy calendar subscription feed URL (ICS)"
+                                            title="Subscribe to calendar feed (ICS)"
                                         >
-                                            <i className="fas fa-sync-alt"></i> Sync Calendar
+                                            <i className="fas fa-calendar-alt"></i> Sync Calendar
                                         </button>
-                                        {hasCalendarToken && (
-                                            <button
-                                                onClick={() => handleGenerateOrRotateCalendar(true)}
-                                                className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 flex items-center gap-1 transition-colors px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
-                                                title="Reset calendar subscription link"
-                                            >
-                                                <i className="fas fa-redo"></i> Reset
-                                            </button>
-                                        )}
                                     </div>
                                 </div>
                                 <UserBookingsCalendar
                                     bookings={myBookings}
-                                    allBookings={bookings}
+                                    allBookings={allCalendarBookings}
                                     onUpdate={handleUpdateBooking}
                                     currentWeekStart={currentWeekStart}
                                     onWeekChange={setCurrentWeekStart}
@@ -620,17 +730,14 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                     </div>
                                 </div>
 
-                                {/* Upcoming Bookings */}
+                                {/* Upcoming Bookings (Fixes R6) */}
                                 <div className="flex flex-col">
                                     <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">Upcoming Bookings</h3>
                                     <div className="card max-h-[350px] flex flex-col p-0">
                                         <div className="overflow-y-auto p-4 custom-scroll">
                                             <BookingList
-                                                bookings={myBookings.filter(b => {
-                                                    const end = new Date(`${b.date}T${b.end_time || b.endTime || '23:59'}`);
-                                                    return !isNaN(end.getTime()) && end >= new Date();
-                                                })}
-                                                allBookings={bookings}
+                                                bookings={myBookings.filter(b => !isBookingPast(b))}
+                                                allBookings={allCalendarBookings}
                                                 onCancel={initiateCancel}
                                                 onUpdate={handleUpdateBooking}
                                                 onEdit={handleBookingClick}
@@ -639,17 +746,14 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                     </div>
                                 </div>
 
-                                {/* Past Bookings */}
+                                {/* Past Bookings (Fixes R6) */}
                                 <div className="flex flex-col">
                                     <h3 className="font-bold text-gray-600 dark:text-gray-400 mb-4">Past Bookings</h3>
                                     <div className="bg-gray-50 dark:bg-gray-900 rounded-lg shadow-sm border dark:border-gray-700 transition-colors flex flex-col max-h-[350px]">
                                         <div className="overflow-y-auto p-4 custom-scroll">
                                             <BookingList
-                                                bookings={myBookings.filter(b => {
-                                                    const end = new Date(`${b.date}T${b.end_time || b.endTime || '00:00'}`);
-                                                    return !isNaN(end.getTime()) && end < new Date();
-                                                })}
-                                                allBookings={bookings}
+                                                bookings={myBookings.filter(b => isBookingPast(b))}
+                                                allBookings={allCalendarBookings}
                                                 onCancel={initiateCancel}
                                                 onUpdate={handleUpdateBooking}
                                                 onEdit={handleBookingClick}
@@ -672,10 +776,19 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                         />
                     )}
 
-                    {/* TAB: ALL BOOKINGS (ADMIN ONLY) */}
+                    {/* TAB: ALL BOOKINGS (ADMIN ONLY - Fixes R5) */}
                     {activeTab === 'all_bookings' && profile?.access_level === 'admin' && (
                         <div>
-                            <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">All Bookings List</h3>
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="font-bold text-gray-800 dark:text-gray-200">All Bookings List</h3>
+                                <button
+                                    onClick={fetchAdminBookings}
+                                    className="btn btn-sm btn-ghost flex items-center gap-1 text-sm"
+                                    title="Refresh bookings"
+                                >
+                                    <i className={`fas fa-sync-alt ${loadingAdminBookings ? 'fa-spin' : ''}`}></i> Refresh
+                                </button>
+                            </div>
 
                             <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border dark:border-gray-700 mb-4 grid grid-cols-1 md:grid-cols-4 gap-4 transition-colors">
                                 <div>
@@ -722,13 +835,18 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                             </div>
 
                             <div className="card p-4">
-                                <BookingList
-                                    bookings={filteredAllBookings}
-                                    onCancel={initiateCancel}
-                                    onUpdate={handleUpdateBooking}
-                                    onEdit={handleBookingClick}
-                                    isAdminView={true}
-                                />
+                                {loadingAdminBookings ? (
+                                    <div className="py-8 flex justify-center"><LoadingSpinner /></div>
+                                ) : (
+                                    <BookingList
+                                        bookings={adminBookings}
+                                        allBookings={allCalendarBookings}
+                                        onCancel={initiateCancel}
+                                        onUpdate={handleUpdateBooking}
+                                        onEdit={handleBookingClick}
+                                        isAdminView={true}
+                                    />
+                                )}
                             </div>
                         </div>
                     )}
@@ -751,7 +869,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                     tool={selectedTool}
                     user={user}
                     profile={profile}
-                    existingBookings={bookings}
+                    existingBookings={allCalendarBookings}
                     initialDate={initialDate}
                     initialBooking={targetBooking}
                     onClose={() => { setSelectedTool(null); setInitialDate(null); setTargetBooking(null); }}
@@ -774,6 +892,130 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 onCheckboxChange={setSendCancellationMessage}
                 isLoading={isCancelling}
             />
+
+            {/* Calendar Subscription Feed Modal (Fixes R12) */}
+            {calendarModalOpen && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                                <i className="fas fa-calendar-alt text-blue-600 dark:text-blue-400"></i>
+                                Calendar Subscription (ICS Feed)
+                            </h3>
+                            <button
+                                onClick={() => setCalendarModalOpen(false)}
+                                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                            >
+                                <i className="fas fa-times text-lg"></i>
+                            </button>
+                        </div>
+
+                        <p className="text-sm text-gray-600 dark:text-gray-300">
+                            Subscribe to your personal reservations in Google Calendar, Apple Calendar, or Outlook.
+                        </p>
+
+                        {calendarUrl ? (
+                            <div className="space-y-3">
+                                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">
+                                    Your Private Subscription URL:
+                                </label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        value={calendarUrl}
+                                        onClick={(e) => e.target.select()}
+                                        className="w-full text-xs font-mono bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded px-3 py-2 text-gray-800 dark:text-gray-200 select-all"
+                                    />
+                                    <button
+                                        onClick={handleManualCopy}
+                                        className="btn btn-primary btn-sm flex items-center gap-1 whitespace-nowrap"
+                                    >
+                                        <i className="fas fa-copy"></i> Copy
+                                    </button>
+                                </div>
+
+                                {copyState.copied && (
+                                    <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 font-medium">
+                                        <i className="fas fa-check-circle"></i> Link copied to clipboard! Paste this URL as a new calendar subscription in your calendar app.
+                                    </p>
+                                )}
+
+                                {copyState.failed && (
+                                    <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 font-medium">
+                                        <i className="fas fa-exclamation-triangle"></i> Clipboard write was blocked by your browser. Please select and copy the URL manually above.
+                                    </p>
+                                )}
+
+                                <div className="pt-3 border-t dark:border-gray-700">
+                                    <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-xs text-red-800 dark:text-red-300 space-y-2">
+                                        <div className="font-semibold flex items-center gap-1">
+                                            <i className="fas fa-exclamation-circle"></i> Resetting invalidates active links
+                                        </div>
+                                        <p>
+                                            If your feed URL was compromised, click below to generate a replacement link. Any existing calendar apps subscribed to the old link will stop syncing.
+                                        </p>
+                                        <button
+                                            onClick={() => handleGenerateOrRotateCalendar(true)}
+                                            disabled={isGeneratingToken}
+                                            className="text-xs text-red-700 dark:text-red-300 font-bold underline hover:no-underline"
+                                        >
+                                            {isGeneratingToken ? 'Generating...' : 'Reset and generate new link'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : hasCalendarToken ? (
+                            <div className="space-y-4">
+                                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-xs text-blue-800 dark:text-blue-300 space-y-1">
+                                    <div className="font-semibold flex items-center gap-1">
+                                        <i className="fas fa-check-circle"></i> Calendar sync is active
+                                    </div>
+                                    <p>
+                                        For security, secret tokens are only revealed upon generation and are not stored in plaintext. If you need a new link or need to reconnect a calendar app, you can generate a new link below.
+                                    </p>
+                                </div>
+
+                                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-300">
+                                    <span className="font-semibold">⚠️ Notice:</span> Generating a new link replaces your active token and will stop syncing on previously connected devices until updated.
+                                </div>
+
+                                <button
+                                    onClick={() => handleGenerateOrRotateCalendar(true)}
+                                    disabled={isGeneratingToken}
+                                    className="btn btn-primary w-full flex items-center justify-center gap-2"
+                                >
+                                    <i className={`fas fa-sync-alt ${isGeneratingToken ? 'fa-spin' : ''}`}></i>
+                                    {isGeneratingToken ? 'Generating...' : 'Generate New Calendar Link'}
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <p className="text-sm text-gray-600 dark:text-gray-300">
+                                    You have not generated a calendar feed link yet. Generating a link allows external calendar applications (Google Calendar, Outlook, Apple Calendar) to subscribe to your live equipment reservations.
+                                </p>
+                                <button
+                                    onClick={() => handleGenerateOrRotateCalendar(false)}
+                                    disabled={isGeneratingToken}
+                                    className="btn btn-primary w-full flex items-center justify-center gap-2"
+                                >
+                                    <i className={`fas fa-link ${isGeneratingToken ? 'fa-spin' : ''}`}></i>
+                                    {isGeneratingToken ? 'Generating...' : 'Generate Calendar Feed URL'}
+                                </button>
+                            </div>
+                        )}
+
+                        <div className="flex justify-end pt-2">
+                            <button
+                                onClick={() => setCalendarModalOpen(false)}
+                                className="btn btn-ghost btn-sm"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

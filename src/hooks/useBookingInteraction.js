@@ -1,5 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
-import { minutesToTime, roundToNearestSlot, checkCollision, formatLocalDate } from '../utils/bookingUtils';
+import {
+    minutesToTime,
+    roundToNearestSlot,
+    checkCollision,
+    formatLocalDate,
+    isBookingPast,
+    isBookingInProgress,
+    getVilniusInstant
+} from '../utils/bookingUtils';
 
 const PIXELS_PER_30_MINS = 48;
 const START_HOUR = 0;
@@ -26,16 +34,13 @@ export const useBookingInteraction = ({
             return;
         }
 
-        const now = new Date();
-        const bookingStart = new Date(`${booking.date}T${booking.startTime}`);
-        const bookingEnd = new Date(`${booking.date}T${booking.endTime}`);
-
-        if (bookingEnd < now && !isAdminOverride) {
+        if (isBookingPast(booking) && !isAdminOverride) {
             showToast('Cannot modify past bookings.', 'error');
             return;
         }
 
-        const isInProgress = bookingStart <= now && bookingEnd > now;
+        const isInProgress = isBookingInProgress(booking);
+
         if (isInProgress) {
             if (type === 'move') {
                 if (!isAdminOverride) {
@@ -171,20 +176,16 @@ export const useBookingInteraction = ({
             const newStartTime = minutesToTime(clampedStartMins);
             const newEndTime = minutesToTime(clampedEndMins);
 
-            const now = new Date();
-            const startDateTime = new Date(`${newDate}T${newStartTime}`);
-            const endDateTime = new Date(`${newDate}T${newEndTime}`);
-
-            const hasValidDates = !isNaN(startDateTime.getTime()) && !isNaN(endDateTime.getTime());
+            const now = Date.now();
+            const startInstant = getVilniusInstant(newDate, newStartTime);
+            const endInstant = getVilniusInstant(newDate, newEndTime);
+            const hasValidDates = !isNaN(startInstant) && !isNaN(endInstant);
 
             // Active booking checks
-            const originalStart = new Date(`${data.originalBooking.date}T${data.originalBooking.startTime}`);
-            const originalEnd = new Date(`${data.originalBooking.date}T${data.originalBooking.endTime}`);
-            const isActive = !isNaN(originalStart.getTime()) && !isNaN(originalEnd.getTime()) &&
-                originalStart <= now && originalEnd > now;
+            const isActive = isBookingInProgress(data.originalBooking);
 
-            const isFuture = isActive || isAdminOverride ? true : (hasValidDates && startDateTime >= now);
-            const isEndTimeValid = !isActive || isAdminOverride || (hasValidDates && endDateTime > now);
+            const isFuture = isActive || isAdminOverride ? true : (hasValidDates && startInstant >= (now - 5 * 60 * 1000));
+            const isEndTimeValid = !isActive || isAdminOverride || (hasValidDates && endInstant > now);
 
             let isValid = isValidTime && hasValidDates && isFuture && isEndTimeValid;
 

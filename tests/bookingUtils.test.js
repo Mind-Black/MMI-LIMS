@@ -8,7 +8,13 @@ import {
     checkBookingEligibility,
     groupBookings,
     checkCollision,
-    calculateEventLayout
+    calculateEventLayout,
+    parseCalendarDate,
+    getMonday,
+    addDays,
+    getVilniusInstant,
+    isBookingPast,
+    isBookingInProgress
 } from '../src/utils/bookingUtils.js';
 
 test('timeToMinutes & minutesToTime conversion and clamping', () => {
@@ -145,3 +151,77 @@ test('calculateEventLayout clusters overlaps and leaves inputs pure (L7)', () =>
     assert.strictEqual(event3.width, 100);
     assert.strictEqual(event3.left, 0);
 });
+
+test('parseCalendarDate, getMonday, and addDays are timezone stable (R6)', () => {
+    // Parsing 'YYYY-MM-DD' should represent the exact calendar date at noon
+    const d = parseCalendarDate('2026-09-28');
+    assert.strictEqual(d.getFullYear(), 2026);
+    assert.strictEqual(d.getMonth(), 8); // September (0-indexed)
+    assert.strictEqual(d.getDate(), 28);
+
+    // Monday for Monday is the same day
+    const mon = getMonday('2026-09-28');
+    assert.strictEqual(formatLocalDate(mon), '2026-09-28');
+
+    // Monday for Sunday 2026-10-04 is Monday 2026-09-28
+    const monFromSun = getMonday('2026-10-04');
+    assert.strictEqual(formatLocalDate(monFromSun), '2026-09-28');
+
+    // addDays adds exactly calendar days
+    const nextWeekMon = addDays(mon, 7);
+    assert.strictEqual(formatLocalDate(nextWeekMon), '2026-10-05');
+
+    const prevDay = addDays('2026-09-28', -1);
+    assert.strictEqual(formatLocalDate(prevDay), '2026-09-27');
+});
+
+test('getVilniusInstant resolves Europe/Vilnius time across summer and winter DST boundaries (R6)', () => {
+    // Summer (EEST = UTC+3)
+    // 10:00 Vilnius on 2026-07-01 is 07:00 UTC
+    const summerVilniusMs = getVilniusInstant('2026-07-01', '10:00');
+    const expectedSummerUtcMs = Date.UTC(2026, 6, 1, 7, 0, 0);
+    assert.strictEqual(summerVilniusMs, expectedSummerUtcMs);
+
+    // Winter (EET = UTC+2)
+    // 10:00 Vilnius on 2026-01-15 is 08:00 UTC
+    const winterVilniusMs = getVilniusInstant('2026-01-15', '10:00');
+    const expectedWinterUtcMs = Date.UTC(2026, 0, 15, 8, 0, 0);
+    assert.strictEqual(winterVilniusMs, expectedWinterUtcMs);
+});
+
+test('isBookingPast and isBookingInProgress handle ends_at and legacy timestamps authoritatively (R6)', () => {
+    const pastDate = new Date(Date.now() - 3600000).toISOString();
+    const futureDate = new Date(Date.now() + 3600000).toISOString();
+    const farFutureDate = new Date(Date.now() + 7200000).toISOString();
+
+    // Past booking with ends_at
+    assert.strictEqual(isBookingPast({ ends_at: pastDate }), true);
+
+    // Future booking with ends_at
+    assert.strictEqual(isBookingPast({ ends_at: futureDate }), false);
+
+    // Legacy date in past
+    assert.strictEqual(isBookingPast({ date: '2020-01-01', end_time: '10:00' }), true);
+
+    // Legacy date in future
+    assert.strictEqual(isBookingPast({ date: '2040-01-01', end_time: '10:00' }), false);
+
+    // In-progress booking
+    assert.strictEqual(isBookingInProgress({
+        starts_at: pastDate,
+        ends_at: futureDate
+    }), true);
+
+    // Completed booking is not in progress
+    assert.strictEqual(isBookingInProgress({
+        starts_at: new Date(Date.now() - 7200000).toISOString(),
+        ends_at: pastDate
+    }), false);
+
+    // Future booking is not in progress
+    assert.strictEqual(isBookingInProgress({
+        starts_at: futureDate,
+        ends_at: farFutureDate
+    }), false);
+});
+

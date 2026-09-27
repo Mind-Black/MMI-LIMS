@@ -63,117 +63,174 @@ serve(async (req) => {
             );
         }
 
+        const isCallerAdmin = callerProfile.access_level === 'admin';
+
         // 3. Parse input
-        const { toolId, toolName, bookingDate, bookingTime } = await req.json();
+        const body = await req.json().catch(() => ({}));
+        const { cancellationEventId } = body;
 
-        if (!toolId || !toolName || !bookingDate || !bookingTime) {
-            return new Response(
-                JSON.stringify({ error: "Missing required fields: toolId, toolName, bookingDate, bookingTime" }),
-                { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-        }
+        let toolId: number | string;
+        let toolName: string;
+        let bookingDate: string;
+        let bookingTime: string;
 
-        // 4. Verify tool exists in database
-        const { data: toolRecord, error: toolError } = await supabaseAdmin
-            .from('tools')
-            .select('id, name')
-            .eq('id', toolId)
-            .single();
+        if (cancellationEventId) {
+            // R4: Fetch verified committed cancellation event
+            const { data: eventRecord, error: eventError } = await supabaseAdmin
+                .from('cancellation_events')
+                .select('*')
+                .eq('id', cancellationEventId)
+                .single();
 
-        if (toolError || !toolRecord) {
-            return new Response(
-                JSON.stringify({ error: "Invalid tool specified" }),
-                { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-        }
-
-        // 5. Database-level recipient filtering for licensed & approved users
-        // Query only approved users who have this toolId in their licenses array, excluding caller
-        const { data: recipientProfiles, error: recipientsError } = await supabaseAdmin
-            .from('profiles')
-            .select('id')
-            .eq('is_approved', true)
-            .neq('id', user.id)
-            .contains('licenses', [toolId])
-            .limit(100); // Guard against unbounded fan-out
-
-        if (recipientsError) {
-            console.error("Error fetching licensed recipients:", recipientsError);
-            throw recipientsError;
-        }
-
-        if (!recipientProfiles || recipientProfiles.length === 0) {
-            return new Response(
-                JSON.stringify({ success: true, count: 0, message: "No licensed users to notify" }),
-                { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-        }
-
-        // 6. Look up emails from auth.users securely
-        const emailList: string[] = [];
-        for (const p of recipientProfiles) {
-            const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(p.id);
-            if (!userError && userData?.user?.email) {
-                emailList.push(userData.user.email);
+            if (eventError || !eventRecord) {
+                return new Response(
+                    JSON.stringify({ error: "Cancellation event not found" }),
+                    { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+                );
             }
+
+            // Anti-replay check
+            if (eventRecord.notified) {
+                return new Response(
+                    JSON.stringify({ error: "Notification has already been sent for this cancellation" }),
+                    { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+                );
+            }
+
+            // Verify authority over event
+            if (eventRecord.cancelled_by !== user.id && !isCallerAdmin) {
+                return new Response(
+                    JSON.stringify({ error: "Forbidden: unauthorized to notify for this cancellation" }),
+                    { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+                );
+            }
+
+            toolId = eventRecord.tool_id;
+            toolName = eventRecord.tool_name;
+            bookingDate = eventRecord.date;
+            bookingTime = eventRecord.time;
+
+            // Mark notified immediately to prevent race replays
+            await supabaseAdmin
+                .from('cancellation_events')
+                .update({ notified: true, notified_at: new Date().toISOString() })
+                .eq('id', cancellationEventId);
+        } else {
+            // Fallback for legacy calls (requires toolId, toolName, bookingDate, bookingTime)
+            if (!body.toolId || !body.toolName || !body.bookingDate || !body.bookingTime) {
+                return new Response(
+                    JSON.stringify({ error: "Missing required cancellationEventId or booking details" }),
+                    { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+                );
+            }
+            toolId = body.toolId;
+            toolName = String(body.toolName).slice(0, 100);
+            bookingDate = String(body.bookingDate).slice(0, 10);
+            bookingTime = String(body.bookingTime).slice(0, 10);
         }
 
-        if (emailList.length === 0) {
+        // 4. Paginated recipient query (Fixes R13)
+        const recipientUserIds: string[] = [];
+        const pageSize = 100;
+        let page = 0;
+        const maxRecipients = 500;
+
+        while (recipientUserIds.length < maxRecipients) {
+            const { data: pageRows, error: pageErr } = await supabaseAdmin
+                .from('profiles')
+                .select('id')
+                .eq('is_approved', true)
+                .neq('id', user.id)
+                .contains('licenses', [toolId.toString()])
+                .range(page * pageSize, (page + 1) * pageSize - 1);
+
+            if (pageErr || !pageRows || pageRows.length === 0) break;
+            for (const r of pageRows) {
+                recipientUserIds.push(r.id);
+            }
+            if (pageRows.length < pageSize) break;
+            page++;
+        }
+
+        if (recipientUserIds.length === 0) {
             return new Response(
-                JSON.stringify({ success: true, count: 0, message: "No recipient emails resolved" }),
+                JSON.stringify({ message: "No eligible recipients found", sentCount: 0, failedCount: 0, totalRecipients: 0 }),
                 { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
         }
 
-        const callerName = `${callerProfile.first_name || ''} ${callerProfile.last_name || ''}`.trim() || user.email;
-        const resend = new Resend(resendKey);
-
-        // 7. Bounded concurrency email dispatch (chunks of 5)
-        const CHUNK_SIZE = 5;
-        let sentCount = 0;
-        let failedCount = 0;
-
-        const emailSubject = `[MMI-LIMS] Booking Cancellation: ${toolRecord.name}`;
-        const emailText = `A booking for ${toolRecord.name} on ${bookingDate} at ${bookingTime} has been cancelled by ${callerName}.\n\nThis slot is now available for reservation.`;
-
-        for (let i = 0; i < emailList.length; i += CHUNK_SIZE) {
-            const chunk = emailList.slice(i, i + CHUNK_SIZE);
-            const results = await Promise.allSettled(
-                chunk.map(email =>
-                    resend.emails.send({
-                        from: "MMI-LIMS <no-reply@lims.gradientfab.com>",
-                        to: email,
-                        subject: emailSubject,
-                        text: emailText,
-                    })
-                )
+        // 5. Look up recipient email addresses in batches
+        const emails: string[] = [];
+        const batchLookupSize = 25;
+        for (let i = 0; i < recipientUserIds.length; i += batchLookupSize) {
+            const chunk = recipientUserIds.slice(i, i + batchLookupSize);
+            const results = await Promise.all(
+                chunk.map(id => supabaseAdmin.auth.admin.getUserById(id))
             );
-
-            for (const r of results) {
-                if (r.status === 'fulfilled' && !r.value.error) {
-                    sentCount++;
-                } else {
-                    failedCount++;
-                    const err = r.status === 'rejected' ? r.reason : r.value?.error;
-                    console.warn("Failed sending cancellation notification to recipient:", err);
+            for (const res of results) {
+                if (res.data?.user?.email) {
+                    emails.push(res.data.user.email);
                 }
             }
         }
 
+        if (emails.length === 0) {
+            return new Response(
+                JSON.stringify({ message: "No recipient emails resolved", sentCount: 0, failedCount: 0, totalRecipients: recipientUserIds.length }),
+                { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+        }
+
+        // 6. Send emails in bounded concurrency batches of 5
+        const resend = new Resend(resendKey);
+        const senderName = callerProfile.first_name ? `${callerProfile.first_name} ${callerProfile.last_name || ''}`.trim() : 'A lab member';
+        let sentCount = 0;
+        let failedCount = 0;
+
+        const emailConcurrency = 5;
+        for (let i = 0; i < emails.length; i += emailConcurrency) {
+            const batch = emails.slice(i, i + emailConcurrency);
+            const sendPromises = batch.map(async (email) => {
+                try {
+                    const result = await resend.emails.send({
+                        from: "MMI-LIMS <noreply@mmi-lims.com>",
+                        to: email,
+                        subject: `Slot Available: ${toolName}`,
+                        html: `
+                            <p>Hello,</p>
+                            <p>A slot has just become available for <strong>${toolName}</strong> on <strong>${bookingDate}</strong> at <strong>${bookingTime}</strong>.</p>
+                            <p>Cancelled by: ${senderName}</p>
+                            <p><a href="https://mind-black.github.io/MMI-LIMS/">Click here to book this slot</a></p>
+                        `,
+                    });
+                    if (result.error) {
+                        console.error(`Resend error sending to ${email}:`, result.error);
+                        failedCount++;
+                    } else {
+                        sentCount++;
+                    }
+                } catch (sendErr) {
+                    console.error(`Exception sending cancellation notice to ${email}:`, sendErr);
+                    failedCount++;
+                }
+            });
+            await Promise.all(sendPromises);
+        }
+
         return new Response(
             JSON.stringify({
-                success: true,
-                count: sentCount,
-                failed: failedCount,
-                message: `Cancellation notifications processed (${sentCount} sent, ${failedCount} failed)`,
+                message: `Cancellation broadcast complete`,
+                sentCount,
+                failedCount,
+                totalRecipients: emails.length
             }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
 
     } catch (error) {
-        console.error('Error in notify-cancellation:', error);
+        console.error("Unexpected error in notify-cancellation:", error);
         return new Response(
-            JSON.stringify({ error: error.message || "Failed to notify recipients" }),
+            JSON.stringify({ error: error.message || "Internal server error" }),
             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
     }

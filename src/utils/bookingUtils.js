@@ -44,12 +44,47 @@ export const getNextSlotTime = (timeStr) => {
 };
 
 /**
- * Formats a Date object as YYYY-MM-DD using local/calendar date components
- * to avoid UTC offset shifts (e.g. midnight becoming the previous day in UTC).
+ * Parses calendar dates safely at local noon to avoid UTC midnight shifts
+ * across differing timezones (Fixes R6).
+ */
+export const parseCalendarDate = (dateVal) => {
+    if (!dateVal) return new Date();
+    if (dateVal instanceof Date) return new Date(dateVal.getFullYear(), dateVal.getMonth(), dateVal.getDate(), 12, 0, 0);
+    const dateStr = String(dateVal).split('T')[0];
+    const parts = dateStr.split('-').map(Number);
+    if (parts.length === 3 && !parts.some(isNaN)) {
+        return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
+    }
+    const d = new Date(dateVal);
+    return isNaN(d.getTime()) ? new Date() : new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
+};
+
+/**
+ * Returns Monday of the week for a given calendar date without timezone shift (Fixes R6).
+ */
+export const getMonday = (dateVal) => {
+    const d = parseCalendarDate(dateVal);
+    const day = d.getDay(); // 0 is Sunday, 1 is Monday...
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    d.setDate(diff);
+    return d;
+};
+
+/**
+ * Adds days to a calendar date safely.
+ */
+export const addDays = (dateVal, days) => {
+    const d = parseCalendarDate(dateVal);
+    d.setDate(d.getDate() + days);
+    return d;
+};
+
+/**
+ * Formats a Date object or date string as YYYY-MM-DD using calendar components.
  */
 export const formatLocalDate = (date) => {
-    if (!date || isNaN(new Date(date).getTime())) return '';
-    const d = new Date(date);
+    if (!date) return '';
+    const d = parseCalendarDate(date);
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
@@ -57,12 +92,99 @@ export const formatLocalDate = (date) => {
 };
 
 /**
+ * Converts a Europe/Vilnius date string ('YYYY-MM-DD') and time string ('HH:mm')
+ * to exact UTC epoch milliseconds (Fixes R6).
+ */
+export const getVilniusInstant = (dateStr, timeStr = '00:00') => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const [hh, mm] = timeStr.slice(0, 5).split(':').map(Number);
+    const utcGuess = Date.UTC(y, m - 1, d, hh, mm, 0);
+
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: LAB_TIMEZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+
+    const parts = formatter.formatToParts(new Date(utcGuess));
+    const getPart = (type) => Number(parts.find(p => p.type === type)?.value || 0);
+    const vY = getPart('year');
+    const vM = getPart('month');
+    const vD = getPart('day');
+    let vH = getPart('hour');
+    if (vH === 24) vH = 0;
+    const vMin = getPart('minute');
+
+    const vilniusAsUtc = Date.UTC(vY, vM - 1, vD, vH, vMin, 0);
+    const offsetMs = vilniusAsUtc - utcGuess;
+
+    return utcGuess - offsetMs;
+};
+
+/**
+ * Checks whether a booking has already ended.
+ * Timezone-authoritative across all browser locations (Vilnius, UTC, LA, Tokyo) (Fixes R6).
+ */
+export const isBookingPast = (booking) => {
+    if (!booking) return false;
+
+    // 1. Authoritative UTC instant from database range column
+    if (booking.ends_at) {
+        const endTimeMs = new Date(booking.ends_at).getTime();
+        if (!isNaN(endTimeMs)) {
+            return endTimeMs < Date.now();
+        }
+    }
+
+    // 2. Legacy fallback: parse date + end_time in Europe/Vilnius
+    const dateStr = booking.date;
+    const timeStr = booking.end_time || booking.endTime || booking.time || '23:59';
+    if (!dateStr) return false;
+
+    return getVilniusInstant(dateStr, timeStr) < Date.now();
+};
+
+/**
+ * Checks whether a booking is currently in progress.
+ * Timezone-authoritative across all browser locations (Vilnius, UTC, LA, Tokyo) (Fixes R6).
+ */
+export const isBookingInProgress = (booking) => {
+    if (!booking) return false;
+    const now = Date.now();
+
+    // 1. Authoritative UTC instants from database range columns
+    if (booking.starts_at && booking.ends_at) {
+        const startMs = new Date(booking.starts_at).getTime();
+        const endMs = new Date(booking.ends_at).getTime();
+        if (!isNaN(startMs) && !isNaN(endMs)) {
+            return startMs <= now && endMs > now;
+        }
+    }
+
+    // 2. Legacy fallback: parse date + start/end in Europe/Vilnius
+    const dateStr = booking.date;
+    if (!dateStr) return false;
+    const startTimeStr = booking.time || booking.startTime || '00:00';
+    const endTimeStr = booking.end_time || booking.endTime || '23:59';
+
+    const startMs = getVilniusInstant(dateStr, startTimeStr);
+    const endMs = getVilniusInstant(dateStr, endTimeStr);
+
+    return !isNaN(startMs) && !isNaN(endMs) && startMs <= now && endMs > now;
+};
+
+
+/**
  * Formats a date string or Date object for UI display
  */
 export const formatDisplayDate = (date) => {
     try {
-        const d = typeof date === 'string' ? new Date(`${date}T00:00:00`) : new Date(date);
-        if (isNaN(d.getTime())) return 'Invalid Date';
+        const d = parseCalendarDate(date);
         return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     } catch {
         return 'Invalid Date';

@@ -101,7 +101,24 @@ serve(async (req) => {
             );
         }
 
-        // 4. Derive recipient and booking details authoritatively from database
+        // 4. Enforce sender quota: max 20 emails per hour (Fixes R4)
+        if (senderProfile.access_level !== 'admin') {
+            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+            const { count: recentCount, error: countErr } = await supabaseAdmin
+                .from('email_logs')
+                .select('*', { count: 'exact', head: true })
+                .eq('sender_id', user.id)
+                .gte('created_at', oneHourAgo);
+
+            if (!countErr && (recentCount ?? 0) >= 20) {
+                return new Response(
+                    JSON.stringify({ error: "Email rate limit exceeded (maximum 20 per hour). Please try again later." }),
+                    { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+                );
+            }
+        }
+
+        // 5. Derive recipient and booking details authoritatively from database
         const { data: booking, error: bookingError } = await supabaseAdmin
             .from('bookings')
             .select(`
@@ -139,7 +156,7 @@ serve(async (req) => {
         const senderName = `${senderProfile.first_name || ''} ${senderProfile.last_name || ''}`.trim() || user.email;
         const toolName = booking.tools?.name || 'Lab Equipment';
 
-        // 5. Construct safe email contents with escaping (no arbitrary raw HTML accepted)
+        // 6. Construct safe email contents with escaping (no arbitrary raw HTML accepted)
         const escapedSubject = `[MMI-LIMS] ${cleanSubject}`;
         const plainText = [
             `Hello,`,
@@ -168,7 +185,7 @@ serve(async (req) => {
             </div>
         `;
 
-        // 6. Send email via Resend and handle provider outcome
+        // 7. Send email via Resend and handle provider outcome
         const resend = new Resend(resendKey);
         const { data: resendData, error: resendError } = await resend.emails.send({
             from: "MMI-LIMS <no-reply@lims.gradientfab.com>",
@@ -186,6 +203,13 @@ serve(async (req) => {
                 { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
         }
+
+        // Record successful send for rate limiting
+        await supabaseAdmin.from('email_logs').insert({
+            sender_id: user.id,
+            recipient_email: recipientEmail,
+            booking_id: booking.id,
+        });
 
         return new Response(
             JSON.stringify({ success: true, messageId: resendData?.id }),

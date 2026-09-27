@@ -63,6 +63,32 @@ const DashboardWrapper = ({ session, onLogout }) => {
         };
     }, [userId, refreshIndex]);
 
+    // Background authorization refresh (Fixes R8): catch admin approval or role revocation
+    useEffect(() => {
+        if (!userId) return;
+
+        const handleVisibilityChange = () => {
+            if (!document.hidden) {
+                setRefreshIndex(prev => prev + 1);
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        // Auto-poll when pending approval to seamlessly activate account once approved
+        let pollTimer;
+        if (status === 'pending') {
+            pollTimer = setInterval(() => {
+                setRefreshIndex(prev => prev + 1);
+            }, 10000);
+        }
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            if (pollTimer) clearInterval(pollTimer);
+        };
+    }, [userId, status]);
+
     if (!session?.user?.id) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-4 transition-colors">

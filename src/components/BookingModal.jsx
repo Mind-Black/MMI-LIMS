@@ -2,13 +2,18 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import StatusBadge from './StatusBadge';
 import { useToast } from '../context/useToast';
 import {
+    timeToMinutes,
+    minutesToTime,
     getNextSlotTime,
     groupBookings,
     checkCollision,
     calculateEventLayout,
     checkBookingEligibility,
     formatLocalDate,
-    formatDisplayDate
+    formatDisplayDate,
+    getMonday,
+    addDays,
+    getVilniusInstant
 } from '../utils/bookingUtils';
 import { useBookingInteraction } from '../hooks/useBookingInteraction';
 import { supabase } from '../supabaseClient';
@@ -26,17 +31,12 @@ const BookingModal = ({
     initialBooking = null,
     isAdminOverride = false
 }) => {
-    // Initialize week start to current week's Monday
+    // Initialize week start to current week's Monday without timezone distortion (Fixes R6)
     const [currentWeekStart, setCurrentWeekStart] = useState(() => {
-        const d = initialDate ? new Date(initialDate) : new Date();
-        const day = d.getDay();
-        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-        const newDate = new Date(d);
-        newDate.setDate(diff);
-        newDate.setHours(0, 0, 0, 0);
-        return newDate;
+        return getMonday(initialDate || new Date());
     });
 
+    const [toolWeekBookings, setToolWeekBookings] = useState([]);
     const [selectedSlots, setSelectedSlots] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -111,16 +111,43 @@ const BookingModal = ({
     const eligibility = checkBookingEligibility(tool, profile, isAdminOverride);
     const canBook = eligibility.canBook;
 
-    // Helper to get dates for the week
+    // Helper to get dates for the week (Fixes R6)
     const weekDates = useMemo(() => {
         const dates = [];
         for (let i = 0; i < 7; i++) {
-            const d = new Date(currentWeekStart);
-            d.setDate(currentWeekStart.getDate() + i);
-            dates.push(d);
+            dates.push(addDays(currentWeekStart, i));
         }
         return dates;
     }, [currentWeekStart]);
+
+    const weekStartStr = useMemo(() => formatLocalDate(currentWeekStart), [currentWeekStart]);
+    const weekEndStr = useMemo(() => formatLocalDate(addDays(currentWeekStart, 6)), [currentWeekStart]);
+
+    // Fetch tool availability for the active week window in modal (Fixes R5)
+    useEffect(() => {
+        let isCancelled = false;
+        const fetchToolWeekBookings = async () => {
+            if (!tool?.id) return;
+            try {
+                const { data, error } = await supabase
+                    .from('bookings')
+                    .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at')
+                    .eq('tool_id', tool.id)
+                    .gte('date', weekStartStr)
+                    .lte('date', weekEndStr)
+                    .order('date', { ascending: true })
+                    .order('time', { ascending: true });
+
+                if (!isCancelled && !error && data) {
+                    setToolWeekBookings(data);
+                }
+            } catch (err) {
+                console.error('Error fetching tool week bookings:', err);
+            }
+        };
+        fetchToolWeekBookings();
+        return () => { isCancelled = true; };
+    }, [tool?.id, weekStartStr, weekEndStr]);
 
     // Helper to generate 30-min slots from 00:00 to 24:00
     const timeSlots = useMemo(() => {
@@ -166,21 +193,28 @@ const BookingModal = ({
     };
 
     const isSlotInPast = (dateStr, timeStr) => {
-        const now = new Date();
-        const slotDate = new Date(`${dateStr}T${timeStr}`);
-        const currentSlotStart = new Date(now);
-        const currentMinutes = now.getMinutes();
-        const roundedMinutes = currentMinutes < 30 ? 0 : 30;
-        currentSlotStart.setMinutes(roundedMinutes, 0, 0);
-        return slotDate < currentSlotStart;
+        const slotEndMinutes = timeToMinutes(timeStr) + 30;
+        const endSlotTimeStr = minutesToTime(slotEndMinutes);
+        return getVilniusInstant(dateStr, endSlotTimeStr) < Date.now();
     };
+
+    const allKnownBookings = useMemo(() => {
+        const map = new Map();
+        for (const b of existingBookings) {
+            map.set(b.id, b);
+        }
+        for (const b of toolWeekBookings) {
+            map.set(b.id, b);
+        }
+        return Array.from(map.values());
+    }, [existingBookings, toolWeekBookings]);
 
     const isSlotBooked = useCallback((dateStr, timeStr) => {
         const slotStart = getMinutes(timeStr);
         const slotEnd = slotStart + 30;
 
-        return existingBookings.some(b => {
-            if (b.date !== dateStr || b.tool_id !== tool.id) return false;
+        return allKnownBookings.some(b => {
+            if (b.date !== dateStr || (b.tool_id !== tool.id && b.toolId !== tool.id)) return false;
 
             const bStart = getMinutes(b.startTime || b.time);
             let bEnd;
@@ -193,7 +227,7 @@ const BookingModal = ({
 
             return (slotStart < bEnd && slotEnd > bStart);
         });
-    }, [existingBookings, tool.id]);
+    }, [allKnownBookings, tool.id]);
 
     const getCurrentTimeTop = () => {
         const hours = currentTime.getHours();
@@ -211,21 +245,21 @@ const BookingModal = ({
 
     // Group bookings for display
     const displayBookings = useMemo(() => {
-        if (!editingBooking) return existingBookings;
+        if (!editingBooking) return allKnownBookings;
 
         const editIds = editingBooking.ids || [editingBooking.id];
         const primaryId = editIds[0];
 
-        if (!primaryId) return existingBookings;
+        if (!primaryId) return allKnownBookings;
 
-        return existingBookings.map(b => {
+        return allKnownBookings.map(b => {
             if (b.id === primaryId) {
                 return editingBooking;
             }
             if (editIds.includes(b.id)) return null;
             return b;
         }).filter(Boolean);
-    }, [existingBookings, editingBooking]);
+    }, [allKnownBookings, editingBooking]);
 
     const groupedBookings = useMemo(() => {
         const toolBookings = displayBookings.filter(b => b.tool_id === tool.id);
@@ -439,27 +473,20 @@ const BookingModal = ({
         }
     };
 
-    // Week navigation
+    // Week navigation (Fixes R11, R6)
     const handlePrevWeek = () => {
-        const newDate = new Date(currentWeekStart);
-        newDate.setDate(newDate.getDate() - 7);
-        setCurrentWeekStart(newDate);
+        setSelectedSlots([]);
+        setCurrentWeekStart(prev => addDays(prev, -7));
     };
 
     const handleNextWeek = () => {
-        const newDate = new Date(currentWeekStart);
-        newDate.setDate(newDate.getDate() + 7);
-        setCurrentWeekStart(newDate);
+        setSelectedSlots([]);
+        setCurrentWeekStart(prev => addDays(prev, 7));
     };
 
     const handleToday = () => {
-        const d = new Date();
-        const day = d.getDay();
-        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-        const newDate = new Date(d);
-        newDate.setDate(diff);
-        newDate.setHours(0, 0, 0, 0);
-        setCurrentWeekStart(newDate);
+        setSelectedSlots([]);
+        setCurrentWeekStart(getMonday(new Date()));
     };
 
     // Mutation with draft preservation (L5)
