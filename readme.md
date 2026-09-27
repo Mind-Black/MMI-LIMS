@@ -1,76 +1,97 @@
 # MMI-LIMS (Laboratory Information Management System)
 
-A comprehensive Laboratory Information Management System built with React, Vite, Tailwind CSS, and Supabase. This application helps manage laboratory resources, bookings, users, and analytics.
+A secure, high-performance Laboratory Information Management System built with React 19, Vite, Tailwind CSS, and Supabase. This application manages laboratory resources, bookings, user authorizations, and calendar synchronization.
 
 ## Features
 
-- **Authentication**: Secure user authentication and session management using Supabase Auth.
-- **Dashboard**: Centralized hub for quick access to key metrics and recent activities.
-- **Booking Management**: 
-  - Interactive calendar for viewing and managing bookings.
-  - Create, update, and delete bookings.
-  - Conflict detection and resolution.
-- **Tool Management**: Inventory system for laboratory tools and equipment.
-- **User Management**: Administration interface for managing user roles and permissions.
-- **Analytics**: Visual insights into tool usage and booking trends.
-- **Responsive Design**: Optimized for various screen sizes using Tailwind CSS.
+- **Authentication & Authorization**:
+  - Secure authentication via Supabase Auth.
+  - Fail-closed account state handling (Pending Approval / Active / Admin).
+  - Server-enforced role-based access control and privilege escalation prevention.
+- **Booking Management**:
+  - Drag-and-drop interactive weekly calendar anchored in lab timezone (`Europe/Vilnius`).
+  - Authoritative database-level double-booking prevention using PostgreSQL range exclusion constraints (`tstzrange` + `btree_gist`).
+  - Atomic group booking updates preventing partial legacy slot deletion.
+  - Idempotent normalization and preservation of legacy booking reservations.
+  - Safe bounds clamping preventing invalid date crashes on drag outside day bounds.
+  - Unlocked booking access for license-free equipment (`license_req = false`).
+- **Calendar Feeds (ICS)**:
+  - Private bearer-token calendar subscription feed.
+  - Token hashes stored in private tables; tokens excluded from user directory queries.
+  - RFC 5545 compliant calendar export with line folding, character escaping, and injection prevention.
+- **Secure Email Notifications**:
+  - Bounded, server-derived cancellation and messaging dispatch via Resend Edge Functions.
+  - Database-level recipient filtering preventing unbounded fan-out.
+- **Performance Optimizations**:
+  - Bounded, paginated queries with windowed date ranges.
+  - Hidden-tab polling suspension via Page Visibility API.
+  - Code splitting of administrative components.
 
 ## Tech Stack
 
-- **Frontend Framework**: [React](https://react.dev/)
-- **Build Tool**: [Vite](https://vitejs.dev/)
+- **Frontend**: [React 19](https://react.dev/), [Vite](https://vitejs.dev/)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/)
-- **Backend & Database**: [Supabase](https://supabase.com/)
-- **Icons**: [Lucide React](https://lucide.dev/)
+- **Backend & Database**: [Supabase](https://supabase.com/) (PostgreSQL 15+, Row Level Security, Edge Functions)
 
 ## Prerequisites
 
-Before you begin, ensure you have the following installed:
-- [Node.js](https://nodejs.org/) (v16 or higher)
-- [npm](https://www.npmjs.com/) (usually comes with Node.js)
+- [Node.js](https://nodejs.org/) (`^20.19.0` or `>=22.12.0`)
+- [npm](https://www.npmjs.com/) (v10 or higher)
 
 ## Installation
 
-1.  **Clone the repository**
-    ```bash
-    git clone <repository-url>
-    cd MMI-LIMS
-    ```
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd MMI-LIMS
+   ```
 
-2.  **Install dependencies**
-    ```bash
-    npm install
-    ```
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
 
-3.  **Environment Setup**
-    Create a `.env` file in the root directory and add your Supabase credentials:
-    ```env
-    VITE_SUPABASE_URL=your_supabase_url
-    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-    ```
+3. **Environment Setup**
+   Create a `.env` file in the root directory:
+   ```env
+   VITE_SUPABASE_URL=your_supabase_url
+   VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
 
-4.  **Run the development server**
-    ```bash
-    npm run dev
-    ```
+4. **Database Migrations**
+   Apply migrations in `supabase/migrations/`:
+   - `20260927000000_baseline_schema.sql`: Full baseline schema for fresh deployments.
+   - `20260927000001_security_and_constraints.sql`: Forward migration for upgrading existing deployments.
 
-## Scripts
+5. **Run the development server**
+   ```bash
+   npm run dev
+   ```
 
-- `npm run dev`: Starts the development server.
-- `npm run build`: Builds the app for production.
-- `npm run lint`: Runs ESLint to check for code quality issues.
-- `npm run preview`: Locally preview the production build.
+## Available Scripts
+
+- `npm run dev`: Starts the Vite development server (bound to `localhost`).
+- `npm run build`: Bundles the application for production.
+- `npm run lint`: Runs ESLint across all JavaScript/JSX files.
+- `npm test`: Runs the automated test suite (`node:test`) and booking logic assertions.
+- `npm run preview`: Previews the production build locally.
 
 ## Project Structure
 
 ```
-src/
-├── assets/         # Static assets (images, etc.)
-├── components/     # Reusable UI components
-├── context/        # React Context providers (Theme, Toast)
-├── hooks/          # Custom React hooks
-├── utils/          # Utility functions
-├── App.jsx         # Main application component
-├── main.jsx        # Entry point
-└── supabaseClient.js # Supabase client configuration
+├── .github/workflows/ # CI/CD deployment workflow with lint and test gates
+├── sql_archive/       # Historical SQL reference files
+├── src/
+│   ├── assets/        # Static assets and equipment images
+│   ├── components/    # Reusable UI components (Dashboard, BookingModal, etc.)
+│   ├── context/       # Theme and Toast Context providers and hooks
+│   ├── hooks/         # Custom interaction hooks (useBookingInteraction)
+│   ├── utils/         # Core booking, layout, collision, and timezone utilities
+│   ├── App.jsx        # Main application component
+│   └── supabaseClient.js # Supabase client configuration
+├── supabase/
+│   ├── config.toml    # Edge Function JWT configuration
+│   ├── functions/     # Supabase Edge Functions (serve-ics, send-email, notify-cancellation)
+│   └── migrations/    # Versioned database migrations
+└── tests/             # Unit and integration test suites
 ```

@@ -1,14 +1,11 @@
 import React, { useMemo } from 'react';
-
 import { groupBookings } from '../utils/bookingUtils';
 
-const BookingList = ({ bookings, onCancel, onUpdate, onEdit, allBookings, isAdminView = false, readOnly = false }) => {
-
+const BookingList = ({ bookings, onCancel, onEdit, isAdminView = false, readOnly = false }) => {
     const groupedBookings = useMemo(() => groupBookings(bookings), [bookings]);
 
     return (
         <div className="space-y-6">
-
             {groupedBookings.length === 0 ? (
                 <p className="text-gray-500 dark:text-gray-400 transition-colors">
                     {isAdminView ? 'No bookings found in the system.' : 'No bookings found.'}

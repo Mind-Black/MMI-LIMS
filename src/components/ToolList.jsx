@@ -88,6 +88,10 @@ const ToolTable = ({ toolsList, title, profile, onStatusChange, onBook, expanded
                                                     <img
                                                         src={toolImage}
                                                         alt={tool.name}
+                                                        loading="lazy"
+                                                        decoding="async"
+                                                        width="256"
+                                                        height="192"
                                                         className="w-full h-full object-cover"
                                                     />
                                                 </div>
@@ -163,8 +167,9 @@ const ToolList = ({ tools, profile, onStatusChange, onBook }) => {
         return matchesCategory && matchesSearch;
     });
 
-    const authorizedTools = filteredTools.filter(t => !t.license_req || profile?.licenses?.includes(t.id));
-    const otherTools = filteredTools.filter(t => t.license_req && !profile?.licenses?.includes(t.id));
+    const isAuthorized = (t) => profile?.access_level === 'admin' || !t.license_req || (Array.isArray(profile?.licenses) && profile.licenses.includes(t.id));
+    const authorizedTools = filteredTools.filter(isAuthorized);
+    const otherTools = filteredTools.filter(t => !isAuthorized(t));
 
     return (
         <div className="space-y-4">

@@ -6,10 +6,80 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const TIMEZONE = 'Europe/Vilnius'
+const LAB_TIMEZONE = 'Europe/Vilnius'
+
+/**
+ * Escapes text values for RFC 5545 compliance
+ * Backslashes, semicolons, commas, and newlines must be escaped.
+ */
+export function escapeICSText(text: string | null | undefined): string {
+    if (!text) return ''
+    return String(text)
+        .replace(/\\/g, '\\\\')
+        .replace(/;/g, '\\;')
+        .replace(/,/g, '\\,')
+        .replace(/\r?\n/g, '\\n')
+}
+
+/**
+ * Folds ICS lines according to RFC 5545 (limit to 75 octets per line).
+ * Lines are split and continued with CRLF + space.
+ */
+export function foldICSLine(line: string): string {
+    const encoder = new TextEncoder()
+    const bytes = encoder.encode(line)
+    const maxOctets = 75
+
+    if (bytes.length <= maxOctets) {
+        return line
+    }
+
+    const decoder = new TextDecoder()
+    let result = ''
+    let start = 0
+    let isFirst = true
+
+    while (start < bytes.length) {
+        const limit = isFirst ? maxOctets : maxOctets - 1
+        let end = Math.min(start + limit, bytes.length)
+
+        while (end > start && end < bytes.length && (bytes[end] & 0xC0) === 0x80) {
+            end--
+        }
+
+        const chunkStr = decoder.decode(bytes.subarray(start, end))
+
+        if (isFirst) {
+            result = chunkStr
+            isFirst = false
+        } else {
+            result += '\r\n ' + chunkStr
+        }
+
+        start = end
+    }
+
+    return result
+}
+
+/**
+ * Formats a Date object as RFC 5545 UTC timestamp: YYYYMMDDTHHMMSSZ
+ */
+export function formatICSDateUTC(date: Date): string {
+    return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+}
+
+/**
+ * Computes SHA-256 hash in hex format
+ */
+export async function sha256Hex(message: string): Promise<string> {
+    const msgUint8 = new TextEncoder().encode(message)
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8)
+    const hashArray = Array.from(new Uint8Array(hashBuffer))
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
 
 Deno.serve(async (req) => {
-    // Handle CORS preflight requests
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
     }
@@ -18,115 +88,150 @@ Deno.serve(async (req) => {
         const url = new URL(req.url)
         const token = url.searchParams.get('token')
 
-        if (!token) {
+        if (!token || token.trim().length === 0) {
             return new Response(JSON.stringify({ error: 'Missing token' }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 400,
             })
         }
 
-        // Initialize Supabase client
+        // Initialize Supabase admin client to access protected calendar token lookup
         const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
-        const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-        const supabase = createClient(supabaseUrl, supabaseAnonKey)
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
-        // Find user by token
-        const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('calendar_token', token)
+        if (!supabaseUrl || !supabaseServiceKey) {
+            console.error('Server configuration error: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
+            return new Response(JSON.stringify({ error: 'Server configuration error' }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 500,
+            })
+        }
+
+        const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+
+        // Compute SHA-256 of the presented bearer token (never store or query plaintext tokens)
+        const tokenHash = await sha256Hex(token.trim())
+
+        // Look up token owner in dedicated private table
+        const { data: tokenRecord, error: tokenError } = await supabaseAdmin
+            .from('user_calendar_tokens')
+            .select('user_id')
+            .eq('token_hash', tokenHash)
             .single()
 
-        if (profileError || !profile) {
-            return new Response(JSON.stringify({ error: 'Invalid token' }), {
+        if (tokenError || !tokenRecord?.user_id) {
+            return new Response(JSON.stringify({ error: 'Invalid or revoked calendar token' }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 401,
             })
         }
 
-        const userId = profile.id
+        const userId = tokenRecord.user_id
 
-        // Fetch bookings for the user
-        // We also fetch tool details to make the event title descriptive
-        const { data: bookings, error: bookingsError } = await supabase
+        // Fetch bookings for this owner with tool details
+        const { data: bookings, error: bookingsError } = await supabaseAdmin
             .from('bookings')
             .select(`
-        *,
-        tools (
-          name,
-          location
-        )
-      `)
+                id,
+                date,
+                time,
+                end_time,
+                project,
+                tools (
+                    name,
+                    location
+                )
+            `)
             .eq('user_id', userId)
+            .order('date', { ascending: true })
 
         if (bookingsError) {
+            console.error('Error fetching calendar bookings:', bookingsError)
             throw bookingsError
         }
 
-        // Generate ICS content
-        let icsContent = [
+        const now = new Date()
+        const dtStamp = formatICSDateUTC(now)
+
+        const lines: string[] = [
             'BEGIN:VCALENDAR',
             'VERSION:2.0',
-            'PRODID:-//MMI-LIMS//Bookings//EN',
+            'PRODID:-//MMI-LIMS//Bookings Calendar//EN',
             'CALSCALE:GREGORIAN',
             'METHOD:PUBLISH',
-            'X-WR-CALNAME:MMI-LIMS Bookings',
-            'X-WR-TIMEZONE:UTC',
-        ].join('\r\n') + '\r\n'
+            'X-WR-CALNAME:MMI-LIMS My Bookings',
+            'X-WR-TIMEZONE:Europe/Vilnius',
+        ]
 
-        bookings.forEach((booking) => {
-            const toolName = booking.tools?.name || 'Unknown Tool'
-            const location = booking.tools?.location || 'Lab'
+        for (const booking of bookings ?? []) {
+            try {
+                const toolName = booking.tools?.name || 'Lab Equipment'
+                const location = booking.tools?.location || 'Lab'
+                const project = booking.project || 'General Research'
 
-            // Construct date string: YYYY-MM-DDTHH:MM:SS
-            const startDateStr = `${booking.date}T${booking.time || booking.startTime}`
-            const endDateStr = `${booking.date}T${booking.end_time || booking.endTime}`
+                // Handle missing or legacy end times (default to start + 30m)
+                const startTimeStr = (booking.time || '09:00').slice(0, 5)
+                let endTimeStr = (booking.end_time || '').slice(0, 5)
 
-            // Convert Vilnius time to UTC Date object
-            const startDateTime = zonedTimeToUtc(startDateStr, TIMEZONE)
-            const endDateTime = zonedTimeToUtc(endDateStr, TIMEZONE)
+                if (!endTimeStr) {
+                    const [h, m] = startTimeStr.split(':').map(Number)
+                    const totalM = h * 60 + m + 30
+                    const endH = Math.floor(totalM / 60) % 24
+                    const endM = totalM % 60
+                    endTimeStr = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`
+                }
 
-            const formatICSDate = (date: Date) => {
-                return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+                // Construct ISO strings and parse in Europe/Vilnius lab timezone
+                const startIso = `${booking.date}T${startTimeStr}:00`
+                const endIso = `${booking.date}T${endTimeStr}:00`
+
+                const startDate = zonedTimeToUtc(startIso, LAB_TIMEZONE)
+                const endDate = zonedTimeToUtc(endIso, LAB_TIMEZONE)
+
+                if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+                    console.warn(`Skipping booking ${booking.id} due to invalid date/time format: ${startIso} -> ${endIso}`)
+                    continue
+                }
+
+                const uid = `booking-${booking.id}@mmi-lims.gradientfab.com`
+                const summary = escapeICSText(`Booking: ${toolName}`)
+                const description = escapeICSText(`Project: ${project}`)
+                const loc = escapeICSText(location)
+
+                lines.push('BEGIN:VEVENT')
+                lines.push(`UID:${uid}`)
+                lines.push(`DTSTAMP:${dtStamp}`)
+                lines.push(`DTSTART:${formatICSDateUTC(startDate)}`)
+                lines.push(`DTEND:${formatICSDateUTC(endDate)}`)
+                lines.push(`SUMMARY:${summary}`)
+                lines.push(`DESCRIPTION:${description}`)
+                lines.push(`LOCATION:${loc}`)
+                lines.push('STATUS:CONFIRMED')
+                lines.push('END:VEVENT')
+            } catch (err) {
+                console.warn(`Error processing booking ${booking.id} for calendar:`, err)
             }
+        }
 
-            const now = new Date()
-            const dtStamp = formatICSDate(now)
-            const dtStart = formatICSDate(startDateTime)
-            const dtEnd = formatICSDate(endDateTime)
+        lines.push('END:VCALENDAR')
 
-            const uid = `${booking.id}@mmi-lims`
-
-            const event = [
-                'BEGIN:VEVENT',
-                `UID:${uid}`,
-                `DTSTAMP:${dtStamp}`,
-                `DTSTART:${dtStart}`,
-                `DTEND:${dtEnd}`,
-                `SUMMARY:Booking: ${toolName}`,
-                `DESCRIPTION:Project: ${booking.project}`,
-                `LOCATION:${location}`,
-                'STATUS:CONFIRMED',
-                'END:VEVENT',
-            ].join('\r\n') + '\r\n'
-
-            icsContent += event
-        })
-
-        icsContent += 'END:VCALENDAR'
+        // Fold lines per RFC 5545 and join with CRLF
+        const icsContent = lines.map(foldICSLine).join('\r\n') + '\r\n'
 
         return new Response(icsContent, {
             headers: {
                 ...corsHeaders,
                 'Content-Type': 'text/calendar; charset=utf-8',
-                'Content-Disposition': 'attachment; filename="bookings.ics"',
+                'Content-Disposition': 'inline; filename="mmi-lims-bookings.ics"',
+                'Cache-Control': 'private, no-cache, no-store, must-revalidate',
             },
         })
 
     } catch (error) {
-        return new Response(JSON.stringify({ error: error.message }), {
+        console.error('Error generating calendar:', error)
+        return new Response(JSON.stringify({ error: 'Internal calendar error' }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 400,
+            status: 500,
         })
     }
 })

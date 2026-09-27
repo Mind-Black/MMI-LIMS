@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import logo from '../assets/ktu_mmi.svg';
-import { useToast } from '../context/ToastContext';
+import { useToast } from '../context/useToast';
 
 const LoginScreen = () => {
     const [loading, setLoading] = useState(false);

@@ -1,33 +1,42 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
-import { useToast } from '../context/ToastContext';
+import { useToast } from '../context/useToast';
 
 const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
     const [allUsers, setAllUsers] = useState([]);
     const [selectedUser, setSelectedUser] = useState(null);
+    const [loading, setLoading] = useState(true);
     const { showToast } = useToast();
 
-    // Fetch All Users
-    useEffect(() => {
-        const fetchUsers = async () => {
-            console.log('Fetching all users...');
-            const { data, error } = await supabase.from('profiles').select('*').order('last_name', { ascending: true });
+    // Fetch All Users (Directory query selects ONLY non-sensitive columns; no bearer tokens) (S2)
+    const fetchUsers = useCallback(async () => {
+        try {
+            setLoading(true);
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('id, first_name, last_name, job_title, access_level, is_approved, licenses, projects')
+                .order('last_name', { ascending: true });
+
             if (error) {
                 console.error('Error fetching users:', error);
-                showToast('Failed to fetch users', 'error');
-            } else {
-                console.log('Fetched users:', data);
+                showToast('Failed to fetch users: ' + error.message, 'error');
+            } else if (data) {
                 setAllUsers(data);
             }
-        };
-        fetchUsers();
+        } finally {
+            setLoading(false);
+        }
     }, [showToast]);
+
+    useEffect(() => {
+        fetchUsers();
+    }, [fetchUsers]);
 
     const handleLicenseToggle = async (userId, toolId) => {
         const userToUpdate = allUsers.find(u => u.id === userId);
         if (!userToUpdate) return;
 
-        const currentLicenses = userToUpdate.licenses || [];
+        const currentLicenses = Array.isArray(userToUpdate.licenses) ? userToUpdate.licenses : [];
         let newLicenses;
 
         if (currentLicenses.includes(toolId)) {
@@ -37,29 +46,25 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
         }
 
         try {
-            console.log(`Updating licenses for user ${userId} to:`, newLicenses);
             const { data, error } = await supabase
                 .from('profiles')
                 .update({ licenses: newLicenses })
                 .eq('id', userId)
-                .select();
+                .select('id, licenses');
 
-            if (error) {
-                console.error('Supabase update error:', error);
-                throw error;
+            if (error) throw error;
+            if (!data || data.length === 0) {
+                throw new Error('Update failed or permission denied (0 rows affected)');
             }
 
-            console.log('Supabase update success:', data);
-
-            // Update local state
-            setAllUsers(allUsers.map(u => u.id === userId ? { ...u, licenses: newLicenses } : u));
+            setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, licenses: newLicenses } : u));
             if (selectedUser?.id === userId) {
-                setSelectedUser({ ...selectedUser, licenses: newLicenses });
+                setSelectedUser(prev => prev ? { ...prev, licenses: newLicenses } : null);
             }
             if (currentUser && currentUser.id === userId && onProfileUpdate) {
                 onProfileUpdate();
             }
-            showToast('Licenses updated successfully.');
+            showToast('Licenses updated successfully.', 'success');
         } catch (error) {
             console.error('Error updating licenses:', error);
             showToast('Failed to update licenses: ' + error.message, 'error');
@@ -68,15 +73,19 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
 
     const handleApproveUser = async (userId) => {
         try {
-            const { error } = await supabase
+            const { data, error } = await supabase
                 .from('profiles')
                 .update({ is_approved: true })
-                .eq('id', userId);
+                .eq('id', userId)
+                .select('id, is_approved');
 
             if (error) throw error;
+            if (!data || data.length === 0) {
+                throw new Error('User approval could not be applied');
+            }
 
-            setAllUsers(allUsers.map(u => u.id === userId ? { ...u, is_approved: true } : u));
-            showToast('User approved successfully.');
+            setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, is_approved: true } : u));
+            showToast('User approved successfully.', 'success');
         } catch (error) {
             console.error('Error approving user:', error);
             showToast('Failed to approve user: ' + error.message, 'error');
@@ -87,7 +96,7 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
         const userToUpdate = allUsers.find(u => u.id === userId);
         if (!userToUpdate) return;
 
-        const currentProjects = userToUpdate.projects || [];
+        const currentProjects = Array.isArray(userToUpdate.projects) ? userToUpdate.projects : [];
         if (currentProjects.includes(projectName)) {
             showToast('Project already assigned.', 'error');
             return;
@@ -96,22 +105,25 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
         const newProjects = [...currentProjects, projectName];
 
         try {
-            const { error } = await supabase
+            const { data, error } = await supabase
                 .from('profiles')
                 .update({ projects: newProjects })
-                .eq('id', userId);
+                .eq('id', userId)
+                .select('id, projects');
 
             if (error) throw error;
+            if (!data || data.length === 0) {
+                throw new Error('Failed to add project');
+            }
 
-            // Update local state
-            setAllUsers(allUsers.map(u => u.id === userId ? { ...u, projects: newProjects } : u));
+            setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, projects: newProjects } : u));
             if (selectedUser?.id === userId) {
-                setSelectedUser({ ...selectedUser, projects: newProjects });
+                setSelectedUser(prev => prev ? { ...prev, projects: newProjects } : null);
             }
             if (currentUser && currentUser.id === userId && onProfileUpdate) {
                 onProfileUpdate();
             }
-            showToast('Project added successfully.');
+            showToast('Project added successfully.', 'success');
         } catch (error) {
             console.error('Error adding project:', error);
             showToast('Failed to add project: ' + error.message, 'error');
@@ -122,25 +134,28 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
         const userToUpdate = allUsers.find(u => u.id === userId);
         if (!userToUpdate) return;
 
-        const newProjects = (userToUpdate.projects || []).filter(p => p !== projectName);
+        const newProjects = (Array.isArray(userToUpdate.projects) ? userToUpdate.projects : []).filter(p => p !== projectName);
 
         try {
-            const { error } = await supabase
+            const { data, error } = await supabase
                 .from('profiles')
                 .update({ projects: newProjects })
-                .eq('id', userId);
+                .eq('id', userId)
+                .select('id, projects');
 
             if (error) throw error;
+            if (!data || data.length === 0) {
+                throw new Error('Failed to remove project');
+            }
 
-            // Update local state
-            setAllUsers(allUsers.map(u => u.id === userId ? { ...u, projects: newProjects } : u));
+            setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, projects: newProjects } : u));
             if (selectedUser?.id === userId) {
-                setSelectedUser({ ...selectedUser, projects: newProjects });
+                setSelectedUser(prev => prev ? { ...prev, projects: newProjects } : null);
             }
             if (currentUser && currentUser.id === userId && onProfileUpdate) {
                 onProfileUpdate();
             }
-            showToast('Project removed successfully.');
+            showToast('Project removed successfully.', 'success');
         } catch (error) {
             console.error('Error removing project:', error);
             showToast('Failed to remove project: ' + error.message, 'error');
@@ -197,6 +212,11 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
                         ))}
                     </tbody>
                 </table>
+                {allUsers.length === 0 && (
+                    <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+                        {loading ? 'Loading users...' : 'No users found.'}
+                    </div>
+                )}
             </div>
 
             {selectedUser && (
@@ -218,7 +238,9 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
                                 {tools.map(tool => {
                                     const hasLicense = selectedUser.licenses?.includes(tool.id);
                                     return (
-                                        <div key={tool.id} className={`p-2 rounded border flex items-center justify-between cursor-pointer transition-colors text-sm ${hasLicense ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'}`}
+                                        <div
+                                            key={tool.id}
+                                            className={`p-2 rounded border flex items-center justify-between cursor-pointer transition-colors text-sm ${hasLicense ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'}`}
                                             onClick={() => handleLicenseToggle(selectedUser.id, tool.id)}
                                         >
                                             <span className="font-medium text-gray-700 dark:text-gray-200">{tool.name}</span>
@@ -249,34 +271,31 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
                                     id="new-project-input"
                                 />
                                 <button
+                                    className="btn btn-primary btn-sm"
                                     onClick={() => {
                                         const input = document.getElementById('new-project-input');
-                                        const val = input.value.trim();
-                                        if (val) {
-                                            handleProjectAdd(selectedUser.id, val);
+                                        if (input && input.value.trim()) {
+                                            handleProjectAdd(selectedUser.id, input.value.trim());
                                             input.value = '';
                                         }
                                     }}
-                                    className="btn btn-primary btn-sm"
                                 >
                                     Add
                                 </button>
                             </div>
-                            <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scroll">
-                                {(!selectedUser.projects || selectedUser.projects.length === 0) && (
-                                    <div className="text-gray-400 dark:text-gray-500 text-sm italic">No projects assigned.</div>
-                                )}
+                            <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
                                 {selectedUser.projects?.map((proj, idx) => (
-                                    <div key={idx} className="flex justify-between items-center bg-gray-50 dark:bg-gray-700 p-2 rounded border dark:border-gray-600 text-sm transition-colors">
-                                        <span className="text-gray-700 dark:text-gray-200">{proj}</span>
-                                        <button
+                                    <span key={idx} className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded text-xs flex items-center gap-1">
+                                        {proj}
+                                        <i
+                                            className="fas fa-times cursor-pointer hover:text-red-500 ml-1"
                                             onClick={() => handleProjectRemove(selectedUser.id, proj)}
-                                            className="text-red-500 hover:text-red-700"
-                                        >
-                                            <i className="fas fa-trash-alt"></i>
-                                        </button>
-                                    </div>
+                                        ></i>
+                                    </span>
                                 ))}
+                                {(!selectedUser.projects || selectedUser.projects.length === 0) && (
+                                    <span className="text-gray-400 text-xs italic">No projects assigned</span>
+                                )}
                             </div>
                         </div>
                     </div>

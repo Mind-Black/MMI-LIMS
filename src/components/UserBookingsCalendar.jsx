@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect, useRef, useState } from 'react';
-import { groupBookings, calculateEventLayout } from '../utils/bookingUtils';
+import { groupBookings, calculateEventLayout, formatLocalDate, formatDisplayDate } from '../utils/bookingUtils';
 
 const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBookingClick }) => {
     const scrollContainerRef = useRef(null);
@@ -7,19 +7,15 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
     // Helper to get dates for the week
     const weekDates = useMemo(() => {
         const dates = [];
-        try {
-            for (let i = 0; i < 7; i++) {
-                const d = new Date(currentWeekStart);
-                d.setDate(currentWeekStart.getDate() + i);
-                dates.push(d);
-            }
-        } catch (e) {
-            console.error('Error generating week dates', e);
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(currentWeekStart);
+            d.setDate(currentWeekStart.getDate() + i);
+            dates.push(d);
         }
         return dates;
     }, [currentWeekStart]);
 
-    // Helper to generate 30-min slots from 08:00 to 20:00
+    // Helper to generate 30-min slots from 00:00 to 24:00
     const timeSlots = useMemo(() => {
         const slots = [];
         for (let h = 0; h < 24; h++) {
@@ -36,7 +32,6 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
     const [currentTime, setCurrentTime] = useState(new Date());
 
     useEffect(() => {
-        // Update time every minute
         const timer = setInterval(() => {
             setCurrentTime(new Date());
         }, 60000);
@@ -60,30 +55,15 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
     // Scroll to 9 AM on mount
     useEffect(() => {
         if (scrollContainerRef.current) {
-            // 9 AM is 9 hours from start (00:00)
             const hoursFromStart = 9 - START_HOUR;
-            const slotsFromStart = hoursFromStart * 2; // 2 slots per hour
+            const slotsFromStart = hoursFromStart * 2;
             const pixelsToScroll = slotsFromStart * PIXELS_PER_30_MINS;
-
             scrollContainerRef.current.scrollTop = pixelsToScroll;
         }
     }, []);
 
-    const formatDate = (date) => {
-        try {
-            return date.toISOString().split('T')[0];
-        } catch (e) {
-            return '';
-        }
-    };
-
-    const displayDate = (date) => {
-        try {
-            return date.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
-        } catch (e) {
-            return 'Invalid Date';
-        }
-    };
+    const formatDate = (date) => formatLocalDate(date);
+    const displayDate = (date) => formatDisplayDate(date);
 
     // Group bookings for display
     const groupedBookings = useMemo(() => {
@@ -91,21 +71,19 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
     }, [bookings]);
 
     const getEventStyle = (booking) => {
-        const startHour = parseInt(booking.startTime.split(':')[0]);
-        const startMin = parseInt(booking.startTime.split(':')[1]);
-        const endHour = parseInt(booking.endTime.split(':')[0]);
-        const endMin = parseInt(booking.endTime.split(':')[1]);
+        const startParts = (booking.startTime || '00:00').split(':').map(Number);
+        const endParts = (booking.endTime || '00:30').split(':').map(Number);
 
-        const startOffset = (startHour - START_HOUR) * 60 + startMin;
-        const endOffset = (endHour - START_HOUR) * 60 + endMin;
-        const duration = endOffset - startOffset;
+        const startOffset = (startParts[0] - START_HOUR) * 60 + startParts[1];
+        const endOffset = (endParts[0] - START_HOUR) * 60 + endParts[1];
+        const duration = Math.max(30, endOffset - startOffset);
 
         const top = (startOffset / 30) * PIXELS_PER_30_MINS;
         const height = (duration / 30) * PIXELS_PER_30_MINS;
 
         return {
             top: `${top}px`,
-            height: `${height - 1}px`, // -1 for border/gap
+            height: `${height - 1}px`,
             left: booking.left !== undefined ? `${booking.left}%` : '2px',
             width: booking.width !== undefined ? `${booking.width}%` : 'calc(100% - 4px)',
             position: 'absolute',
@@ -129,14 +107,17 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
     return (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 flex flex-col overflow-hidden h-[950px] transition-colors">
             {/* Header */}
-            <div className="p-1 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center shrink-0 transition-colors">
-                {/* <h3 className="font-bold text-gray-800 text-lg">Weekly Schedule</h3> */}
+            <div className="p-2 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center shrink-0 transition-colors">
                 <div className="flex items-center gap-4">
-                    <button onClick={handlePrevWeek} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded transition-colors"><i className="fas fa-chevron-left"></i></button>
+                    <button onClick={handlePrevWeek} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded transition-colors" title="Previous Week">
+                        <i className="fas fa-chevron-left"></i>
+                    </button>
                     <div className="font-bold text-gray-700 dark:text-gray-200 w-48 text-center transition-colors">
-                        {weekDates[0].toLocaleDateString()} - {weekDates[6].toLocaleDateString()}
+                        {displayDate(weekDates[0])} - {displayDate(weekDates[6])}
                     </div>
-                    <button onClick={handleNextWeek} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded transition-colors"><i className="fas fa-chevron-right"></i></button>
+                    <button onClick={handleNextWeek} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded transition-colors" title="Next Week">
+                        <i className="fas fa-chevron-right"></i>
+                    </button>
                 </div>
             </div>
 
@@ -146,7 +127,7 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
 
                     {/* Time Labels Column */}
                     <div className="w-[50px] shrink-0 bg-gray-50 dark:bg-gray-900 border-r dark:border-gray-700 sticky left-0 z-30 transition-colors">
-                        <div className="h-10 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 transition-colors"></div> {/* Header spacer */}
+                        <div className="h-10 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 transition-colors"></div>
                         {timeSlots.map(time => (
                             <div key={time} className="h-12 border-b dark:border-gray-700 text-right pr-2 text-xs text-gray-500 dark:text-gray-400 font-mono flex items-center justify-end transition-colors">
                                 {time}
@@ -159,12 +140,10 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
                         {weekDates.map((date, i) => {
                             const dateStr = formatDate(date);
                             const dayBookings = groupedBookings.filter(b => b.date === dateStr);
-
-                            // Calculate Layout for this day
                             const positionedBookings = calculateEventLayout(dayBookings);
 
                             return (
-                                <div key={i} className="flex-1 min-w-[100px] border-r dark:border-gray-700 last:border-0 relative transition-colors">
+                                <div key={i} className={`flex-1 min-w-[100px] border-r dark:border-gray-700 last:border-0 relative transition-colors ${isToday(date) ? 'bg-blue-50/20 dark:bg-blue-900/10' : ''}`}>
                                     {/* Day Header */}
                                     <div className="h-10 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-center font-semibold text-gray-700 dark:text-gray-300 text-sm flex items-center justify-center sticky top-0 z-20 transition-colors">
                                         {displayDate(date)}
@@ -173,7 +152,7 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
                                     {/* Grid Lines */}
                                     <div className="relative">
                                         {timeSlots.map(time => (
-                                            <div key={time} className="h-12 border-b dark:border-gray-700 transition-colors"></div>
+                                            <div key={time} className="h-12 border-b dark:border-gray-700/60 transition-colors"></div>
                                         ))}
 
                                         {/* Current Time Indicator */}

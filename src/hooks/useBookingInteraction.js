@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { timeToMinutes, minutesToTime, roundToNearestSlot, checkCollision } from '../utils/bookingUtils';
+import { useState, useRef, useEffect } from 'react';
+import { minutesToTime, roundToNearestSlot, checkCollision, formatLocalDate } from '../utils/bookingUtils';
 
 const PIXELS_PER_30_MINS = 48;
 const START_HOUR = 0;
@@ -15,14 +15,6 @@ export const useBookingInteraction = ({
 }) => {
     const [interaction, setInteraction] = useState(null);
     const interactionRef = useRef(null);
-
-    const formatDate = (date) => {
-        try {
-            return date.toISOString().split('T')[0];
-        } catch (e) {
-            return '';
-        }
-    };
 
     const startInteraction = (e, booking, type) => {
         e.stopPropagation();
@@ -59,24 +51,21 @@ export const useBookingInteraction = ({
 
         const rect = e.currentTarget.parentElement.getBoundingClientRect();
 
-        // Calculate initial visual properties
-        const startHour = parseInt(booking.startTime.split(':')[0]);
-        const startMin = parseInt(booking.startTime.split(':')[1]);
-        const endHour = parseInt(booking.endTime.split(':')[0]);
-        const endMin = parseInt(booking.endTime.split(':')[1]);
-        const startOffset = (startHour - START_HOUR) * 60 + startMin;
-        const endOffset = (endHour - START_HOUR) * 60 + endMin;
-        const duration = endOffset - startOffset;
+        // Calculate initial visual dimensions
+        const startParts = (booking.startTime || '00:00').split(':').map(Number);
+        const endParts = (booking.endTime || '00:30').split(':').map(Number);
+        const startOffset = (startParts[0] - START_HOUR) * 60 + startParts[1];
+        const endOffset = (endParts[0] - START_HOUR) * 60 + endParts[1];
+        const duration = Math.max(30, endOffset - startOffset);
         const top = (startOffset / 30) * PIXELS_PER_30_MINS;
         const height = (duration / 30) * PIXELS_PER_30_MINS;
 
-        // Handle both mouse and touch events
         const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
         const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
 
         const initialData = {
             type,
-            bookingId: booking.ids[0],
+            bookingId: Array.isArray(booking.ids) ? booking.ids[0] : booking.id,
             originalBooking: booking,
             startY: clientY,
             startX: clientX,
@@ -85,15 +74,13 @@ export const useBookingInteraction = ({
             currentTop: top,
             currentHeight: height,
             currentDate: booking.date,
-            dayWidth: rect.width,
-            isValid: true, // Initial state is valid
+            dayWidth: rect.width || 120,
+            isValid: true,
             hasMoved: false
         };
 
         interactionRef.current = initialData;
 
-        // For touch events (long press), show visual feedback immediately.
-        // For mouse, wait for movement threshold to distinguish from click.
         if (e.type.includes('touch')) {
             setInteraction(initialData);
         }
@@ -102,13 +89,10 @@ export const useBookingInteraction = ({
     useEffect(() => {
         const handleMove = (e) => {
             if (!interactionRef.current) return;
-
             const data = interactionRef.current;
 
-            // Get coordinates based on event type
             let clientX, clientY;
             if (e.type === 'touchmove') {
-                // Prevent scrolling while dragging
                 if (e.cancelable) e.preventDefault();
                 clientX = e.touches[0].clientX;
                 clientY = e.touches[0].clientY;
@@ -117,22 +101,19 @@ export const useBookingInteraction = ({
                 clientY = e.clientY;
             }
 
-            // Check threshold if not yet moved
             if (!data.hasMoved) {
-                const dist = Math.sqrt(Math.pow(clientX - data.startX, 2) + Math.pow(clientY - data.startY, 2));
-                if (dist < 5) return; // 5px threshold
-
+                const dist = Math.hypot(clientX - data.startX, clientY - data.startY);
+                if (dist < 5) return;
                 data.hasMoved = true;
-                setInteraction(data); // Start visual interaction now
+                setInteraction(data);
             }
 
             const deltaY = clientY - data.startY;
             const deltaX = clientX - data.startX;
-            // Simplify snapping: round deltaY to nearest 48px (PIXELS_PER_30_MINS)
             const snappedDeltaY = Math.round(deltaY / PIXELS_PER_30_MINS) * PIXELS_PER_30_MINS;
 
             let dayIndexDelta = 0;
-            if (data.type === 'move') {
+            if (data.type === 'move' && data.dayWidth > 0) {
                 dayIndexDelta = Math.round(deltaX / data.dayWidth);
             }
 
@@ -140,18 +121,17 @@ export const useBookingInteraction = ({
             let newHeight = data.initialHeight;
             let newDate = data.currentDate;
 
-            // Visual position (smooth)
             let visualTop = data.initialTop;
             let visualHeight = data.initialHeight;
 
             if (data.type === 'move') {
                 newTop += snappedDeltaY;
-                visualTop = newTop; // Snapped movement
+                visualTop = newTop;
 
-                const currentDayIndex = weekDates.findIndex(d => formatDate(d) === data.originalBooking.date);
-                const newDayIndex = currentDayIndex + dayIndexDelta;
-                if (newDayIndex >= 0 && newDayIndex < 7) {
-                    newDate = formatDate(weekDates[newDayIndex]);
+                const currentDayIndex = weekDates.findIndex(d => formatLocalDate(d) === data.originalBooking.date);
+                const newDayIndex = Math.max(0, Math.min(6, (currentDayIndex >= 0 ? currentDayIndex : 0) + dayIndexDelta));
+                if (weekDates[newDayIndex]) {
+                    newDate = formatLocalDate(weekDates[newDayIndex]);
                 }
             } else if (data.type === 'resize-bottom') {
                 newHeight += snappedDeltaY;
@@ -163,41 +143,50 @@ export const useBookingInteraction = ({
                 visualHeight = newHeight;
             }
 
+            // Minimum height constraint
             if (newHeight < PIXELS_PER_30_MINS) {
                 const heightDiff = PIXELS_PER_30_MINS - newHeight;
                 newHeight = PIXELS_PER_30_MINS;
                 if (data.type === 'resize-top') newTop -= heightDiff;
             }
-            // Constrain visual height minimum
             if (visualHeight < PIXELS_PER_30_MINS) {
                 const vDiff = PIXELS_PER_30_MINS - visualHeight;
                 visualHeight = PIXELS_PER_30_MINS;
                 if (data.type === 'resize-top') visualTop -= vDiff;
             }
 
+            // Validation with safe clamping (prevents negative offsets or > 24:00 times)
+            const rawStartMins = (newTop / PIXELS_PER_30_MINS) * 30;
+            const rawDurationMins = (newHeight / PIXELS_PER_30_MINS) * 30;
 
-            // --- Real-time Validation ---
-            const startOffsetMins = (newTop / PIXELS_PER_30_MINS) * 30;
-            const durationMins = (newHeight / PIXELS_PER_30_MINS) * 30;
-            const startTotalMins = roundToNearestSlot((START_HOUR * 60) + startOffsetMins);
-            const endTotalMins = roundToNearestSlot(startTotalMins + durationMins);
+            const startTotalMins = roundToNearestSlot((START_HOUR * 60) + rawStartMins);
+            const endTotalMins = roundToNearestSlot(startTotalMins + rawDurationMins);
 
-            const newStartTime = minutesToTime(startTotalMins);
-            const newEndTime = minutesToTime(endTotalMins);
+            // Bounds check: must be within [00:00, 24:00]
+            const isValidTime = startTotalMins >= 0 && endTotalMins <= 1440 && endTotalMins > startTotalMins;
+
+            const clampedStartMins = Math.max(0, Math.min(1410, startTotalMins));
+            const clampedEndMins = Math.max(clampedStartMins + 30, Math.min(1440, endTotalMins));
+
+            const newStartTime = minutesToTime(clampedStartMins);
+            const newEndTime = minutesToTime(clampedEndMins);
 
             const now = new Date();
-            const newStartDateTime = new Date(`${newDate}T${newStartTime}`);
-            const isValidTime = startTotalMins >= (0 * 60) && endTotalMins <= (24 * 60);
+            const startDateTime = new Date(`${newDate}T${newStartTime}`);
+            const endDateTime = new Date(`${newDate}T${newEndTime}`);
 
-            // Check if end time is valid (for shortening active bookings)
-            const isActive = new Date(`${data.originalBooking.date}T${data.originalBooking.startTime}`) <= now && new Date(`${data.originalBooking.date}T${data.originalBooking.endTime}`) > now;
+            const hasValidDates = !isNaN(startDateTime.getTime()) && !isNaN(endDateTime.getTime());
 
-            // If active, start time is allowed to be in the past. Otherwise, it must be future.
-            const isFuture = isActive || isAdminOverride ? true : newStartDateTime >= now;
+            // Active booking checks
+            const originalStart = new Date(`${data.originalBooking.date}T${data.originalBooking.startTime}`);
+            const originalEnd = new Date(`${data.originalBooking.date}T${data.originalBooking.endTime}`);
+            const isActive = !isNaN(originalStart.getTime()) && !isNaN(originalEnd.getTime()) &&
+                originalStart <= now && originalEnd > now;
 
-            const isEndTimeValid = !isActive || isAdminOverride || new Date(`${newDate}T${newEndTime}`) > now;
+            const isFuture = isActive || isAdminOverride ? true : (hasValidDates && startDateTime >= now);
+            const isEndTimeValid = !isActive || isAdminOverride || (hasValidDates && endDateTime > now);
 
-            let isValid = isValidTime && isFuture && isEndTimeValid;
+            let isValid = isValidTime && hasValidDates && isFuture && isEndTimeValid;
 
             if (isValid) {
                 const tempBooking = {
@@ -206,24 +195,11 @@ export const useBookingInteraction = ({
                     endTime: newEndTime,
                     tool_id: data.originalBooking.tool_id
                 };
-                // Ensure we pass all IDs to ignore (handle grouped bookings)
                 const ignoredIds = data.originalBooking.ids || [data.originalBooking.id];
                 const hasCollision = checkCollision(tempBooking, existingBookings, ignoredIds);
-
                 if (hasCollision) {
                     isValid = false;
-                    console.log('Validation failed: Collision detected', { tempBooking, ignoredIds });
                 }
-            } else {
-                console.log('Validation failed:', {
-                    isValidTime,
-                    isFuture,
-                    isEndTimeValid,
-                    newDate,
-                    newStartTime,
-                    now: now.toISOString(),
-                    startDateTime: newStartDateTime.toISOString()
-                });
             }
 
             const newData = {
@@ -242,7 +218,6 @@ export const useBookingInteraction = ({
 
         const handleUp = () => {
             if (!interactionRef.current) return;
-
             const data = interactionRef.current;
 
             if (data.hasMoved && data.isValid) {
@@ -251,22 +226,18 @@ export const useBookingInteraction = ({
                     date: data.currentDate,
                     startTime: data.newStartTime,
                     endTime: data.newEndTime,
-                    // Sync legacy fields if they exist, to ensure UI updates correctly
                     time: data.newStartTime,
                     end_time: data.newEndTime,
                 };
                 onInteractionEnd(newBooking);
             }
 
-            // If we dragged (hasMoved), delay clearing interaction to prevent the subsequent 'click' event
-            // from triggering the edit popup.
             if (data.hasMoved) {
                 setTimeout(() => {
                     setInteraction(null);
                     interactionRef.current = null;
                 }, 100);
             } else {
-                // If we didn't move, it was a click. Clear immediately so the click handler works.
                 setInteraction(null);
                 interactionRef.current = null;
             }
@@ -274,7 +245,6 @@ export const useBookingInteraction = ({
 
         window.addEventListener('mousemove', handleMove);
         window.addEventListener('mouseup', handleUp);
-        // Add touch listeners with passive: false to allow preventing scroll
         window.addEventListener('touchmove', handleMove, { passive: false });
         window.addEventListener('touchend', handleUp);
 
@@ -284,7 +254,7 @@ export const useBookingInteraction = ({
             window.removeEventListener('touchmove', handleMove);
             window.removeEventListener('touchend', handleUp);
         };
-    }, [weekDates, existingBookings, onInteractionEnd, showToast]);
+    }, [weekDates, existingBookings, isAdminOverride, onInteractionEnd, showToast]);
 
     return {
         interaction,

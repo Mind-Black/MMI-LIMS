@@ -1,34 +1,54 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import StatusBadge from './StatusBadge';
-import { useToast } from '../context/ToastContext';
-import { getNextSlotTime, groupBookings, checkCollision, calculateEventLayout } from '../utils/bookingUtils';
+import { useToast } from '../context/useToast';
+import {
+    getNextSlotTime,
+    groupBookings,
+    checkCollision,
+    calculateEventLayout,
+    checkBookingEligibility,
+    formatLocalDate,
+    formatDisplayDate
+} from '../utils/bookingUtils';
 import { useBookingInteraction } from '../hooks/useBookingInteraction';
 import { supabase } from '../supabaseClient';
 
-const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCancel, existingBookings = [], initialDate, initialBooking = null, isAdminOverride = false }) => {
+const BookingModal = ({
+    tool,
+    user,
+    profile,
+    onClose,
+    onConfirm,
+    onUpdate,
+    onCancel,
+    existingBookings = [],
+    initialDate,
+    initialBooking = null,
+    isAdminOverride = false
+}) => {
     // Initialize week start to current week's Monday
     const [currentWeekStart, setCurrentWeekStart] = useState(() => {
         const d = initialDate ? new Date(initialDate) : new Date();
         const day = d.getDay();
-        const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
         const newDate = new Date(d);
         newDate.setDate(diff);
+        newDate.setHours(0, 0, 0, 0);
         return newDate;
     });
 
-    const [selectedSlots, setSelectedSlots] = useState([]); // Array of {date, time}
+    const [selectedSlots, setSelectedSlots] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Initialize editing state if a booking is passed
     const [editingBooking, setEditingBooking] = useState(initialBooking || null);
     const [originalBookingState, setOriginalBookingState] = useState(initialBooking || null);
     const [selectedProject, setSelectedProject] = useState(initialBooking ? initialBooking.project : 'General');
 
     const scrollContainerRef = useRef(null);
 
-    // Selection State (for creating new bookings)
+    // Selection State
     const [isSelecting, setIsSelecting] = useState(false);
-    const selectionRef = useRef(null); // { startDIndex, startTIndex, currentDIndex, currentTIndex }
+    const selectionRef = useRef(null);
     const longPressTimer = useRef(null);
 
     const [currentTime, setCurrentTime] = useState(new Date());
@@ -44,6 +64,8 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
     const [messageBody, setMessageBody] = useState('');
     const [isSendingMessage, setIsSendingMessage] = useState(false);
 
+    const { showToast } = useToast();
+
     const handleSendMessage = async () => {
         if (!messageSubject.trim() || !messageBody.trim()) {
             showToast('Please enter both subject and message.', 'error');
@@ -56,22 +78,23 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
         try {
             if (!editingBooking) {
                 showToast('Error: No booking selected.', 'error');
-                setIsSendingMessage(false);
                 return;
             }
 
-            // Send message using userId (Edge function will handle email lookup)
-            const { error } = await supabase.functions.invoke('send-email', {
+            // Send message authoritatively through backend Edge Function (S4)
+            const { data, error } = await supabase.functions.invoke('send-email', {
                 body: {
-                    userId: editingBooking.user_id,
-                    subject: `[MMI-LIMS] ${messageSubject}`,
-                    text: `Message regarding your booking for ${tool.name} on ${editingBooking.date} at ${editingBooking.time}:\n\n${messageBody}\n\n- Sent by ${profile?.first_name} ${profile?.last_name}`
+                    bookingId: editingBooking.id,
+                    subject: messageSubject.trim(),
+                    message: messageBody.trim()
                 }
             });
 
-            if (error) throw error;
+            if (error || data?.error) {
+                throw new Error(error?.message || data?.error || 'Failed to send message');
+            }
 
-            showToast('Message sent successfully.');
+            showToast('Message sent successfully.', 'success');
             setIsMessageModalOpen(false);
             setMessageSubject('');
             setMessageBody('');
@@ -83,30 +106,23 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
         }
     };
 
-    const { showToast } = useToast();
-
-    // Validation
+    // Centralized Eligibility check (L4)
     const isAdmin = profile?.access_level === 'admin';
-    const hasLicense = Array.isArray(profile?.licenses) ? profile.licenses.includes(tool.id) : false;
-    const isToolUp = tool.status === 'up';
-    const canBook = isAdmin || (hasLicense && isToolUp) || isAdminOverride;
+    const eligibility = checkBookingEligibility(tool, profile, isAdminOverride);
+    const canBook = eligibility.canBook;
 
     // Helper to get dates for the week
     const weekDates = useMemo(() => {
         const dates = [];
-        try {
-            for (let i = 0; i < 7; i++) {
-                const d = new Date(currentWeekStart);
-                d.setDate(currentWeekStart.getDate() + i);
-                dates.push(d);
-            }
-        } catch (e) {
-            console.error('Error generating week dates', e);
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(currentWeekStart);
+            d.setDate(currentWeekStart.getDate() + i);
+            dates.push(d);
         }
         return dates;
     }, [currentWeekStart]);
 
-    // Helper to generate 30-min slots from 08:00 to 20:00
+    // Helper to generate 30-min slots from 00:00 to 24:00
     const timeSlots = useMemo(() => {
         const slots = [];
         for (let h = 0; h < 24; h++) {
@@ -120,14 +136,13 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
     const PIXELS_PER_30_MINS = 48;
     const START_HOUR = 0;
 
-    // Scroll Logic
+    // Scroll to booking or 9 AM on mount
     useEffect(() => {
         if (scrollContainerRef.current) {
             let targetHour = 9;
             let targetMin = 0;
 
             if (initialBooking) {
-                // If editing, scroll to booking start
                 const timeStr = initialBooking.time || initialBooking.startTime;
                 if (timeStr) {
                     const [h, m] = timeStr.split(':').map(Number);
@@ -137,36 +152,14 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
             }
 
             const hoursFromStart = targetHour - START_HOUR;
-            const minutesFromStart = targetMin;
-            // Calculate total minutes offset from start hour (00:00)
-            const totalMinutes = (hoursFromStart * 60) + minutesFromStart;
-
-            // Convert to pixels (PIXELS_PER_30_MINS = 48px for 30mins = 1.6px per minute)
-            const pixelsToScroll = (totalMinutes / 30) * PIXELS_PER_30_MINS;
-
-            // Add a little padding (e.g. 1 hour before) if possible, but keeping it simple for now
-            // Or if it's new booking (9am), exact scroll is fine. 
-            // If it's edit, maybe subtract a bit to see context? Let's just scroll to exact start for now as requested.
-
-            scrollContainerRef.current.scrollTop = pixelsToScroll;
+            const slotsFromStart = (hoursFromStart * 2) + (targetMin / 30);
+            scrollContainerRef.current.scrollTop = slotsFromStart * PIXELS_PER_30_MINS;
         }
-    }, []); // Run once on mount
+    }, [initialBooking]);
 
-    const formatDate = (date) => {
-        try {
-            return date.toISOString().split('T')[0];
-        } catch (e) {
-            return '';
-        }
-    };
+    const formatDate = (date) => formatLocalDate(date);
+    const displayDate = (date) => formatDisplayDate(date);
 
-    const displayDate = (date) => {
-        try {
-            return date.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
-        } catch (e) {
-            return 'Invalid Date';
-        }
-    };
     const getMinutes = (timeStr) => {
         const [h, m] = timeStr.split(':').map(Number);
         return (h * 60) + m;
@@ -175,17 +168,14 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
     const isSlotInPast = (dateStr, timeStr) => {
         const now = new Date();
         const slotDate = new Date(`${dateStr}T${timeStr}`);
-
-        // Calculate the start of the current half-hour slot
         const currentSlotStart = new Date(now);
         const currentMinutes = now.getMinutes();
         const roundedMinutes = currentMinutes < 30 ? 0 : 30;
         currentSlotStart.setMinutes(roundedMinutes, 0, 0);
-
         return slotDate < currentSlotStart;
     };
 
-    const isSlotBooked = (dateStr, timeStr) => {
+    const isSlotBooked = useCallback((dateStr, timeStr) => {
         const slotStart = getMinutes(timeStr);
         const slotEnd = slotStart + 30;
 
@@ -203,8 +193,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
 
             return (slotStart < bEnd && slotEnd > bStart);
         });
-
-    };
+    }, [existingBookings, tool.id]);
 
     const getCurrentTimeTop = () => {
         const hours = currentTime.getHours();
@@ -221,51 +210,39 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
     };
 
     // Group bookings for display
-    // If we are editing, we want to show the edited version instead of the original
     const displayBookings = useMemo(() => {
         if (!editingBooking) return existingBookings;
 
-        // Get all IDs associated with the booking being edited
         const editIds = editingBooking.ids || [editingBooking.id];
         const primaryId = editIds[0];
 
         if (!primaryId) return existingBookings;
 
-        const updated = existingBookings.map(b => {
-            // If it's the primary ID, replace with edited version
+        return existingBookings.map(b => {
             if (b.id === primaryId) {
-                // console.log('Replacing primary ID', primaryId, 'with', editingBooking);
                 return editingBooking;
             }
-            // If it's one of the other IDs in the group, hide it (return null and filter)
             if (editIds.includes(b.id)) return null;
             return b;
         }).filter(Boolean);
-
-        return updated;
     }, [existingBookings, editingBooking]);
 
     const groupedBookings = useMemo(() => {
-        // Filter for this tool only
         const toolBookings = displayBookings.filter(b => b.tool_id === tool.id);
         return groupBookings(toolBookings);
     }, [displayBookings, tool.id]);
 
-    // Use the new hook
     const { interaction, startInteraction } = useBookingInteraction({
         weekDates,
-        existingBookings: displayBookings, // Use displayBookings to avoid colliding with hidden ghosts
+        existingBookings: displayBookings,
         user,
         isAdmin,
         isAdminOverride,
         onInteractionEnd: (newBooking) => {
-            console.log('onInteractionEnd called with:', newBooking);
             setEditingBooking(newBooking);
         },
         showToast
     });
-
-
 
     const getEventStyle = (booking) => {
         const startHour = parseInt(booking.startTime.split(':')[0]);
@@ -292,53 +269,52 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
 
     const handleBookingClick = (e, booking) => {
         e.stopPropagation();
-        // If interaction is active (dragging), don't open popup
-        if (interaction) {
-            console.log('handleBookingClick blocked by interaction');
-            return;
-        }
+        if (interaction) return;
 
-        console.log('handleBookingClick fired', booking);
-
-        // Permission check
-        // const isOwnBooking = booking.user_id === user.id;
-        // if (!isAdmin && !isOwnBooking) return; // Allow selection for messaging
-
-        // Start editing mode
-        // We need to ensure we have a single ID to track
         const bookingId = booking.ids[0];
         const singleBooking = {
             ...booking,
             id: bookingId,
-            // Ensure we have flat structure if needed, but 'booking' from groupBookings is already good
         };
 
         setEditingBooking(singleBooking);
         setOriginalBookingState(singleBooking);
         setSelectedProject(booking.project);
-        setSelectedSlots([]); // Clear selection
-    };
-
-    const handleCancelEdit = () => {
-        setEditingBooking(null);
-        setOriginalBookingState(null);
+        setSelectedSlots([]);
     };
 
     const handleCancelClick = (e, booking) => {
         e.stopPropagation();
         if (onCancel && booking && booking.ids) {
             onCancel(booking.ids);
-            setEditingBooking(null); // Deselect after cancelling
+            setEditingBooking(null);
         }
     };
 
-    // --- Selection Handlers (Create New) ---
+    const updateSelectedSlots = useCallback((sel) => {
+        const minD = Math.min(sel.startDIndex, sel.currentDIndex);
+        const maxD = Math.max(sel.startDIndex, sel.currentDIndex);
+        const minT = Math.min(sel.startTIndex, sel.currentTIndex);
+        const maxT = Math.max(sel.startTIndex, sel.currentTIndex);
+
+        const newSlots = [];
+        for (let d = minD; d <= maxD; d++) {
+            for (let t = minT; t <= maxT; t++) {
+                const dStr = formatLocalDate(weekDates[d]);
+                const tStr = timeSlots[t];
+                if (!isSlotBooked(dStr, tStr) && (isAdminOverride || !isSlotInPast(dStr, tStr))) {
+                    newSlots.push({ date: dStr, time: tStr });
+                }
+            }
+        }
+
+        setSelectedSlots(newSlots);
+    }, [weekDates, timeSlots, isAdminOverride, isSlotBooked]);
 
     const handleGridMouseDown = (dateStr, timeIndex) => {
         setEditingBooking(null);
         if (!canBook) return;
 
-        // Don't start selection if clicking on an existing booking (handled by stopPropagation, but safety check)
         const timeStr = timeSlots[timeIndex];
         if (isSlotBooked(dateStr, timeStr)) return;
         if (isSlotInPast(dateStr, timeStr) && !isAdminOverride) {
@@ -364,7 +340,6 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
         if (isSelecting && selectionRef.current) {
             const dIndex = weekDates.findIndex(d => formatDate(d) === dateStr);
 
-            // Update current position
             selectionRef.current.currentDIndex = dIndex;
             selectionRef.current.currentTIndex = timeIndex;
 
@@ -372,34 +347,11 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
         }
     };
 
-    const updateSelectedSlots = (sel) => {
-        const minD = Math.min(sel.startDIndex, sel.currentDIndex);
-        const maxD = Math.max(sel.startDIndex, sel.currentDIndex);
-        const minT = Math.min(sel.startTIndex, sel.currentTIndex);
-        const maxT = Math.max(sel.startTIndex, sel.currentTIndex);
-
-        const newSlots = [];
-        for (let d = minD; d <= maxD; d++) {
-            for (let t = minT; t <= maxT; t++) {
-                const dStr = formatDate(weekDates[d]);
-                const tStr = timeSlots[t];
-                if (!isSlotBooked(dStr, tStr) && (isAdminOverride || !isSlotInPast(dStr, tStr))) {
-                    newSlots.push({ date: dStr, time: tStr });
-                }
-            }
-        }
-
-        setSelectedSlots(newSlots);
-    };
-
-    // --- Touch Handlers (Mobile Drag-to-Select & Long Press) ---
-
-    // Effect to handle touch moves when selecting (prevents scrolling)
+    // Touch selection handling
     useEffect(() => {
         if (!isSelecting) return;
 
         const handleWindowTouchMove = (e) => {
-            // Prevent scrolling
             if (e.cancelable) e.preventDefault();
 
             const touch = e.touches[0];
@@ -408,7 +360,6 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
             if (element && element.dataset.date && element.dataset.timeindex) {
                 const dateStr = element.dataset.date;
                 const timeIndex = parseInt(element.dataset.timeindex, 10);
-
                 const dIndex = weekDates.findIndex(d => formatDate(d) === dateStr);
 
                 if (dIndex !== -1 && selectionRef.current) {
@@ -426,7 +377,6 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
             selectionRef.current = null;
         };
 
-        // Add non-passive listener to allow preventing default
         window.addEventListener('touchmove', handleWindowTouchMove, { passive: false });
         window.addEventListener('touchend', handleSelectionEnd);
         window.addEventListener('mouseup', handleSelectionEnd);
@@ -436,12 +386,9 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
             window.removeEventListener('touchend', handleSelectionEnd);
             window.removeEventListener('mouseup', handleSelectionEnd);
         };
-    }, [isSelecting, weekDates]);
+    }, [isSelecting, weekDates, updateSelectedSlots]);
 
-    // Grid Touch Handlers
     const handleGridTouchStart = (e, dateStr, timeIndex) => {
-        e.persist();
-
         longPressTimer.current = setTimeout(() => {
             setEditingBooking(null);
             if (!canBook) return;
@@ -465,167 +412,75 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
 
             selectionRef.current = initialSelection;
             updateSelectedSlots(initialSelection);
-
-            if (navigator.vibrate) navigator.vibrate(50);
-
         }, 500);
-    };
-
-    const handleGridTouchMove = (e) => {
-        // Only used to cancel the timer if we scroll before selection starts
-        if (!isSelecting && longPressTimer.current) {
-            clearTimeout(longPressTimer.current);
-            longPressTimer.current = null;
-        }
     };
 
     const handleGridTouchEnd = () => {
         if (longPressTimer.current) {
             clearTimeout(longPressTimer.current);
-            longPressTimer.current = null;
         }
     };
 
-
-
-    // --- Touch Handlers (Mobile Drag-to-Select & Long Press) ---
-
-    // Effect to handle touch moves when selecting (prevents scrolling)
-    useEffect(() => {
-        if (!isSelecting) return;
-
-        const handleWindowTouchMove = (e) => {
-            // Prevent scrolling
-            if (e.cancelable) e.preventDefault();
-
-            const touch = e.touches[0];
-            const element = document.elementFromPoint(touch.clientX, touch.clientY);
-
-            if (element && element.dataset.date && element.dataset.timeindex) {
-                const dateStr = element.dataset.date;
-                const timeIndex = parseInt(element.dataset.timeindex, 10);
-
-                const dIndex = weekDates.findIndex(d => formatDate(d) === dateStr);
-
-                if (dIndex !== -1 && selectionRef.current) {
-                    if (dIndex !== selectionRef.current.currentDIndex || timeIndex !== selectionRef.current.currentTIndex) {
-                        selectionRef.current.currentDIndex = dIndex;
-                        selectionRef.current.currentTIndex = timeIndex;
-                        updateSelectedSlots(selectionRef.current);
-                    }
-                }
-            }
-        };
-
-        const handleWindowTouchEnd = () => {
-            setIsSelecting(false);
-            selectionRef.current = null;
-        };
-
-        // Add non-passive listener to allow preventing default
-        window.addEventListener('touchmove', handleWindowTouchMove, { passive: false });
-        window.addEventListener('touchend', handleWindowTouchEnd);
-
-        return () => {
-            window.removeEventListener('touchmove', handleWindowTouchMove);
-            window.removeEventListener('touchend', handleWindowTouchEnd);
-        };
-    }, [isSelecting, weekDates]);
-
-
-
-    // Booking Touch Handlers
-    const touchStartRef = useRef(null);
-
     const handleBookingTouchStart = (e, booking, type) => {
-        e.stopPropagation();
-
-        const target = e.currentTarget;
-        const touch = e.touches[0];
-        const clientX = touch.clientX;
-        const clientY = touch.clientY;
-
-        touchStartRef.current = { x: clientX, y: clientY };
-
         longPressTimer.current = setTimeout(() => {
-            const isOwnBooking = booking.user_id === user.id;
-            if (!isAdmin && !isOwnBooking) return;
-
-            const syntheticEvent = {
-                stopPropagation: () => { },
-                currentTarget: target,
-                type: 'touchstart',
-                touches: [{ clientX, clientY }]
-            };
-
-            startInteraction(syntheticEvent, booking, type);
-            longPressTimer.current = null; // Mark as fired
-
-            if (navigator.vibrate) navigator.vibrate(50);
-        }, 500);
+            startInteraction(e, booking, type);
+        }, 400);
     };
 
-    const handleBookingTouchMove = (e) => {
-        if (longPressTimer.current && touchStartRef.current) {
-            // If the event is not cancelable, the browser has already claimed it for scrolling
-            if (!e.cancelable) {
-                clearTimeout(longPressTimer.current);
-                longPressTimer.current = null;
-                touchStartRef.current = null;
-                return;
-            }
-
-            const touch = e.touches[0];
-            const moveX = touch.clientX;
-            const moveY = touch.clientY;
-            const diffX = Math.abs(moveX - touchStartRef.current.x);
-            const diffY = Math.abs(moveY - touchStartRef.current.y);
-
-            // Only cancel if moved more than 5px (reduced from 10px to prevent scroll conflict)
-            if (diffX > 5 || diffY > 5) {
-                clearTimeout(longPressTimer.current);
-                longPressTimer.current = null;
-                touchStartRef.current = null;
-            }
+    const handleBookingTouchMove = () => {
+        if (longPressTimer.current && !interaction) {
+            clearTimeout(longPressTimer.current);
         }
     };
 
     const handleBookingTouchEnd = () => {
         if (longPressTimer.current) {
             clearTimeout(longPressTimer.current);
-            longPressTimer.current = null;
         }
-        touchStartRef.current = null;
     };
 
-    // Navigation
+    // Week navigation
     const handlePrevWeek = () => {
         const newDate = new Date(currentWeekStart);
         newDate.setDate(newDate.getDate() - 7);
         setCurrentWeekStart(newDate);
-        setSelectedSlots([]);
     };
 
     const handleNextWeek = () => {
         const newDate = new Date(currentWeekStart);
         newDate.setDate(newDate.getDate() + 7);
         setCurrentWeekStart(newDate);
-        setSelectedSlots([]);
     };
 
+    const handleToday = () => {
+        const d = new Date();
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        const newDate = new Date(d);
+        newDate.setDate(diff);
+        newDate.setHours(0, 0, 0, 0);
+        setCurrentWeekStart(newDate);
+    };
+
+    // Mutation with draft preservation (L5)
     const handleConfirmBooking = async () => {
         if (editingBooking) {
             setIsSubmitting(true);
-            const oldIds = editingBooking.ids || [editingBooking.id];
-            const updateData = {
-                ...editingBooking,
-                project: selectedProject
-            };
+            try {
+                const oldIds = editingBooking.ids || [editingBooking.id];
+                const updateData = {
+                    ...editingBooking,
+                    project: selectedProject
+                };
 
-            await onUpdate(oldIds, updateData);
-            setIsSubmitting(false);
-            setEditingBooking(null);
-            setOriginalBookingState(null);
+                const result = await onUpdate(oldIds, updateData);
+                if (result?.success) {
+                    setEditingBooking(null);
+                    setOriginalBookingState(null);
+                }
+            } finally {
+                setIsSubmitting(false);
+            }
             return;
         }
 
@@ -635,167 +490,189 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
         }
 
         setIsSubmitting(true);
-        const now = new Date().toISOString();
+        try {
+            const now = new Date().toISOString();
 
-        const sortedSlots = [...selectedSlots].sort((a, b) => {
-            if (a.date !== b.date) return a.date.localeCompare(b.date);
-            return a.time.localeCompare(b.time);
-        });
+            const sortedSlots = [...selectedSlots].sort((a, b) => {
+                if (a.date !== b.date) return a.date.localeCompare(b.date);
+                return a.time.localeCompare(b.time);
+            });
 
-        const ranges = [];
-        let currentRange = null;
+            const ranges = [];
+            let currentRange = null;
 
-        sortedSlots.forEach(slot => {
-            if (!currentRange) {
-                currentRange = { date: slot.date, startTime: slot.time, endTime: getNextSlotTime(slot.time) };
+            sortedSlots.forEach(slot => {
+                if (!currentRange) {
+                    currentRange = { date: slot.date, startTime: slot.time, endTime: getNextSlotTime(slot.time) };
+                    return;
+                }
+                const isSameDate = slot.date === currentRange.date;
+                const isContinuous = slot.time === currentRange.endTime;
+
+                if (isSameDate && isContinuous) {
+                    currentRange.endTime = getNextSlotTime(slot.time);
+                } else {
+                    ranges.push(currentRange);
+                    currentRange = { date: slot.date, startTime: slot.time, endTime: getNextSlotTime(slot.time) };
+                }
+            });
+            if (currentRange) ranges.push(currentRange);
+
+            const newBookings = ranges.map(range => ({
+                tool_id: tool.id,
+                tool_name: tool.name,
+                user_id: user.id,
+                user_name: profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : user.email,
+                project: selectedProject,
+                date: range.date,
+                time: range.startTime,
+                end_time: range.endTime,
+                created_at: now
+            }));
+
+            const hasCollision = newBookings.some(newB => checkCollision(newB, existingBookings));
+            if (hasCollision) {
+                showToast('One or more selected slots are already booked.', 'error');
                 return;
             }
-            const isSameDate = slot.date === currentRange.date;
-            const isContinuous = slot.time === currentRange.endTime;
 
-            if (isSameDate && isContinuous) {
-                currentRange.endTime = getNextSlotTime(slot.time);
-            } else {
-                ranges.push(currentRange);
-                currentRange = { date: slot.date, startTime: slot.time, endTime: getNextSlotTime(slot.time) };
+            const result = await onConfirm(newBookings);
+            if (result?.success) {
+                setSelectedSlots([]);
             }
-        });
-        if (currentRange) ranges.push(currentRange);
-
-        const newBookings = ranges.map(range => ({
-            tool_id: tool.id,
-            tool_name: tool.name,
-            user_id: user.id,
-            user_name: profile ? `${profile.first_name} ${profile.last_name}` : user.email,
-            project: selectedProject,
-            date: range.date,
-            time: range.startTime,
-            end_time: range.endTime,
-            created_at: now
-        }));
-
-        const hasCollision = newBookings.some(newB => checkCollision(newB, existingBookings));
-
-        if (hasCollision) {
-            showToast('One or more selected slots are already booked.', 'error');
+        } finally {
             setIsSubmitting(false);
-            return;
         }
-
-        await onConfirm(newBookings);
-        setIsSubmitting(false);
-        setSelectedSlots([]);
     };
 
     const isBookingDirty = useMemo(() => {
         if (!editingBooking || !originalBookingState) return false;
-        if (selectedProject !== originalBookingState.project) return true;
-        if (editingBooking.date !== originalBookingState.date) return true;
-        if ((editingBooking.startTime || editingBooking.time) !== (originalBookingState.startTime || originalBookingState.time)) return true;
-        if ((editingBooking.endTime || editingBooking.end_time) !== (originalBookingState.endTime || originalBookingState.end_time)) return true;
-        return false;
+        return (
+            editingBooking.date !== originalBookingState.date ||
+            editingBooking.startTime !== originalBookingState.startTime ||
+            editingBooking.endTime !== originalBookingState.endTime ||
+            selectedProject !== originalBookingState.project
+        );
     }, [editingBooking, originalBookingState, selectedProject]);
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
-            <div
-                className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden m-4 transition-colors border dark:border-gray-700"
-                onClick={() => setEditingBooking(null)}
-            >
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-2 sm:p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-7xl h-[95vh] flex flex-col overflow-hidden border dark:border-gray-700 transition-colors" onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
-                <div className="bg-blue-900 dark:bg-blue-950 text-white p-4 flex justify-between items-center shrink-0 transition-colors">
-                    <h2 className="text-xl font-bold"><i className="fas fa-calendar-alt mr-2"></i>Weekly Schedule</h2>
-                    <button onClick={onClose} className="hover:text-gray-300 transition-colors"><i className="fas fa-times text-xl"></i></button>
-                </div>
-
-                {/* Tool Info & Controls */}
-                <div className="p-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row justify-between items-center shrink-0 gap-4 sm:gap-0 transition-colors">
-                    <div className="text-center sm:text-left">
-                        <h3 className="font-bold text-lg text-gray-800 dark:text-gray-200 transition-colors">{tool.name}</h3>
-                        <div className="flex gap-2 text-sm mt-1 justify-center sm:justify-start">
+                <div className="p-4 border-b dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-gray-800 shrink-0 z-30 transition-colors">
+                    <div>
+                        <div className="flex items-center gap-3">
+                            <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">{tool.name}</h2>
                             <StatusBadge status={tool.status} />
-                            {hasLicense ?
-                                <span className="text-green-700 bg-green-100 px-2 rounded font-bold">Licensed</span> :
-                                <span className="text-red-700 bg-red-100 px-2 rounded font-bold">No License</span>
-                            }
+                            {!canBook && (
+                                <span className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-xs px-2 py-0.5 rounded font-medium">
+                                    {eligibility.reason || 'Booking Restricted'}
+                                </span>
+                            )}
                         </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {tool.category} &bull; {tool.location} &bull; Lab Timezone: Europe/Vilnius
+                        </p>
                     </div>
-                    <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto justify-between sm:justify-end">
-                        <button onClick={handlePrevWeek} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded transition-colors"><i className="fas fa-chevron-left"></i></button>
-                        <div className="font-bold text-gray-700 dark:text-gray-300 w-full sm:w-48 text-center text-sm sm:text-base transition-colors">
-                            {weekDates[0].toLocaleDateString()} - {weekDates[6].toLocaleDateString()}
+
+                    <div className="flex items-center gap-2 self-stretch md:self-auto justify-between md:justify-end">
+                        <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
+                            <button onClick={handlePrevWeek} className="btn-icon text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-600" title="Previous Week">
+                                <i className="fas fa-chevron-left text-xs"></i>
+                            </button>
+                            <button onClick={handleToday} className="px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded">
+                                Today
+                            </button>
+                            <button onClick={handleNextWeek} className="btn-icon text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-600" title="Next Week">
+                                <i className="fas fa-chevron-right text-xs"></i>
+                            </button>
                         </div>
-                        <button onClick={handleNextWeek} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded transition-colors"><i className="fas fa-chevron-right"></i></button>
+                        <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 mx-2 hidden sm:inline">
+                            {displayDate(weekDates[0])} - {displayDate(weekDates[6])}
+                        </span>
+                        <button onClick={onClose} className="btn-icon text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                            <i className="fas fa-times text-lg"></i>
+                        </button>
                     </div>
                 </div>
 
-                {!canBook && (
-                    <div className="bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-800 p-2 text-center text-red-700 dark:text-red-400 text-sm font-bold shrink-0 transition-colors">
-                        {!isToolUp ? "Tool is currently down for maintenance." : "You do not have a license for this tool."}
+                {/* Calendar Body */}
+                <div ref={scrollContainerRef} className="flex-1 overflow-y-auto relative select-none flex flex-col bg-white dark:bg-gray-800 transition-colors">
+                    <div className="sticky top-0 z-20 flex border-b dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm transition-colors">
+                        <div className="w-16 shrink-0 border-r dark:border-gray-700 p-2 text-center text-xs font-bold text-gray-400">
+                            Time
+                        </div>
+                        <div className="flex-1 grid grid-cols-7">
+                            {weekDates.map((date, idx) => (
+                                <div key={idx} className={`p-2 text-center border-r dark:border-gray-700 last:border-0 ${isToday(date) ? 'bg-blue-50/50 dark:bg-blue-900/20' : ''}`}>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold">
+                                        {date.toLocaleDateString('en-US', { weekday: 'short' })}
+                                    </div>
+                                    <div className={`text-sm font-bold mt-0.5 ${isToday(date) ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-200'}`}>
+                                        {date.getDate()}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
-                )}
 
-                {/* Calendar Grid Container */}
-                <div ref={scrollContainerRef} className="flex-1 overflow-auto custom-scroll relative select-none">
-                    <div className="min-w-[800px] flex">
-
-                        {/* Time Labels Column */}
-                        <div className="w-[50px] shrink-0 bg-gray-50 dark:bg-gray-900 border-r dark:border-gray-700 sticky left-0 z-30 transition-colors">
-                            <div className="h-10 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 transition-colors"></div>
-                            {timeSlots.map(time => (
-                                <div key={time} className="h-12 border-b dark:border-gray-700 text-right pr-2 text-xs text-gray-500 dark:text-gray-400 font-mono flex items-center justify-end transition-colors">
-                                    {time}
+                    <div className="flex flex-1 relative min-h-[1152px]">
+                        {/* Time labels */}
+                        <div className="w-16 shrink-0 border-r dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/20 select-none">
+                            {timeSlots.map((time, idx) => (
+                                <div key={idx} className="h-12 border-b dark:border-gray-700/50 text-[10px] text-gray-400 text-right pr-2 pt-1 font-mono">
+                                    {time.endsWith(':00') ? time : ''}
                                 </div>
                             ))}
                         </div>
 
-                        {/* Days Columns */}
-                        <div className="flex-1 flex">
-                            {weekDates.map((date, i) => {
+                        {/* Current Time Indicator Line */}
+                        <div
+                            className="absolute left-16 right-0 border-t-2 border-red-500 z-10 pointer-events-none flex items-center"
+                            style={{ top: `${getCurrentTimeTop()}px` }}
+                        >
+                            <div className="w-2 h-2 rounded-full bg-red-500 -ml-1"></div>
+                        </div>
+
+                        {/* Grid Columns */}
+                        <div className="flex-1 grid grid-cols-7 relative">
+                            {weekDates.map((date, dayIdx) => {
                                 const dateStr = formatDate(date);
                                 const dayBookings = groupedBookings.filter(b => b.date === dateStr);
                                 const positionedBookings = calculateEventLayout(dayBookings);
 
-                                // Check if this day is the target of the current interaction
                                 const isTargetDay = interaction && interaction.currentDate === dateStr;
-                                const interactingBooking = interaction && interaction.originalBooking;
+                                const interactingBooking = interaction ? interaction.originalBooking : null;
 
                                 return (
-                                    <div key={i} className="flex-1 min-w-[100px] border-r dark:border-gray-700 last:border-0 relative transition-colors">
-                                        {/* Day Header */}
-                                        <div className="h-10 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-center font-semibold text-gray-700 dark:text-gray-300 text-sm flex items-center justify-center sticky top-0 z-20 transition-colors">
-                                            {displayDate(date)}
-                                        </div>
-
-                                        {/* Grid Lines & Slots */}
-                                        <div className="relative">
-                                            {timeSlots.map((time, tIndex) => {
-                                                const isSelected = selectedSlots.some(s => s.date === dateStr && s.time === time);
+                                    <div
+                                        key={dayIdx}
+                                        className={`border-r dark:border-gray-700 last:border-0 relative h-full ${isToday(date) ? 'bg-blue-50/10' : ''}`}
+                                    >
+                                        <div className="absolute inset-0">
+                                            {timeSlots.map((time, timeIdx) => {
+                                                const isBooked = isSlotBooked(dateStr, time);
                                                 const isPast = isSlotInPast(dateStr, time);
+                                                const isSelected = selectedSlots.some(s => s.date === dateStr && s.time === time);
+
                                                 return (
                                                     <div
-                                                        key={time}
+                                                        key={timeIdx}
                                                         data-date={dateStr}
-                                                        data-timeindex={tIndex}
-                                                        className={`h-12 border-b dark:border-gray-700 ${isSelected ? 'bg-blue-200 dark:bg-blue-800' : ''} ${isPast ? 'bg-gray-200 dark:bg-black/40 cursor-not-allowed' : ''} transition-colors`}
-                                                        onMouseDown={() => handleGridMouseDown(dateStr, tIndex)}
-                                                        onMouseEnter={() => handleMouseEnter(dateStr, tIndex)}
-                                                        onTouchStart={(e) => handleGridTouchStart(e, dateStr, tIndex)}
-                                                        onTouchMove={handleGridTouchMove}
+                                                        data-timeindex={timeIdx}
+                                                        onMouseDown={() => handleGridMouseDown(dateStr, timeIdx)}
+                                                        onMouseEnter={() => handleMouseEnter(dateStr, timeIdx)}
+                                                        onTouchStart={(e) => handleGridTouchStart(e, dateStr, timeIdx)}
                                                         onTouchEnd={handleGridTouchEnd}
+                                                        className={`h-12 border-b dark:border-gray-700/50 transition-colors cursor-pointer
+                                                            ${time.endsWith(':00') ? 'border-b-gray-200 dark:border-b-gray-700' : 'border-b-gray-100 dark:border-b-gray-800/40'}
+                                                            ${isBooked ? 'bg-stripes-gray cursor-not-allowed opacity-40' : ''}
+                                                            ${isPast && !isAdminOverride ? 'bg-gray-50/80 dark:bg-gray-800/40 cursor-not-allowed text-gray-300' : 'hover:bg-blue-50/30 dark:hover:bg-blue-900/10'}
+                                                            ${isSelected ? 'bg-blue-200 dark:bg-blue-800/80 !opacity-100' : ''}
+                                                        `}
                                                     ></div>
                                                 );
                                             })}
-
-                                            {/* Current Time Indicator */}
-                                            {isToday(date) && (
-                                                <div
-                                                    className="absolute w-full border-b-2 border-red-500 z-40 pointer-events-none"
-                                                    style={{ top: `${getCurrentTimeTop()}px` }}
-                                                >
-                                                    <div className="absolute -left-1 -top-[4px] w-2 h-2 bg-red-500 rounded-full"></div>
-                                                </div>
-                                            )}
 
                                             {/* Existing Bookings Overlay */}
                                             {positionedBookings.map(booking => {
@@ -809,10 +686,9 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                                                 const bookingStart = new Date(`${booking.date}T${booking.startTime}`);
                                                 const isStarted = bookingStart <= now;
 
-                                                // Disable moving/resizing start if booking has already started
                                                 const canMove = canEdit && (!isStarted || isAdminOverride);
                                                 const canResizeTop = canEdit && (!isStarted || isAdminOverride);
-                                                const canResizeBottom = canEdit; // Always allow extending/shortening end time
+                                                const canResizeBottom = canEdit;
 
                                                 return (
                                                     <div
@@ -841,7 +717,6 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                                                         )}
 
                                                         <div className={`font-bold truncate pointer-events-none ${isOwnBooking ? 'text-blue-900 dark:text-blue-100' : 'text-gray-800 dark:text-gray-200'}`}>{booking.user_name}</div>
-
                                                         <div className={`truncate text-[10px] pointer-events-none ${isOwnBooking ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'}`}>{booking.project}</div>
 
                                                         {editingBooking && editingBooking.id === booking.ids[0] && (isAdmin || isOwnBooking) && (!isStarted || isAdminOverride) && (
@@ -854,7 +729,7 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                                                             </div>
                                                         )}
 
-                                                        {canEdit && (
+                                                        {canResizeBottom && (
                                                             <div
                                                                 className="absolute bottom-0 left-0 right-0 h-3 z-20 cursor-ns-resize opacity-0 group-hover:opacity-100 bg-blue-400/20"
                                                                 onMouseDown={(e) => { e.stopPropagation(); startInteraction(e, booking, 'resize-bottom'); }}
@@ -956,59 +831,57 @@ const BookingModal = ({ tool, user, profile, onClose, onConfirm, onUpdate, onCan
                 </div>
 
                 {/* Message Modal */}
-                {
-                    isMessageModalOpen && (
+                {isMessageModalOpen && (
+                    <div
+                        className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] backdrop-blur-sm"
+                        onClick={(e) => { e.stopPropagation(); setIsMessageModalOpen(false); }}
+                    >
                         <div
-                            className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] backdrop-blur-sm"
-                            onClick={(e) => { e.stopPropagation(); setIsMessageModalOpen(false); }}
+                            className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md p-6 border dark:border-gray-700"
+                            onClick={(e) => e.stopPropagation()}
                         >
-                            <div
-                                className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md p-6 border dark:border-gray-700"
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Send Message to {editingBooking?.user_name || 'User'}</h3>
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Send Message to {editingBooking?.user_name || 'User'}</h3>
 
-                                <div className="mb-4">
-                                    <label className="label">Subject</label>
-                                    <input
-                                        type="text"
-                                        value={messageSubject}
-                                        onChange={(e) => setMessageSubject(e.target.value)}
-                                        className="input-field"
-                                        placeholder="e.g. Question about your booking"
-                                    />
-                                </div>
+                            <div className="mb-4">
+                                <label className="label">Subject</label>
+                                <input
+                                    type="text"
+                                    value={messageSubject}
+                                    onChange={(e) => setMessageSubject(e.target.value)}
+                                    className="input-field"
+                                    placeholder="e.g. Question about your booking"
+                                />
+                            </div>
 
-                                <div className="mb-6">
-                                    <label className="label">Message</label>
-                                    <textarea
-                                        value={messageBody}
-                                        onChange={(e) => setMessageBody(e.target.value)}
-                                        className="input-field h-32 resize-none"
-                                        placeholder="Type your message here..."
-                                    ></textarea>
-                                </div>
+                            <div className="mb-6">
+                                <label className="label">Message</label>
+                                <textarea
+                                    value={messageBody}
+                                    onChange={(e) => setMessageBody(e.target.value)}
+                                    className="input-field h-32 resize-none"
+                                    placeholder="Type your message here..."
+                                ></textarea>
+                            </div>
 
-                                <div className="flex justify-end gap-3">
-                                    <button
-                                        onClick={() => setIsMessageModalOpen(false)}
-                                        className="btn btn-secondary"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={handleSendMessage}
-                                        disabled={isSendingMessage}
-                                        className="btn btn-primary flex items-center gap-2"
-                                    >
-                                        {isSendingMessage && <i className="fas fa-spinner fa-spin"></i>}
-                                        Send
-                                    </button>
-                                </div>
+                            <div className="flex justify-end gap-3">
+                                <button
+                                    onClick={() => setIsMessageModalOpen(false)}
+                                    className="btn btn-secondary"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleSendMessage}
+                                    disabled={isSendingMessage}
+                                    className="btn btn-primary flex items-center gap-2"
+                                >
+                                    {isSendingMessage && <i className="fas fa-spinner fa-spin"></i>}
+                                    Send
+                                </button>
                             </div>
                         </div>
-                    )
-                }
+                    </div>
+                )}
             </div>
         </div>
     );

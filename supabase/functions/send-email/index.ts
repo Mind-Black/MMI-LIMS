@@ -2,108 +2,201 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { Resend } from "npm:resend@2.0.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
-const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function escapeHtml(str: string): string {
+    return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
 serve(async (req) => {
-    // Handle CORS preflight request
     if (req.method === "OPTIONS") {
         return new Response("ok", { headers: corsHeaders });
     }
 
     try {
-        // Authenticate the user
+        const resendKey = Deno.env.get("RESEND_API_KEY");
+        const supabaseUrl = Deno.env.get("SUPABASE_URL");
+        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+        if (!resendKey || !supabaseUrl || !supabaseServiceKey) {
+            return new Response(
+                JSON.stringify({ error: "Email service not configured" }),
+                { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+        }
+
+        // 1. Authenticate caller via JWT
         const authHeader = req.headers.get('Authorization');
         if (!authHeader) {
             return new Response(
                 JSON.stringify({ error: "Missing Authorization header" }),
-                {
-                    status: 401,
-                    headers: { ...corsHeaders, "Content-Type": "application/json" },
-                }
+                { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
         }
 
         const supabaseClient = createClient(
-            Deno.env.get("SUPABASE_URL") ?? "",
+            supabaseUrl,
             Deno.env.get("SUPABASE_ANON_KEY") ?? "",
             { global: { headers: { Authorization: authHeader } } }
         );
 
         const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
-
         if (authError || !user) {
             return new Response(
-                JSON.stringify({ error: "Unauthorized", details: authError?.message }),
-                {
-                    status: 401,
-                    headers: { ...corsHeaders, "Content-Type": "application/json" },
-                }
+                JSON.stringify({ error: "Unauthorized" }),
+                { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
         }
 
-        const { to, userId, subject, html, text } = await req.json();
+        const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-        if ((!to && !userId) || !subject || (!html && !text)) {
+        // 2. Verify sender is an approved user
+        const { data: senderProfile, error: senderError } = await supabaseAdmin
+            .from('profiles')
+            .select('first_name, last_name, job_title, is_approved, access_level')
+            .eq('id', user.id)
+            .single();
+
+        if (senderError || !senderProfile || !senderProfile.is_approved) {
             return new Response(
-                JSON.stringify({ error: "Missing required fields: to (or userId), subject, html/text" }),
-                {
-                    status: 400,
-                    headers: { ...corsHeaders, "Content-Type": "application/json" },
-                }
+                JSON.stringify({ error: "Forbidden: Account is not approved" }),
+                { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
         }
 
-        let recipientEmail = to;
+        // 3. Parse and validate request payload
+        const payload = await req.json();
+        const { bookingId, subject, message } = payload;
 
-        // If userId is provided but no email, fetch it
-        if (!recipientEmail && userId) {
-            const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-
-            // Try fetching from auth.users first (more reliable for emails)
-            // Note: auth.users is not directly queryable via standard client usually, 
-            // but service role can via auth.admin.getUserById
-            const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId);
-
-            if (!userError && userData?.user?.email) {
-                recipientEmail = userData.user.email;
-            } else {
-                // Fallback to profiles table
-                const { data: profileData, error: profileError } = await supabaseAdmin
-                    .from('profiles')
-                    .select('email')
-                    .eq('id', userId)
-                    .single();
-
-                if (profileError || !profileData?.email) {
-                    throw new Error(`Could not find email for userId: ${userId}`);
-                }
-                recipientEmail = profileData.email;
-            }
+        if (!bookingId || !subject || !message) {
+            return new Response(
+                JSON.stringify({ error: "Missing required fields: bookingId, subject, message" }),
+                { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
         }
 
-        const data = await resend.emails.send({
-            from: "MMI-LIMS <no-reply@lims.gradientfab.com>", // Update this if you have a custom domain
+        // Enforce strict bounds on user message content
+        const cleanSubject = String(subject).trim();
+        const cleanMessage = String(message).trim();
+
+        if (cleanSubject.length === 0 || cleanSubject.length > 150) {
+            return new Response(
+                JSON.stringify({ error: "Subject must be between 1 and 150 characters" }),
+                { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+        }
+
+        if (cleanMessage.length === 0 || cleanMessage.length > 3000) {
+            return new Response(
+                JSON.stringify({ error: "Message must be between 1 and 3000 characters" }),
+                { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+        }
+
+        // 4. Derive recipient and booking details authoritatively from database
+        const { data: booking, error: bookingError } = await supabaseAdmin
+            .from('bookings')
+            .select(`
+                id,
+                user_id,
+                date,
+                time,
+                end_time,
+                project,
+                tools (
+                    name,
+                    location
+                )
+            `)
+            .eq('id', bookingId)
+            .single();
+
+        if (bookingError || !booking) {
+            return new Response(
+                JSON.stringify({ error: "Referenced booking not found" }),
+                { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+        }
+
+        // Retrieve recipient user record from auth.users (service role)
+        const { data: recipientAuth, error: recipientError } = await supabaseAdmin.auth.admin.getUserById(booking.user_id);
+        if (recipientError || !recipientAuth?.user?.email) {
+            return new Response(
+                JSON.stringify({ error: "Booking owner email unavailable" }),
+                { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+        }
+
+        const recipientEmail = recipientAuth.user.email;
+        const senderName = `${senderProfile.first_name || ''} ${senderProfile.last_name || ''}`.trim() || user.email;
+        const toolName = booking.tools?.name || 'Lab Equipment';
+
+        // 5. Construct safe email contents with escaping (no arbitrary raw HTML accepted)
+        const escapedSubject = `[MMI-LIMS] ${cleanSubject}`;
+        const plainText = [
+            `Hello,`,
+            ``,
+            `You have received a message regarding your booking for ${toolName} on ${booking.date} at ${booking.time}:`,
+            ``,
+            `--------------------------------------------------`,
+            cleanMessage,
+            `--------------------------------------------------`,
+            ``,
+            `Sent by: ${senderName} (${senderProfile.job_title || 'User'})`,
+            `MMI Laboratory Information Management System`,
+        ].join('\n');
+
+        const htmlBody = `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; rounded: 8px;">
+                <h3 style="color: #1e3a8a; margin-top: 0;">MMI-LIMS Booking Notification</h3>
+                <p>You have received a message regarding your reservation for <strong>${escapeHtml(toolName)}</strong> on <strong>${escapeHtml(booking.date)}</strong> at <strong>${escapeHtml(booking.time)}</strong>.</p>
+                <div style="background-color: #f3f4f6; border-left: 4px solid #3b82f6; padding: 12px 16px; margin: 20px 0; border-radius: 4px;">
+                    <p style="margin: 0; white-space: pre-wrap; color: #1f2937;">${escapeHtml(cleanMessage)}</p>
+                </div>
+                <p style="color: #6b7280; font-size: 13px; margin-bottom: 0;">
+                    Sent by: <strong>${escapeHtml(senderName)}</strong> (${escapeHtml(senderProfile.job_title || 'Researcher')})<br>
+                    KTU Materials Metrology Institute
+                </p>
+            </div>
+        `;
+
+        // 6. Send email via Resend and handle provider outcome
+        const resend = new Resend(resendKey);
+        const { data: resendData, error: resendError } = await resend.emails.send({
+            from: "MMI-LIMS <no-reply@lims.gradientfab.com>",
             to: recipientEmail,
-            subject: subject,
-            html: html,
-            text: text,
+            reply_to: user.email,
+            subject: escapedSubject,
+            text: plainText,
+            html: htmlBody,
         });
 
-        return new Response(JSON.stringify(data), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 200,
-        });
+        if (resendError) {
+            console.error("Resend provider error:", resendError);
+            return new Response(
+                JSON.stringify({ error: "Failed to send email via provider", details: resendError.message }),
+                { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+        }
+
+        return new Response(
+            JSON.stringify({ success: true, messageId: resendData?.id }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+
     } catch (error) {
-        return new Response(JSON.stringify({ error: error.message }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 500,
-        });
+        console.error("Unexpected error in send-email:", error);
+        return new Response(
+            JSON.stringify({ error: "Internal server error" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
     }
 });
