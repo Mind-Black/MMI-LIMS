@@ -4,6 +4,11 @@
  */
 
 export const LAB_TIMEZONE = 'Europe/Vilnius';
+const vilniusFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: LAB_TIMEZONE,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+});
 
 /**
  * Converts a time string (HH:MM or HH:MM:SS) to minutes from midnight.
@@ -100,18 +105,7 @@ export const getVilniusInstant = (dateStr, timeStr = '00:00') => {
     const [hh, mm] = timeStr.slice(0, 5).split(':').map(Number);
     const utcGuess = Date.UTC(y, m - 1, d, hh, mm, 0);
 
-    const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: LAB_TIMEZONE,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-    });
-
-    const parts = formatter.formatToParts(new Date(utcGuess));
+    const parts = vilniusFormatter.formatToParts(new Date(utcGuess));
     const getPart = (type) => Number(parts.find(p => p.type === type)?.value || 0);
     const vY = getPart('year');
     const vM = getPart('month');
@@ -392,10 +386,10 @@ export const groupBookings = (bookings) => {
         }
     }
 
-    // Sort all bookings by date -> startTime
+    // Show recent reservations first in lists and history.
     return canonicalList.sort((a, b) => {
-        if (a.date !== b.date) return a.date.localeCompare(b.date);
-        return a.startTime.localeCompare(b.startTime);
+        if (a.date !== b.date) return b.date.localeCompare(a.date);
+        return b.startTime.localeCompare(a.startTime);
     });
 };
 

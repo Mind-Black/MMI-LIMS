@@ -1,15 +1,25 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { groupBookings } from '../utils/bookingUtils';
 
-const BookingList = ({ bookings, onCancel, onEdit, isAdminView = false, readOnly = false }) => {
-    const groupedBookings = useMemo(() => groupBookings(bookings), [bookings]);
+const BookingList = ({ bookings, onCancel, onEdit, isAdminView = false, readOnly = false, isFiltered = false, onClearFilters, emptyMessage, showSort = false }) => {
+    const [sortOrder, setSortOrder] = useState('newest');
+    const groupedBookings = useMemo(() => {
+        const grouped = groupBookings(bookings);
+        return sortOrder === 'oldest' ? [...grouped].reverse() : grouped;
+    }, [bookings, sortOrder]);
 
     return (
         <div className="space-y-6">
+            {(isAdminView || showSort) && <label className="block text-sm text-gray-700 dark:text-gray-300">Sort bookings
+                <select value={sortOrder} onChange={e => setSortOrder(e.target.value)} className="select-input ml-2 text-sm">
+                    <option value="newest">Newest first</option><option value="oldest">Oldest first</option>
+                </select>
+            </label>}
             {groupedBookings.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400 transition-colors">
-                    {isAdminView ? 'No bookings found in the system.' : 'No bookings found.'}
-                </p>
+                <div className="text-gray-600 dark:text-gray-300 transition-colors text-sm">
+                    <p>{emptyMessage || (isFiltered ? 'No bookings match these filters.' : isAdminView ? 'No bookings found in the system.' : 'No bookings found.')}</p>
+                    {isFiltered && onClearFilters && <button onClick={onClearFilters} className="mt-2 text-blue-700 dark:text-blue-300 underline">Clear filters</button>}
+                </div>
             ) : (
                 <div className="space-y-2">
                     {groupedBookings.map(b => (

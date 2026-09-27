@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import Icon from './Icon';
 import { supabase } from '../supabaseClient';
 import { useToast } from '../context/useToast';
 
@@ -6,23 +7,28 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
     const [allUsers, setAllUsers] = useState([]);
     const [selectedUser, setSelectedUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState('');
+    const [approvalFilter, setApprovalFilter] = useState('all');
     const { showToast } = useToast();
 
     // Fetch All Users (Directory query selects ONLY non-sensitive columns; no bearer tokens) (S2)
     const fetchUsers = useCallback(async () => {
         try {
             setLoading(true);
-            const { data, error } = await supabase
-                .from('profiles')
-                .select('id, first_name, last_name, job_title, access_level, is_approved, licenses, projects')
-                .order('last_name', { ascending: true });
-
-            if (error) {
-                console.error('Error fetching users:', error);
-                showToast('Failed to fetch users: ' + error.message, 'error');
-            } else if (data) {
-                setAllUsers(data);
+            const users = [];
+            for (let offset = 0; ;) {
+                const { data, error } = await supabase.from('profiles')
+                    .select('id, first_name, last_name, job_title, access_level, is_approved, licenses, projects')
+                    .order('last_name').order('id').range(offset, offset + 499);
+                if (error) throw error;
+                if (!data?.length) break;
+                users.push(...data);
+                offset += data.length;
             }
+            setAllUsers(users);
+        } catch (error) {
+            console.error('Error fetching users:', error);
+            showToast('Failed to fetch users: ' + error.message, 'error');
         } finally {
             setLoading(false);
         }
@@ -162,11 +168,37 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
         }
     };
 
+    const filteredUsers = allUsers.filter(user => {
+        const terms = `${user.first_name || ''} ${user.last_name || ''} ${user.job_title || ''}`.toLowerCase();
+        return terms.includes(search.toLowerCase()) && (approvalFilter === 'all' || (approvalFilter === 'approved') === Boolean(user.is_approved));
+    });
+
     return (
         <div className="space-y-6">
             <h3 className="font-bold text-gray-800 dark:text-gray-200 transition-colors">User Management</h3>
+            <div className="card p-4 flex flex-col sm:flex-row gap-3">
+                <label className="flex-1 text-sm text-gray-700 dark:text-gray-200">Search users
+                    <input type="search" value={search} onChange={e => setSearch(e.target.value)} className="input-field mt-1" placeholder="Name or job title" />
+                </label>
+                <label className="text-sm text-gray-700 dark:text-gray-200">Approval status
+                    <select value={approvalFilter} onChange={e => setApprovalFilter(e.target.value)} className="select-input block mt-1">
+                        <option value="all">All</option><option value="approved">Approved</option><option value="pending">Pending</option>
+                    </select>
+                </label>
+            </div>
             <div className="card overflow-hidden">
-                <table className="w-full text-left border-collapse">
+                <div className="lg:hidden divide-y dark:divide-gray-700">
+                    {filteredUsers.map(u => <div key={u.id} className="p-4 space-y-2 text-sm text-gray-700 dark:text-gray-200">
+                        <div className="font-bold break-words">{u.first_name} {u.last_name}</div>
+                        <div>{u.job_title} · {u.access_level} · {u.is_approved ? 'Approved' : 'Pending'}</div>
+                        <div>{u.licenses?.length || 0} licenses</div>
+                        <div className="flex gap-2">
+                            {!u.is_approved && <button onClick={() => handleApproveUser(u.id)} className="btn btn-primary btn-sm">Approve</button>}
+                            <button onClick={() => setSelectedUser(selectedUser?.id === u.id ? null : u)} className="btn btn-secondary btn-sm">{selectedUser?.id === u.id ? 'Close' : 'Manage'}</button>
+                        </div>
+                    </div>)}
+                </div>
+                <table className="hidden lg:table w-full text-left border-collapse">
                     <thead className="bg-gray-50 dark:bg-gray-900 border-b dark:border-gray-700 transition-colors">
                         <tr>
                             <th className="p-4 font-semibold text-gray-600 dark:text-gray-300">Name</th>
@@ -178,7 +210,7 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
                         </tr>
                     </thead>
                     <tbody>
-                        {allUsers.map(u => (
+                        {filteredUsers.map(u => (
                             <tr key={u.id} className="border-b dark:border-gray-700 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                                 <td className="p-4 font-bold text-gray-800 dark:text-gray-200">{u.first_name} {u.last_name}</td>
                                 <td className="p-4 text-gray-600 dark:text-gray-400">{u.job_title}</td>
@@ -212,9 +244,9 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
                         ))}
                     </tbody>
                 </table>
-                {allUsers.length === 0 && (
+                {filteredUsers.length === 0 && (
                     <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-                        {loading ? 'Loading users...' : 'No users found.'}
+                        {loading ? 'Loading users...' : allUsers.length ? 'No users match these filters.' : 'No users found.'}
                     </div>
                 )}
             </div>
@@ -225,8 +257,8 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
                         <h4 className="font-bold text-lg text-gray-800 dark:text-gray-200">
                             Manage {selectedUser.first_name} {selectedUser.last_name}
                         </h4>
-                        <button onClick={() => setSelectedUser(null)} className="btn btn-ghost btn-sm">
-                            <i className="fas fa-times"></i>
+                        <button onClick={() => setSelectedUser(null)} aria-label="Close user details" className="btn btn-ghost btn-sm">
+                            <Icon className="fas fa-times" />
                         </button>
                     </div>
 
@@ -238,14 +270,15 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
                                 {tools.map(tool => {
                                     const hasLicense = selectedUser.licenses?.includes(tool.id);
                                     return (
-                                        <div
+                                        <button type="button"
                                             key={tool.id}
-                                            className={`p-2 rounded border flex items-center justify-between cursor-pointer transition-colors text-sm ${hasLicense ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'}`}
+                                            aria-pressed={Boolean(hasLicense)}
+                                            className={`w-full text-left p-2 rounded border flex items-center justify-between cursor-pointer transition-colors text-sm ${hasLicense ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'}`}
                                             onClick={() => handleLicenseToggle(selectedUser.id, tool.id)}
                                         >
                                             <span className="font-medium text-gray-700 dark:text-gray-200">{tool.name}</span>
-                                            {hasLicense ? <i className="fas fa-check-circle text-green-600 dark:text-green-400"></i> : <i className="far fa-circle text-gray-400 dark:text-gray-500"></i>}
-                                        </div>
+                                            {hasLicense ? <Icon className="fas fa-check-circle text-green-600 dark:text-green-400" /> : <Icon className="far fa-circle text-gray-400 dark:text-gray-500" />}
+                                        </button>
                                     );
                                 })}
                             </div>
@@ -256,6 +289,7 @@ const UserManagement = ({ tools, currentUser, onProfileUpdate }) => {
                             <h5 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Assigned Projects</h5>
                             <div className="flex gap-2 mb-2">
                                 <input
+                                    aria-label="New project name"
                                     type="text"
                                     placeholder="New Project Name"
                                     className="input-field py-1 text-sm flex-1"

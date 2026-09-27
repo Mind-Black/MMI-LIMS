@@ -1,4 +1,5 @@
 import React, { useMemo, useEffect, useRef, useState } from 'react';
+import Icon from './Icon';
 import {
     groupBookings,
     calculateEventLayout,
@@ -6,11 +7,15 @@ import {
     formatDisplayDate,
     addDays,
     getVilniusCurrentMinutes,
-    isVilniusToday
+    isVilniusToday,
+    getVilniusNow,
+    getMonday
 } from '../utils/bookingUtils';
 
 const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBookingClick }) => {
     const scrollContainerRef = useRef(null);
+    const [mobileDate, setMobileDate] = useState(() => getVilniusNow().dateStr);
+    const [mobileWeekView, setMobileWeekView] = useState(false);
 
     // Helper to get dates for the week (timezone-safe)
     const weekDates = useMemo(() => {
@@ -104,25 +109,46 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
     };
 
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 flex flex-col overflow-hidden h-[950px] transition-colors">
+        <>
+        <div className="md:hidden card p-4 space-y-3">
+            <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setMobileDate(formatDate(addDays(mobileDate, -1)))} aria-label="Previous day" className="btn btn-secondary btn-sm">‹</button>
+                <label className="flex-1 text-sm text-gray-700 dark:text-gray-200">Agenda date
+                    <input type="date" value={mobileDate} onChange={e => setMobileDate(e.target.value)} className="input-field mt-1" />
+                </label>
+                <button type="button" onClick={() => setMobileDate(formatDate(addDays(mobileDate, 1)))} aria-label="Next day" className="btn btn-secondary btn-sm">›</button>
+            </div>
+            <div className="flex justify-between gap-3">
+                <button type="button" onClick={() => setMobileDate(getVilniusNow().dateStr)} className="text-sm text-blue-700 dark:text-blue-300 underline">Today</button>
+                <button type="button" onClick={() => { if (!mobileWeekView) onWeekChange(getMonday(mobileDate)); setMobileWeekView(value => !value); }} aria-pressed={mobileWeekView} className="text-sm text-blue-700 dark:text-blue-300 underline">{mobileWeekView ? 'Day agenda' : 'Week view'}</button>
+            </div>
+            {!mobileWeekView && (groupedBookings.filter(b => b.date === mobileDate).length ? groupedBookings.filter(b => b.date === mobileDate).map(booking => (
+                <button key={booking.ids[0]} type="button" onClick={() => onBookingClick?.(booking)} className="block w-full text-left p-3 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100">
+                    <span className="font-semibold">{booking.startTime}–{booking.endTime} · {booking.tool_name}</span>
+                    <span className="block text-sm">{booking.project}</span>
+                </button>
+            )) : <p className="text-sm text-gray-600 dark:text-gray-300">No reservations on this day.</p>)}
+        </div>
+        <div className={`${mobileWeekView ? 'flex' : 'hidden'} md:flex bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 flex-col overflow-hidden h-[min(75vh,850px)] transition-colors`}>
             {/* Header */}
             <div className="p-2 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center shrink-0 transition-colors">
                 <div className="flex items-center gap-4">
                     <button onClick={handlePrevWeek} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded transition-colors" title="Previous Week">
-                        <i className="fas fa-chevron-left"></i>
+                        <Icon className="fas fa-chevron-left" />
                     </button>
                     <div className="font-bold text-gray-700 dark:text-gray-200 w-48 text-center transition-colors">
                         {displayDate(weekDates[0])} - {displayDate(weekDates[6])}
                     </div>
                     <button onClick={handleNextWeek} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded transition-colors" title="Next Week">
-                        <i className="fas fa-chevron-right"></i>
+                        <Icon className="fas fa-chevron-right" />
                     </button>
                 </div>
+                <button onClick={() => onWeekChange(getVilniusNow().dateStr)} className="text-sm text-blue-700 dark:text-blue-300 underline">Today</button>
             </div>
 
             {/* Calendar Grid Container */}
             <div ref={scrollContainerRef} className="flex-1 overflow-auto custom-scroll relative select-none">
-                <div className="min-w-[800px] flex">
+                <div className="min-w-[700px] flex">
 
                     {/* Time Labels Column */}
                     <div className="w-[50px] shrink-0 bg-gray-50 dark:bg-gray-900 border-r dark:border-gray-700 sticky left-0 z-30 transition-colors">
@@ -156,13 +182,13 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
 
                                         {/* Current Time Indicator */}
                                         {isToday(date) && (
-                                            <div
+                                            <button type="button"
                                                 className="absolute w-full border-b-2 border-red-500 z-40 pointer-events-none"
                                                 style={{ top: `${getCurrentTimeTop()}px` }}
                                                 title="Current Time"
                                             >
                                                 <div className="absolute -left-1 -top-[4px] w-2 h-2 bg-red-500 rounded-full"></div>
-                                            </div>
+                                            </button>
                                         )}
 
                                         {/* Events Overlay */}
@@ -187,6 +213,7 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
                 </div>
             </div>
         </div>
+        </>
     );
 };
 

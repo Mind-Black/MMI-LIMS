@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import logo from '../assets/ktu_mmi.svg';
 import { useToast } from '../context/useToast';
 
-const LoginScreen = () => {
+const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete }) => {
     const [loading, setLoading] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -11,8 +11,36 @@ const LoginScreen = () => {
     const [lastName, setLastName] = useState('');
     const [jobTitle, setJobTitle] = useState('');
     const [isSignUp, setIsSignUp] = useState(false);
+    const [forgotPassword, setForgotPassword] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
+    const [resetSent, setResetSent] = useState(false);
     const [registrationSuccess, setRegistrationSuccess] = useState(false);
     const { showToast } = useToast();
+
+    const handleRecovery = async (event) => {
+        event.preventDefault();
+        setLoading(true);
+        try {
+            if (isPasswordRecovery) {
+                const { error } = await supabase.auth.updateUser({ password });
+                if (error) throw error;
+                await supabase.auth.signOut();
+                onRecoveryComplete?.();
+                setPassword('');
+                showToast('Password updated. Please sign in.', 'success');
+            } else {
+                const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                    redirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`
+                });
+                if (error) throw error;
+                setResetSent(true);
+            }
+        } catch (error) {
+            showToast(error.message || 'Password recovery failed.', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleAuth = async (e) => {
         e.preventDefault();
@@ -54,16 +82,32 @@ const LoginScreen = () => {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-blue-700 p-4">
-            <div className="bg-white/95 backdrop-blur-sm p-8 rounded-2xl shadow-2xl w-full max-w-md border border-white/20">
+            <div className="bg-white dark:bg-gray-800 backdrop-blur-sm p-8 rounded-2xl shadow-2xl w-full max-w-md border border-white/20 dark:border-gray-700">
                 <div className="text-center mb-8">
                     <div className="bg-white p-4 rounded-full w-24 h-24 mx-auto mb-4 flex items-center justify-center shadow-md">
                         <img src={logo} alt="KTU MMI Logo" className="h-12 w-auto" />
                     </div>
-                    <h1 className="text-3xl font-bold text-gray-800">MMI-LIMS</h1>
-                    <p className="text-gray-500 text-sm mt-2">Institute of Materials Science</p>
+                    <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">MMI-LIMS</h1>
+                    <p className="text-gray-500 dark:text-gray-300 text-sm mt-2">Institute of Materials Science</p>
                 </div>
 
-                {registrationSuccess ? (
+                {isPasswordRecovery || forgotPassword ? (
+                    <form onSubmit={handleRecovery} className="space-y-4">
+                        <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">{isPasswordRecovery ? 'Set a new password' : 'Reset your password'}</h2>
+                        {resetSent ? <p role="status" className="text-sm text-green-800 dark:text-green-300">If the address has an account, a recovery link has been sent. Check your inbox.</p> : (
+                            <>
+                                {isPasswordRecovery ? <label htmlFor="recovery-password" className="label">New password
+                                    <input id="recovery-password" type={showPassword ? 'text' : 'password'} required minLength={8} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} className="input-field mt-1" />
+                                </label> : <label htmlFor="recovery-email" className="label">Email address
+                                    <input id="recovery-email" type="email" required autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} className="input-field mt-1" />
+                                </label>}
+                                {isPasswordRecovery && <button type="button" onClick={() => setShowPassword(value => !value)} className="text-sm text-blue-700 dark:text-blue-300 underline">{showPassword ? 'Hide password' : 'Show password'}</button>}
+                                <button disabled={loading} type="submit" className="btn btn-primary w-full">{loading ? 'Processing…' : isPasswordRecovery ? 'Update password' : 'Send recovery link'}</button>
+                            </>
+                        )}
+                        {!isPasswordRecovery && <button type="button" onClick={() => { setForgotPassword(false); setResetSent(false); }} className="text-sm text-blue-700 dark:text-blue-300 underline">Back to sign in</button>}
+                    </form>
+                ) : registrationSuccess ? (
                     <div className="text-center space-y-6">
                         <div className="bg-green-50 p-4 rounded-lg border border-green-100">
                             <h3 className="text-xl font-semibold text-green-800 mb-2">Registration Successful!</h3>
@@ -96,8 +140,9 @@ const LoginScreen = () => {
                                 <>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="label">First Name</label>
+                                            <label htmlFor="signup-first-name" className="label">First Name</label>
                                             <input
+                                                id="signup-first-name" autoComplete="given-name"
                                                 type="text"
                                                 required
                                                 value={firstName}
@@ -107,8 +152,9 @@ const LoginScreen = () => {
                                             />
                                         </div>
                                         <div>
-                                            <label className="label">Last Name</label>
+                                            <label htmlFor="signup-last-name" className="label">Last Name</label>
                                             <input
+                                                id="signup-last-name" autoComplete="family-name"
                                                 type="text"
                                                 required
                                                 value={lastName}
@@ -119,8 +165,9 @@ const LoginScreen = () => {
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="label">Job Title</label>
+                                        <label htmlFor="signup-job-title" className="label">Job Title</label>
                                         <input
+                                            id="signup-job-title" autoComplete="organization-title"
                                             type="text"
                                             required
                                             value={jobTitle}
@@ -132,8 +179,9 @@ const LoginScreen = () => {
                                 </>
                             )}
                             <div>
-                                <label className="label">Email Address</label>
+                                <label htmlFor="auth-email" className="label">Email Address</label>
                                 <input
+                                    id="auth-email" autoComplete="email"
                                     type="email"
                                     required
                                     value={email}
@@ -143,15 +191,21 @@ const LoginScreen = () => {
                                 />
                             </div>
                             <div>
-                                <label className="label">Password</label>
+                                <label htmlFor="auth-password" className="label">Password</label>
                                 <input
-                                    type="password"
+                                    id="auth-password"
+                                    type={showPassword ? 'text' : 'password'}
+                                    autoComplete={isSignUp ? 'new-password' : 'current-password'}
                                     required
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     className="input-field"
                                     placeholder="••••••••"
                                 />
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <button type="button" onClick={() => setShowPassword(value => !value)} className="text-blue-700 dark:text-blue-300 underline">{showPassword ? 'Hide password' : 'Show password'}</button>
+                                {!isSignUp && <button type="button" onClick={() => setForgotPassword(true)} className="text-blue-700 dark:text-blue-300 underline">Forgot password?</button>}
                             </div>
 
                             <button
@@ -174,7 +228,7 @@ const LoginScreen = () => {
                         <div className="mt-6 text-center">
                             <button
                                 onClick={() => setIsSignUp(!isSignUp)}
-                                className="text-sm text-blue-700 hover:text-blue-900 font-medium transition-colors"
+                                className="text-sm text-blue-700 dark:text-blue-300 hover:text-blue-900 font-medium transition-colors"
                             >
                                 {isSignUp ? 'Already have an account? Sign In' : 'Need an account? Sign Up'}
                             </button>

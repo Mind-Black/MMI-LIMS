@@ -23,9 +23,9 @@ A secure, high-performance Laboratory Information Management System built with R
   - Bounded, server-derived cancellation and messaging dispatch via Resend Edge Functions.
   - Database-level recipient filtering preventing unbounded fan-out.
 - **Performance Optimizations**:
-  - Bounded, paginated queries with windowed date ranges.
+  - Paginated queries with windowed date ranges and race-safe refreshes.
   - Hidden-tab polling suspension via Page Visibility API.
-  - Code splitting of administrative components.
+  - Code splitting of authenticated screens and booking UI; responsive equipment thumbnails.
 
 ## Tech Stack
 
@@ -60,13 +60,20 @@ A secure, high-performance Laboratory Information Management System built with R
 
 4. **Database Migrations**
    Apply migrations in `supabase/migrations/`:
-   - `20260927000000_baseline_schema.sql`: Full baseline schema for fresh deployments.
+   - `20231201000000_initial_schema.sql`: Full baseline schema for fresh deployments.
    - `20260927000001_security_and_constraints.sql`: Forward migration for upgrading existing deployments.
 
 5. **Run the development server**
    ```bash
    npm run dev
    ```
+
+6. **Password recovery**
+   Add the deployed site URL (including `/MMI-LIMS/` on GitHub Pages) to Supabase Auth's allowed redirect URLs. The recovery email returns users to that route to set a new password.
+
+## Equipment photos
+
+Put original photos in `src/assets/tool_images/` using the equipment ID as the filename. Install Python Pillow and run `python scripts/optimize-tool-images.py` after changing photos. Commit the generated `src/assets/tool_thumbnails/` files with the source image; the site serves these small 1×/2× variants when details expand.
 
 ## Available Scripts
 

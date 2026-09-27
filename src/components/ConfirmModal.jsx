@@ -1,16 +1,19 @@
 import React from 'react';
+import Icon from './Icon';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel, showCheckbox, checkboxLabel, onCheckboxChange, isCheckboxChecked, isLoading }) => {
+    const dialogRef = useDialogFocus(isOpen, isLoading ? undefined : onCancel);
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-sm p-6 transform transition-all scale-100 border dark:border-gray-700">
+            <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message" tabIndex={-1} className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-sm p-6 transform transition-all scale-100 border dark:border-gray-700">
                 <div className="text-center">
                     <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/30 mb-4">
-                        <i className="fas fa-exclamation-triangle text-red-600 dark:text-red-400 text-xl"></i>
+                        <Icon className="fas fa-exclamation-triangle text-red-600 dark:text-red-400 text-xl" />
                     </div>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{message}</p>
+                    <h3 id="confirm-title" className="text-lg font-bold text-gray-900 dark:text-white">{title}</h3>
+                    <p id="confirm-message" className="text-sm text-gray-500 dark:text-gray-400 mt-2">{message}</p>
 
                     {showCheckbox && (
                         <div className="mt-4 flex items-center justify-center gap-2 text-left">
@@ -32,7 +35,7 @@ const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel, showCheckbo
                         Cancel
                     </button>
                     <button onClick={onConfirm} disabled={isLoading} className="btn btn-danger w-full flex justify-center items-center gap-2">
-                        {isLoading && <i className="fas fa-spinner fa-spin"></i>}
+                        {isLoading && <Icon className="fas fa-spinner fa-spin" />}
                         Confirm
                     </button>
                 </div>

@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { supabase } from './supabaseClient';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
 import LoginScreen from './components/LoginScreen';
-import DashboardWrapper from './components/DashboardWrapper';
 import LoadingSpinner from './components/LoadingSpinner';
+const DashboardWrapper = lazy(() => import('./components/DashboardWrapper'));
 
 function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => window.location.hash.includes('type=recovery'));
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -18,9 +19,10 @@ function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       setLoading(false);
+      if (event === 'PASSWORD_RECOVERY') setIsPasswordRecovery(true);
     });
 
     return () => subscription.unsubscribe();
@@ -37,10 +39,12 @@ function App() {
   return (
     <ThemeProvider>
       <ToastProvider>
-        {!session ? (
-          <LoginScreen />
+        {!session || isPasswordRecovery ? (
+          <LoginScreen isPasswordRecovery={isPasswordRecovery} onRecoveryComplete={() => setIsPasswordRecovery(false)} />
         ) : (
-          <DashboardWrapper session={session} onLogout={() => supabase.auth.signOut()} />
+          <Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900"><LoadingSpinner /></div>}>
+            <DashboardWrapper session={session} onLogout={() => supabase.auth.signOut()} />
+          </Suspense>
         )}
       </ToastProvider>
     </ThemeProvider>

@@ -9,6 +9,4 @@
 body {
     background-color: #f0f2f5;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    user-select: none;
-    /* Prevent text selection during drag */
 }

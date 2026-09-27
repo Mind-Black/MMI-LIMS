@@ -106,6 +106,15 @@ test('groupBookings is idempotent and preserves all group IDs (L2)', () => {
     assert.strictEqual(normalizedSingle[0].endTime, '14:30');
 });
 
+test('groupBookings shows recent reservations first across dates and times', () => {
+    const bookings = [
+        { id: 1, tool_id: 1, date: '2025-12-01', time: '09:00' },
+        { id: 2, tool_id: 1, date: '2026-09-27', time: '09:00' },
+        { id: 3, tool_id: 1, date: '2026-09-27', time: '15:00' }
+    ];
+    assert.deepStrictEqual(groupBookings(bookings).map(booking => booking.ids[0]), [3, 2, 1]);
+});
+
 test('checkCollision implements half-open intervals correctly (S5)', () => {
     const existing = [
         { id: 1, tool_id: 1, date: '2026-10-05', startTime: '10:00', endTime: '12:00' }

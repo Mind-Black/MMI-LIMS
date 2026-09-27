@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Icon from './Icon';
 import { supabase } from '../supabaseClient';
 import Dashboard from './Dashboard';
 import LoadingSpinner from './LoadingSpinner';
@@ -113,7 +114,7 @@ const DashboardWrapper = ({ session, onLogout }) => {
             <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-4 transition-colors">
                 <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full text-center border-t-4 border-red-500">
                     <div className="mb-4">
-                        <i className="fas fa-exclamation-triangle text-5xl text-red-500"></i>
+                        <Icon className="fas fa-exclamation-triangle text-5xl text-red-500" />
                     </div>
                     <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-2">Unable to Load Account</h2>
                     <p className="text-gray-600 dark:text-gray-300 text-sm mb-6">
@@ -143,7 +144,7 @@ const DashboardWrapper = ({ session, onLogout }) => {
             <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-4 transition-colors">
                 <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full text-center border-t-4 border-yellow-500">
                     <div className="mb-4">
-                        <i className="fas fa-clock text-5xl text-yellow-500 animate-pulse"></i>
+                        <Icon className="fas fa-clock text-5xl text-yellow-500 animate-pulse" />
                     </div>
                     <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-2">Account Pending Approval</h2>
                     <p className="text-gray-600 dark:text-gray-300 text-sm mb-6">

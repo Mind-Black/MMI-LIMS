@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import Icon from './Icon';
 import StatusBadge from './StatusBadge';
 import { useToast } from '../context/useToast';
 import {
@@ -19,6 +20,7 @@ import {
 } from '../utils/bookingUtils';
 import { useBookingInteraction } from '../hooks/useBookingInteraction';
 import { supabase } from '../supabaseClient';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 const BookingModal = ({
     tool,
@@ -41,6 +43,13 @@ const BookingModal = ({
     const [toolWeekBookings, setToolWeekBookings] = useState([]);
     const [selectedSlots, setSelectedSlots] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [availability, setAvailability] = useState({ key: '', state: 'loading', message: '' });
+    const requestRef = useRef(0);
+    const [formDate, setFormDate] = useState(initialBooking?.date || initialDate || getVilniusNow().dateStr);
+    const [formStart, setFormStart] = useState((initialBooking?.startTime || initialBooking?.time || '09:00').slice(0, 5));
+    const [formEnd, setFormEnd] = useState((initialBooking?.endTime || initialBooking?.end_time || '09:30').slice(0, 5));
+    const [formError, setFormError] = useState('');
+    const [formNeedsCheck, setFormNeedsCheck] = useState(false);
 
     const [editingBooking, setEditingBooking] = useState(initialBooking || null);
     const [originalBookingState, setOriginalBookingState] = useState(initialBooking || null);
@@ -69,6 +78,8 @@ const BookingModal = ({
     const [isSendingMessage, setIsSendingMessage] = useState(false);
 
     const { showToast } = useToast();
+    const dialogRef = useDialogFocus(!isMessageModalOpen, onClose);
+    const messageDialogRef = useDialogFocus(isMessageModalOpen, () => setIsMessageModalOpen(false));
 
     const handleSendMessage = async () => {
         if (!messageSubject.trim() || !messageBody.trim()) {
@@ -126,25 +137,35 @@ const BookingModal = ({
 
     const weekStartStr = useMemo(() => formatLocalDate(currentWeekStart), [currentWeekStart]);
     const weekEndStr = useMemo(() => formatLocalDate(addDays(currentWeekStart, 6)), [currentWeekStart]);
+    const availabilityKey = `${tool?.id}:${weekStartStr}`;
+    const availabilityReady = availability.key === availabilityKey && availability.state === 'ready';
 
     // Fetch tool availability for the active week window in modal (Fixes R5)
     const fetchToolWeekBookings = useCallback(async () => {
         if (!tool?.id) return;
+        const request = ++requestRef.current;
+        const key = `${tool.id}:${weekStartStr}`;
+        setAvailability({ key, state: 'loading', message: '' });
         try {
-            const { data, error } = await supabase
-                .from('bookings')
-                .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at')
-                .eq('tool_id', tool.id)
-                .gte('date', weekStartStr)
-                .lte('date', weekEndStr)
-                .order('date', { ascending: true })
-                .order('time', { ascending: true });
-
-            if (!error && data) {
-                setToolWeekBookings(data);
+            const all = [];
+            for (let offset = 0; ;) {
+                const { data, error } = await supabase.from('bookings')
+                    .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at')
+                    .eq('tool_id', tool.id).gte('date', weekStartStr).lte('date', weekEndStr)
+                    .order('date', { ascending: true }).order('time', { ascending: true }).order('id', { ascending: true })
+                    .range(offset, offset + 499);
+                if (error) throw error;
+                if (!data?.length) break;
+                all.push(...data);
+                offset += data.length;
+            }
+            if (request === requestRef.current) {
+                setToolWeekBookings(all);
+                setAvailability({ key, state: 'ready', message: '' });
             }
         } catch (err) {
             console.error('Error fetching tool week bookings:', err);
+            if (request === requestRef.current) setAvailability({ key, state: 'error', message: 'Availability could not be checked. Retry before booking.' });
         }
     }, [tool?.id, weekStartStr, weekEndStr]);
 
@@ -197,35 +218,67 @@ const BookingModal = ({
     };
 
     const allKnownBookings = useMemo(() => {
-        const map = new Map();
-        for (const b of existingBookings) {
-            map.set(b.id, b);
+        // The modal's complete tool/week response replaces potentially stale dashboard data.
+        if (availabilityReady) return toolWeekBookings;
+        return existingBookings.filter(b => String(b.tool_id) === String(tool.id) && b.date >= weekStartStr && b.date <= weekEndStr);
+    }, [availabilityReady, existingBookings, toolWeekBookings, tool.id, weekStartStr, weekEndStr]);
+
+    const occupiedSlots = useMemo(() => {
+        const occupied = new Set();
+        for (const b of allKnownBookings) {
+            if (String(b.tool_id ?? b.toolId) !== String(tool.id)) continue;
+            const start = getMinutes(b.startTime || b.time);
+            const end = getMinutes(b.endTime || b.end_time || getNextSlotTime(b.startTime || b.time));
+            for (let minutes = start; minutes < end; minutes += 30) occupied.add(`${b.date}:${minutes}`);
         }
-        for (const b of toolWeekBookings) {
-            map.set(b.id, b);
-        }
-        return Array.from(map.values());
-    }, [existingBookings, toolWeekBookings]);
-
-    const isSlotBooked = useCallback((dateStr, timeStr) => {
-        const slotStart = getMinutes(timeStr);
-        const slotEnd = slotStart + 30;
-
-        return allKnownBookings.some(b => {
-            if (b.date !== dateStr || (b.tool_id !== tool.id && b.toolId !== tool.id)) return false;
-
-            const bStart = getMinutes(b.startTime || b.time);
-            let bEnd;
-            const endTimeStr = b.endTime || b.end_time;
-            if (endTimeStr) {
-                bEnd = getMinutes(endTimeStr);
-            } else {
-                bEnd = bStart + 30;
-            }
-
-            return (slotStart < bEnd && slotEnd > bStart);
-        });
+        return occupied;
     }, [allKnownBookings, tool.id]);
+    const isSlotBooked = useCallback((dateStr, timeStr) => occupiedSlots.has(`${dateStr}:${getMinutes(timeStr)}`), [occupiedSlots]);
+    const selectedSlotKeys = useMemo(() => new Set(selectedSlots.map(s => `${s.date}:${s.time}`)), [selectedSlots]);
+    const pastSlots = useMemo(() => {
+        const result = new Set();
+        for (const date of weekDates) for (const time of timeSlots) {
+            const dateStr = formatDate(date);
+            if (isSlotInPast(dateStr, time, currentTime)) result.add(`${dateStr}:${time}`);
+        }
+        return result;
+    }, [weekDates, timeSlots, currentTime]);
+
+    const handleFormDateChange = (date) => {
+        setFormDate(date);
+        setFormError('');
+        setFormNeedsCheck(true);
+        setSelectedSlots([]);
+        if (date) setCurrentWeekStart(getMonday(date));
+    };
+
+    const applyFormSelection = () => {
+        setFormError('');
+        if (!availabilityReady) { setFormError('Wait for availability to load, then retry.'); return; }
+        if (!canBook) { setFormError(eligibility.reason || 'Booking is restricted.'); return; }
+        const start = getMinutes(formStart);
+        const end = getMinutes(formEnd);
+        if (!formDate || start >= end || start % 30 || end % 30) {
+            setFormError('Choose a date and a start/end time in 30-minute steps.'); return;
+        }
+        const slots = [];
+        for (let minutes = start; minutes < end; minutes += 30) {
+            const time = timeSlots[minutes / 30];
+            const overlaps = editingBooking
+                ? checkCollision({ tool_id: tool.id, date: formDate, time, end_time: getNextSlotTime(time) }, allKnownBookings, editingBooking.ids || [editingBooking.id])
+                : isSlotBooked(formDate, time);
+            if (!time || overlaps || (!isAdminOverride && isSlotInPast(formDate, time, currentTime))) {
+                setFormError('That range contains a booked or past time. Choose another range.'); return;
+            }
+            slots.push({ date: formDate, time });
+        }
+        if (editingBooking) {
+            setEditingBooking(prev => ({ ...prev, date: formDate, startTime: formStart, endTime: formEnd }));
+        } else {
+            setSelectedSlots(slots);
+        }
+        setFormNeedsCheck(false);
+    };
 
     const getCurrentTimeTop = () => {
         const totalMinutes = getVilniusCurrentMinutes(currentTime);
@@ -265,6 +318,10 @@ const BookingModal = ({
         isAdminOverride,
         onInteractionEnd: (newBooking) => {
             setEditingBooking(newBooking);
+            setFormDate(newBooking.date);
+            setFormStart(newBooking.startTime);
+            setFormEnd(newBooking.endTime);
+            setFormNeedsCheck(false);
         },
         showToast
     });
@@ -306,6 +363,10 @@ const BookingModal = ({
         setOriginalBookingState(singleBooking);
         setSelectedProject(booking.project);
         setSelectedSlots([]);
+        setFormDate(booking.date);
+        setFormStart(booking.startTime);
+        setFormEnd(booking.endTime);
+        setFormNeedsCheck(false);
     };
 
     const handleCancelClick = (e, booking) => {
@@ -334,18 +395,18 @@ const BookingModal = ({
             for (let t = minT; t <= maxT; t++) {
                 const dStr = formatLocalDate(weekDates[d]);
                 const tStr = timeSlots[t];
-                if (!isSlotBooked(dStr, tStr) && (isAdminOverride || !isSlotInPast(dStr, tStr))) {
+                if (!isSlotBooked(dStr, tStr) && (isAdminOverride || !pastSlots.has(`${dStr}:${tStr}`))) {
                     newSlots.push({ date: dStr, time: tStr });
                 }
             }
         }
 
         setSelectedSlots(newSlots);
-    }, [weekDates, timeSlots, isAdminOverride, isSlotBooked]);
+    }, [weekDates, timeSlots, isAdminOverride, isSlotBooked, pastSlots]);
 
     const handleGridMouseDown = (dateStr, timeIndex) => {
         setEditingBooking(null);
-        if (!canBook) return;
+        if (!canBook || !availabilityReady) return;
 
         const timeStr = timeSlots[timeIndex];
         if (isSlotBooked(dateStr, timeStr)) return;
@@ -355,6 +416,7 @@ const BookingModal = ({
         }
 
         setIsSelecting(true);
+        setFormNeedsCheck(false);
         const dIndex = weekDates.findIndex(d => formatDate(d) === dateStr);
 
         const initialSelection = {
@@ -433,6 +495,7 @@ const BookingModal = ({
             }
 
             setIsSelecting(true);
+            setFormNeedsCheck(false);
             const dIndex = weekDates.findIndex(d => formatDate(d) === dateStr);
 
             const initialSelection = {
@@ -489,6 +552,14 @@ const BookingModal = ({
 
     // Mutation with draft preservation (L5)
     const handleConfirmBooking = async () => {
+        if (formNeedsCheck) {
+            setFormError('Check the changed date and time before confirming.');
+            return;
+        }
+        if (!availabilityReady) {
+            setFormError('Availability is not confirmed. Retry the availability check.');
+            return;
+        }
         if (editingBooking) {
             setIsSubmitting(true);
             try {
@@ -556,7 +627,7 @@ const BookingModal = ({
                 created_at: now
             }));
 
-            const hasCollision = newBookings.some(newB => checkCollision(newB, existingBookings));
+            const hasCollision = newBookings.some(newB => checkCollision(newB, allKnownBookings));
             if (hasCollision) {
                 showToast('One or more selected slots are already booked.', 'error');
                 return;
@@ -583,13 +654,17 @@ const BookingModal = ({
 
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-2 sm:p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-7xl h-[95vh] flex flex-col overflow-hidden border dark:border-gray-700 transition-colors" onClick={(e) => e.stopPropagation()}>
+            <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="booking-dialog-title" tabIndex={-1} className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-7xl h-auto max-h-[95vh] md:h-[95vh] flex flex-col overflow-hidden border dark:border-gray-700 transition-colors" onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
                 <div className="p-4 border-b dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-gray-800 shrink-0 z-30 transition-colors">
                     <div>
-                        <div className="flex items-center gap-3">
-                            <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">{tool.name}</h2>
+                        <div className="flex flex-wrap items-center gap-3">
+                            <h2 id="booking-dialog-title" className="text-xl font-bold text-gray-800 dark:text-gray-100">Book {tool.name}</h2>
                             <StatusBadge status={tool.status} />
+                            {isAdmin && (tool.status !== 'up' || (tool.license_req && !profile?.licenses?.includes(tool.id))) && (
+                                <span className="text-xs text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded">Administrator equipment override</span>
+                            )}
+                            {isAdminOverride && <span className="text-xs text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded">Past-time override</span>}
                             {!canBook && (
                                 <span className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-xs px-2 py-0.5 rounded font-medium">
                                     {eligibility.reason || 'Booking Restricted'}
@@ -604,26 +679,61 @@ const BookingModal = ({
                     <div className="flex items-center gap-2 self-stretch md:self-auto justify-between md:justify-end">
                         <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
                             <button onClick={handlePrevWeek} className="btn-icon text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-600" title="Previous Week">
-                                <i className="fas fa-chevron-left text-xs"></i>
+                                <Icon className="fas fa-chevron-left text-xs" />
                             </button>
                             <button onClick={handleToday} className="px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded">
                                 Today
                             </button>
                             <button onClick={handleNextWeek} className="btn-icon text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-600" title="Next Week">
-                                <i className="fas fa-chevron-right text-xs"></i>
+                                <Icon className="fas fa-chevron-right text-xs" />
                             </button>
                         </div>
-                        <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 mx-2 hidden sm:inline">
+                        <span className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-200 mx-2">
                             {displayDate(weekDates[0])} - {displayDate(weekDates[6])}
                         </span>
-                        <button onClick={onClose} className="btn-icon text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                            <i className="fas fa-times text-lg"></i>
+                        <button onClick={onClose} aria-label="Close booking dialog" className="btn-icon text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                            <Icon aria-hidden="true" className="fas fa-times text-lg" />
                         </button>
                     </div>
                 </div>
 
+                <div className="p-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 space-y-3 overflow-y-auto shrink-0 max-h-[55vh]">
+                    <h3 className="font-semibold text-gray-800 dark:text-gray-100">Choose a booking time</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">Enter a date and time, then check availability. Times use the Europe/Vilnius lab timezone.</p>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
+                        <label className="text-sm text-gray-700 dark:text-gray-200">Date
+                            <input type="date" className="input-field mt-1" value={formDate} onChange={e => handleFormDateChange(e.target.value)} />
+                        </label>
+                        <label className="text-sm text-gray-700 dark:text-gray-200">Start
+                            <select className="select-input w-full mt-1" value={formStart} onChange={e => { setFormStart(e.target.value); setFormError(''); setFormNeedsCheck(true); setSelectedSlots([]); }}>
+                                {timeSlots.map(time => <option key={time} value={time}>{time}</option>)}
+                            </select>
+                        </label>
+                        <label className="text-sm text-gray-700 dark:text-gray-200">End
+                            <select className="select-input w-full mt-1" value={formEnd} onChange={e => { setFormEnd(e.target.value); setFormError(''); setFormNeedsCheck(true); setSelectedSlots([]); }}>
+                                {[...timeSlots.slice(1), '24:00'].map(time => <option key={time} value={time}>{time}</option>)}
+                            </select>
+                        </label>
+                        <label className="text-sm text-gray-700 dark:text-gray-200">Project
+                            <select value={selectedProject} onChange={e => setSelectedProject(e.target.value)} className="select-input w-full mt-1">
+                                <option value="General">General</option>
+                                {profile?.projects?.map(proj => <option key={proj} value={proj}>{proj}</option>)}
+                            </select>
+                        </label>
+                        <button type="button" onClick={applyFormSelection} disabled={!canBook || !availabilityReady} className="btn btn-primary">Check this time</button>
+                    </div>
+                    <div role="status" aria-live="polite" className="text-sm text-gray-700 dark:text-gray-200">
+                        {availability.key !== availabilityKey || availability.state === 'loading' ? 'Checking availability…' : availability.state === 'error' ? availability.message : 'Availability loaded.'}
+                        {availability.state === 'error' && <button type="button" onClick={fetchToolWeekBookings} className="ml-2 underline text-blue-700 dark:text-blue-300">Retry</button>}
+                    </div>
+                    {formError && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{formError}</p>}
+                    {formNeedsCheck && <p className="text-sm text-amber-700 dark:text-amber-300">Check this time to apply your changes.</p>}
+                    {selectedSlots.length > 0 && !editingBooking && <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Selected: {selectedSlots[0].date}{selectedSlots[0].date !== selectedSlots[selectedSlots.length - 1].date ? ` through ${selectedSlots[selectedSlots.length - 1].date}` : ''}, {selectedSlots[0].time}–{getNextSlotTime(selectedSlots[selectedSlots.length - 1].time)} ({selectedSlots.length * 30} minutes total), {selectedProject}</p>}
+                    {editingBooking && <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Reservation: {editingBooking.date}, {editingBooking.startTime}–{editingBooking.endTime}, {selectedProject}</p>}
+                </div>
+
                 {/* Calendar Body */}
-                <div ref={scrollContainerRef} className="flex-1 overflow-y-auto relative select-none flex flex-col bg-white dark:bg-gray-800 transition-colors">
+                <div ref={scrollContainerRef} className="hidden md:flex flex-1 overflow-y-auto relative select-none flex-col bg-white dark:bg-gray-800 transition-colors" aria-label="Visual week calendar; use the form above for keyboard booking">
                     <div className="sticky top-0 z-20 flex border-b dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm transition-colors">
                         <div className="w-16 shrink-0 border-r dark:border-gray-700 p-2 text-center text-xs font-bold text-gray-400">
                             Time
@@ -681,8 +791,8 @@ const BookingModal = ({
                                         <div className="relative" style={{ minHeight: `${TOTAL_GRID_HEIGHT}px` }}>
                                             {timeSlots.map((time, timeIdx) => {
                                                 const isBooked = isSlotBooked(dateStr, time);
-                                                const isPast = isSlotInPast(dateStr, time);
-                                                const isSelected = selectedSlots.some(s => s.date === dateStr && s.time === time);
+                                                const isPast = pastSlots.has(`${dateStr}:${time}`);
+                                                const isSelected = selectedSlotKeys.has(`${dateStr}:${time}`);
 
                                                 return (
                                                     <div
@@ -731,6 +841,10 @@ const BookingModal = ({
                                                         onTouchMove={handleBookingTouchMove}
                                                         onTouchEnd={handleBookingTouchEnd}
                                                         onClick={(e) => handleBookingClick(e, booking)}
+                                                        role="button"
+                                                        tabIndex={canEdit ? 0 : -1}
+                                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleBookingClick(e, booking); } }}
+                                                        aria-label={`${booking.user_name}, ${booking.project}, ${booking.startTime} to ${booking.endTime}`}
                                                         title={`Booked by: ${booking.user_name}\nProject: ${booking.project}`}
                                                     >
                                                         {canResizeTop && (
@@ -752,7 +866,7 @@ const BookingModal = ({
                                                                 onClick={(e) => handleCancelClick(e, booking)}
                                                                 title="Cancel Booking"
                                                             >
-                                                                <i className="fas fa-times text-xs"></i>
+                                                                <Icon className="fas fa-times text-xs" />
                                                             </div>
                                                         )}
 
@@ -802,32 +916,17 @@ const BookingModal = ({
 
                 {/* Footer */}
                 <div className="p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col-reverse sm:flex-row justify-end gap-3 shrink-0 z-30 transition-colors">
-                    <div className="mr-auto flex flex-wrap items-center gap-4 text-sm mb-2 sm:mb-0 text-gray-600 dark:text-gray-400">
+                    <div className="mr-auto hidden md:flex flex-wrap items-center gap-4 text-sm mb-2 sm:mb-0 text-gray-600 dark:text-gray-400">
                         <div className="flex items-center gap-1"><div className="w-4 h-4 bg-white dark:bg-gray-800 border dark:border-gray-600"></div> Available</div>
                         <div className="flex items-center gap-1"><div className="w-4 h-4 bg-blue-200 dark:bg-blue-800 rounded"></div> Selected</div>
                         <div className="flex items-center gap-1"><div className="w-4 h-4 bg-blue-100 dark:bg-blue-900/60 border border-blue-300 dark:border-blue-700 rounded"></div> My Booking</div>
                         <div className="flex items-center gap-1"><div className="w-4 h-4 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"></div> Other's Booking</div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Project:</label>
-                        <select
-                            value={selectedProject}
-                            onChange={(e) => setSelectedProject(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="select-input text-sm"
-                        >
-                            <option value="General">General</option>
-                            {profile?.projects?.map((proj, idx) => (
-                                <option key={idx} value={proj}>{proj}</option>
-                            ))}
-                        </select>
-                    </div>
-
                     <button onClick={onClose} className="btn btn-secondary">Cancel</button>
 
                     <button
-                        disabled={(!editingBooking || editingBooking.user_id === user.id || isAdmin) && ((selectedSlots.length === 0 && !editingBooking) || isSubmitting)}
+                        disabled={(!editingBooking || editingBooking.user_id === user.id || isAdmin) && ((selectedSlots.length === 0 && !editingBooking) || isSubmitting || !availabilityReady || formNeedsCheck)}
                         onClick={(e) => {
                             e.stopPropagation();
                             if (editingBooking && editingBooking.user_id !== user.id && (!isAdmin || !isBookingDirty)) {
@@ -846,11 +945,11 @@ const BookingModal = ({
                     >
                         {(editingBooking && editingBooking.user_id !== user.id && (!isAdmin || !isBookingDirty)) ? (
                             <>
-                                <i className="fas fa-envelope"></i> Send Message
+                                <Icon className="fas fa-envelope" /> Send Message
                             </>
                         ) : (
                             <>
-                                {isSubmitting && <i className="fas fa-spinner fa-spin"></i>}
+                                {isSubmitting && <Icon className="fas fa-spinner fa-spin" />}
                                 {isSubmitting ? (editingBooking ? 'Updating...' : 'Booking...') : (editingBooking ? 'Update Booking' : 'Confirm Booking')}
                             </>
                         )}
@@ -863,15 +962,16 @@ const BookingModal = ({
                         className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] backdrop-blur-sm"
                         onClick={(e) => { e.stopPropagation(); setIsMessageModalOpen(false); }}
                     >
-                        <div
+                        <div ref={messageDialogRef} role="dialog" aria-modal="true" aria-labelledby="message-dialog-title" tabIndex={-1}
                             className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md p-6 border dark:border-gray-700"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Send Message to {editingBooking?.user_name || 'User'}</h3>
+                            <h3 id="message-dialog-title" className="text-lg font-bold text-gray-900 dark:text-white mb-4">Send Message to {editingBooking?.user_name || 'User'}</h3>
 
                             <div className="mb-4">
-                                <label className="label">Subject</label>
+                                <label htmlFor="booking-message-subject" className="label">Subject</label>
                                 <input
+                                    id="booking-message-subject"
                                     type="text"
                                     value={messageSubject}
                                     onChange={(e) => setMessageSubject(e.target.value)}
@@ -881,8 +981,9 @@ const BookingModal = ({
                             </div>
 
                             <div className="mb-6">
-                                <label className="label">Message</label>
+                                <label htmlFor="booking-message-body" className="label">Message</label>
                                 <textarea
+                                    id="booking-message-body"
                                     value={messageBody}
                                     onChange={(e) => setMessageBody(e.target.value)}
                                     className="input-field h-32 resize-none"
@@ -902,7 +1003,7 @@ const BookingModal = ({
                                     disabled={isSendingMessage}
                                     className="btn btn-primary flex items-center gap-2"
                                 >
-                                    {isSendingMessage && <i className="fas fa-spinner fa-spin"></i>}
+                                    {isSendingMessage && <Icon className="fas fa-spinner fa-spin" />}
                                     Send
                                 </button>
                             </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy } from 'react';
+import Icon from './Icon';
 import { supabase } from '../supabaseClient';
 import logo from '../assets/ktu_mmi.svg';
 import {
@@ -10,7 +11,6 @@ import {
     isBookingInProgress,
     getVilniusNow
 } from '../utils/bookingUtils';
-import BookingModal from './BookingModal';
 import ConfirmModal from './ConfirmModal';
 import ToolList from './ToolList';
 import BookingList from './BookingList';
@@ -18,9 +18,24 @@ import UserBookingsCalendar from './UserBookingsCalendar';
 import LoadingSpinner from './LoadingSpinner';
 import { useToast } from '../context/useToast';
 import { useTheme } from '../context/useTheme';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 // Code split admin-heavy UserManagement component (P4)
 const UserManagement = lazy(() => import('./UserManagement'));
+const BookingModal = lazy(() => import('./BookingModal'));
+const BOOKING_FIELDS = 'id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at';
+const PAGE_SIZE = 500;
+
+async function fetchAllPages(makeQuery) {
+    const rows = [];
+    for (let offset = 0; ;) {
+        const { data, error } = await makeQuery().range(offset, offset + PAGE_SIZE - 1);
+        if (error) throw error;
+        if (!data?.length) return rows;
+        rows.push(...data);
+        offset += data.length;
+    }
+}
 
 /**
  * Computes SHA-256 in hex format in browser
@@ -33,16 +48,21 @@ async function computeSha256(message) {
 }
 
 const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
-    const [activeTab, setActiveTab] = useState('dashboard');
+    const [activeTab, setActiveTab] = useState(() => {
+        const view = new URLSearchParams(window.location.search).get('view');
+        return ['dashboard', 'tools', ...(profile?.access_level === 'admin' ? ['all_bookings', 'users'] : [])].includes(view) ? view : 'dashboard';
+    });
     const [tools, setTools] = useState([]);
     const [bookings, setBookings] = useState([]);
     const [userBookings, setUserBookings] = useState([]);
     const [adminBookings, setAdminBookings] = useState([]);
     const [loadingAdminBookings, setLoadingAdminBookings] = useState(false);
+    const [adminError, setAdminError] = useState('');
     const [hasCalendarToken, setHasCalendarToken] = useState(false);
 
     // Calendar sync modal state (R12)
     const [calendarModalOpen, setCalendarModalOpen] = useState(false);
+    const calendarDialogRef = useDialogFocus(calendarModalOpen, () => setCalendarModalOpen(false));
     const [calendarUrl, setCalendarUrl] = useState('');
     const [isGeneratingToken, setIsGeneratingToken] = useState(false);
     const [copyState, setCopyState] = useState({ copied: false, failed: false });
@@ -52,6 +72,8 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const [targetBooking, setTargetBooking] = useState(null);
 
     const [loading, setLoading] = useState(true);
+    const [refreshError, setRefreshError] = useState('');
+    const [lastUpdated, setLastUpdated] = useState(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [confirmModalOpen, setConfirmModalOpen] = useState(false);
     const [bookingIdToCancel, setBookingIdToCancel] = useState(null);
@@ -59,10 +81,14 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const [isCancelling, setIsCancelling] = useState(false);
 
     // Filters for "All Bookings" (Admin)
-    const [filterStartDate, setFilterStartDate] = useState('');
-    const [filterEndDate, setFilterEndDate] = useState('');
-    const [filterUserName, setFilterUserName] = useState('');
-    const [filterToolId, setFilterToolId] = useState('');
+    const [filterStartDate, setFilterStartDate] = useState(() => new URLSearchParams(window.location.search).get('from') || '');
+    const [filterEndDate, setFilterEndDate] = useState(() => new URLSearchParams(window.location.search).get('to') || '');
+    const [filterUserName, setFilterUserName] = useState(() => new URLSearchParams(window.location.search).get('user') || '');
+    const [filterToolId, setFilterToolId] = useState(() => new URLSearchParams(window.location.search).get('tool') || '');
+    const [debouncedUserName, setDebouncedUserName] = useState(filterUserName);
+    const [adminPage, setAdminPage] = useState(0);
+    const [adminTotal, setAdminTotal] = useState(0);
+    const [historyStart, setHistoryStart] = useState(() => formatLocalDate(addDays(getVilniusNow().dateStr, -60)));
 
     // Week State (Monday as start of week without timezone distortion - Fixes R6)
     const [currentWeekStart, setCurrentWeekStart] = useState(() => getMonday(getVilniusNow().dateStr));
@@ -70,15 +96,16 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const { showToast } = useToast();
     const { theme, toggleTheme } = useTheme();
     const querySeqRef = useRef(0);
-    const isFetchingRef = useRef(false);
+    const adminQuerySeqRef = useRef(0);
+    const catalogLoadedRef = useRef(false);
+    const historyLoadedRef = useRef('');
+    const activeTabRef = useRef(activeTab);
+    activeTabRef.current = activeTab;
     const cancelCallbackRef = useRef(null);
 
     // Bounded Fetch Data (Fixes R5, R10): separate calendar window from user history
-    const fetchData = useCallback(async (isBackground = false) => {
-        if (isFetchingRef.current) return;
-        isFetchingRef.current = true;
+    const fetchData = useCallback(async (isBackground = false, refreshCatalog = false) => {
         const currentSeq = ++querySeqRef.current;
-        if (!isBackground) setLoading(true);
 
         try {
             // Calculate date window around visible week (-7 days to +14 days)
@@ -88,66 +115,53 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             const endStr = formatLocalDate(windowEnd);
 
             // User history cutoff: last 60 days
-            const userHistoryCutoff = formatLocalDate(addDays(new Date(), -60));
-
-            // Fetch tools, calendar window bookings, user bookings, and calendar token status concurrently
-            const [toolsRes, bookingsRes, userBookingsRes, tokenRes] = await Promise.all([
-                supabase
-                    .from('tools')
-                    .select('id, name, category, status, location, license_req, description')
-                    .order('id', { ascending: true }),
-
-                // Calendar window bookings (all users)
-                supabase
-                    .from('bookings')
-                    .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at')
-                    .gte('date', startStr)
-                    .lte('date', endStr)
-                    .order('date', { ascending: true })
-                    .order('time', { ascending: true })
-                    .limit(1000),
-
-                // User's own bookings across a wider window for the My Bookings tab
-                supabase
-                    .from('bookings')
-                    .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at')
-                    .eq('user_id', user.id)
-                    .gte('date', userHistoryCutoff)
-                    .order('date', { ascending: true })
-                    .order('time', { ascending: true })
-                    .limit(500),
-
-                supabase.rpc('has_calendar_token')
+            const needCatalog = !catalogLoadedRef.current || refreshCatalog;
+            const needHistory = historyLoadedRef.current !== historyStart || refreshCatalog;
+            const [toolsRes, calendarRows, userRows, tokenRes] = await Promise.all([
+                needCatalog ? supabase.from('tools').select('id, name, category, status, location, license_req, description').order('id') : null,
+                fetchAllPages(() => supabase.from('bookings').select(BOOKING_FIELDS)
+                    .gte('date', startStr).lte('date', endStr)
+                    .order('date').order('time').order('id')),
+                !needHistory ? null : fetchAllPages(() => supabase.from('bookings').select(BOOKING_FIELDS)
+                    .eq('user_id', user.id).gte('date', historyStart)
+                    .order('date', { ascending: false }).order('time', { ascending: false }).order('id', { ascending: false })),
+                needCatalog ? supabase.rpc('has_calendar_token') : null
             ]);
 
             // If a newer query resolved already, discard this response
             if (currentSeq !== querySeqRef.current) return;
 
-            if (toolsRes.error) throw toolsRes.error;
-            if (bookingsRes.error) throw bookingsRes.error;
-            if (userBookingsRes.error) throw userBookingsRes.error;
+            if (toolsRes?.error) throw toolsRes.error;
 
-            if (toolsRes.data) setTools(toolsRes.data);
-            if (bookingsRes.data) setBookings(bookingsRes.data);
-            if (userBookingsRes.data) setUserBookings(userBookingsRes.data);
-            if (!tokenRes.error && tokenRes.data !== undefined) {
+            if (toolsRes?.data) {
+                setTools(toolsRes.data);
+                catalogLoadedRef.current = true;
+            }
+            setBookings(calendarRows);
+            if (userRows) {
+                setUserBookings(userRows);
+                historyLoadedRef.current = historyStart;
+            }
+            if (tokenRes && !tokenRes.error && tokenRes.data !== undefined) {
                 setHasCalendarToken(Boolean(tokenRes.data));
             }
+            setRefreshError('');
+            setLastUpdated(new Date());
 
         } catch (error) {
             if (currentSeq !== querySeqRef.current) return;
             console.error('Error fetching dashboard data:', error);
+            setRefreshError(error.message || 'Could not refresh bookings.');
             if (!isBackground) {
                 showToast('Error loading bookings: ' + error.message, 'error');
             }
         } finally {
-            isFetchingRef.current = false;
             // Always clear loading if this was the latest sequence (Fixes R10)
             if (currentSeq === querySeqRef.current) {
                 setLoading(false);
             }
         }
-    }, [currentWeekStart, user.id, showToast]);
+    }, [currentWeekStart, user.id, historyStart, showToast]);
 
     // Initial fetch and hidden-tab aware polling (P1)
     useEffect(() => {
@@ -155,23 +169,51 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
 
         const handleVisibilityChange = () => {
             if (!document.hidden) {
-                fetchData(true);
+                fetchData(true, true);
             }
         };
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
 
         const intervalId = setInterval(() => {
-            if (!document.hidden) {
+            if (!document.hidden && activeTabRef.current === 'dashboard') {
                 fetchData(true);
             }
-        }, 15000); // 15 seconds polling when active
+        }, 60000);
 
         return () => {
             clearInterval(intervalId);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
     }, [fetchData]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedUserName(filterUserName), 300);
+        return () => clearTimeout(timer);
+    }, [filterUserName]);
+
+    useEffect(() => {
+        const syncFromUrl = () => {
+            const params = new URLSearchParams(window.location.search);
+            const view = params.get('view');
+            setActiveTab(['dashboard', 'tools', ...(profile?.access_level === 'admin' ? ['all_bookings', 'users'] : [])].includes(view) ? view : 'dashboard');
+            setFilterStartDate(params.get('from') || '');
+            setFilterEndDate(params.get('to') || '');
+            setFilterUserName(params.get('user') || '');
+            setFilterToolId(params.get('tool') || '');
+        };
+        window.addEventListener('popstate', syncFromUrl);
+        return () => window.removeEventListener('popstate', syncFromUrl);
+    }, [profile?.access_level]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        for (const [key, value] of Object.entries({ view: activeTab, from: filterStartDate, to: filterEndDate, user: filterUserName, tool: filterToolId })) {
+            if (value) params.set(key, value);
+            else params.delete(key);
+        }
+        window.history.replaceState(null, '', `${window.location.pathname}?${params}${window.location.hash}`);
+    }, [activeTab, filterStartDate, filterEndDate, filterUserName, filterToolId]);
 
     // User's personal bookings (Fixes R5)
     const myBookings = userBookings;
@@ -204,48 +246,62 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
         }
         return recent;
     }, [myBookings, tools]);
+    const nextBooking = useMemo(() => [...myBookings]
+        .filter(b => !isBookingPast(b))
+        .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`))[0], [myBookings]);
+    const clearAdminFilters = () => {
+        setFilterStartDate(''); setFilterEndDate(''); setFilterUserName(''); setFilterToolId('');
+    };
+    const setDateShortcut = (daysBack) => {
+        const today = getVilniusNow().dateStr;
+        setFilterStartDate(formatLocalDate(addDays(today, -daysBack)));
+        setFilterEndDate(today);
+    };
 
     // Server-side filtered query for Admin "All Bookings" tab (Fixes R5)
     const fetchAdminBookings = useCallback(async () => {
         if (profile?.access_level !== 'admin') return;
+        const request = ++adminQuerySeqRef.current;
         setLoadingAdminBookings(true);
         try {
-            let query = supabase
-                .from('bookings')
-                .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at')
-                .order('date', { ascending: false })
-                .order('time', { ascending: false })
-                .limit(200);
-
-            if (filterStartDate) {
-                query = query.gte('date', filterStartDate);
+            const rows = [];
+            let total = 0;
+            let offset = adminPage * 200;
+            while (rows.length < 200) {
+                let query = supabase.from('bookings').select(BOOKING_FIELDS, { count: 'exact' })
+                    .order('date', { ascending: false }).order('time', { ascending: false }).order('id', { ascending: false });
+                if (filterStartDate) query = query.gte('date', filterStartDate);
+                if (filterEndDate) query = query.lte('date', filterEndDate);
+                if (debouncedUserName.trim()) query = query.ilike('user_name', `%${debouncedUserName.trim()}%`);
+                if (filterToolId) query = query.eq('tool_id', filterToolId);
+                const { data, error, count } = await query.range(offset, offset + 199 - rows.length);
+                if (error) throw error;
+                total = count || 0;
+                if (!data?.length) break;
+                rows.push(...data);
+                offset += data.length;
             }
-            if (filterEndDate) {
-                query = query.lte('date', filterEndDate);
-            }
-            if (filterUserName.trim()) {
-                query = query.ilike('user_name', `%${filterUserName.trim()}%`);
-            }
-            if (filterToolId) {
-                query = query.eq('tool_id', filterToolId);
-            }
-
-            const { data, error } = await query;
-            if (error) throw error;
-            setAdminBookings(data || []);
+            if (request !== adminQuerySeqRef.current) return;
+            setAdminBookings(rows);
+            setAdminTotal(total);
+            setAdminError('');
         } catch (err) {
+            if (request !== adminQuerySeqRef.current) return;
             console.error('Error fetching admin bookings:', err);
+            setAdminError(err.message || 'Could not load bookings.');
             showToast('Error loading all bookings: ' + err.message, 'error');
         } finally {
-            setLoadingAdminBookings(false);
+            if (request === adminQuerySeqRef.current) setLoadingAdminBookings(false);
         }
-    }, [profile?.access_level, filterStartDate, filterEndDate, filterUserName, filterToolId, showToast]);
+    }, [profile?.access_level, filterStartDate, filterEndDate, debouncedUserName, filterToolId, adminPage, showToast]);
 
     useEffect(() => {
         if (activeTab === 'all_bookings' && profile?.access_level === 'admin') {
             fetchAdminBookings();
         }
     }, [activeTab, profile?.access_level, fetchAdminBookings]);
+
+    useEffect(() => { setAdminPage(0); }, [filterStartDate, filterEndDate, debouncedUserName, filterToolId]);
 
     // Explicit mutation results for booking creation (L5, R6)
     const handleBookTool = async (bookingData) => {
@@ -552,7 +608,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
         }
     };
 
-    if (loading) {
+    if (loading && !lastUpdated) {
         return (
             <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900 transition-colors">
                 <LoadingSpinner />
@@ -563,6 +619,9 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const handleNavigation = (tabName) => {
         setActiveTab(tabName);
         setIsSidebarOpen(false);
+        const params = new URLSearchParams(window.location.search);
+        params.set('view', tabName);
+        window.history.pushState(null, '', `${window.location.pathname}?${params}${window.location.hash}`);
     };
 
     return (
@@ -604,14 +663,14 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                         onClick={() => handleNavigation('dashboard')}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${activeTab === 'dashboard' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                     >
-                        <i className="fas fa-calendar-alt w-5 text-center"></i>
+                        <Icon className="fas fa-calendar-alt w-5 text-center" />
                         My Dashboard
                     </button>
                     <button
                         onClick={() => handleNavigation('tools')}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${activeTab === 'tools' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                     >
-                        <i className="fas fa-microscope w-5 text-center"></i>
+                        <Icon className="fas fa-microscope w-5 text-center" />
                         Equipment List
                     </button>
 
@@ -626,14 +685,14 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                 onClick={() => handleNavigation('all_bookings')}
                                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${activeTab === 'all_bookings' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                             >
-                                <i className="fas fa-list-alt w-5 text-center"></i>
+                                <Icon className="fas fa-list-alt w-5 text-center" />
                                 All Bookings
                             </button>
                             <button
                                 onClick={() => handleNavigation('users')}
                                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${activeTab === 'users' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                             >
-                                <i className="fas fa-users-cog w-5 text-center"></i>
+                                <Icon className="fas fa-users-cog w-5 text-center" />
                                 User Management
                             </button>
                         </>
@@ -643,16 +702,18 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 <div className="p-4 border-t dark:border-gray-700 space-y-2">
                     <button
                         onClick={toggleTheme}
+                        aria-pressed={theme === 'dark'}
+                        aria-label={`Dark theme ${theme === 'dark' ? 'on' : 'off'}. Switch theme`}
                         className="w-full flex items-center justify-between px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition"
                     >
                         <span>Dark Theme</span>
-                        <i className={`fas ${theme === 'dark' ? 'fa-moon text-blue-400' : 'fa-sun text-yellow-500'}`}></i>
+                        <Icon className={`fas ${theme === 'dark' ? 'fa-moon text-blue-400' : 'fa-sun text-yellow-500'}`} />
                     </button>
                     <button
                         onClick={onLogout}
                         className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
                     >
-                        <i className="fas fa-sign-out-alt w-5 text-center"></i>
+                        <Icon className="fas fa-sign-out-alt w-5 text-center" />
                         Sign Out
                     </button>
                 </div>
@@ -664,24 +725,36 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 <header className="h-16 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between px-4 lg:hidden">
                     <button
                         onClick={() => setIsSidebarOpen(true)}
+                        aria-label="Open navigation menu"
                         className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
                     >
-                        <i className="fas fa-bars text-xl"></i>
+                        <Icon className="fas fa-bars text-xl" />
                     </button>
                     <span className="font-bold text-lg text-gray-800 dark:text-gray-200">MMI-LIMS</span>
                     <div className="w-8"></div>
                 </header>
 
                 <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+                    {refreshError && <div role="alert" className="mb-4 p-3 rounded bg-amber-50 dark:bg-amber-900/30 text-amber-900 dark:text-amber-200 text-sm">
+                        Booking data may be out of date: {refreshError} <button onClick={() => fetchData(true, true)} className="underline ml-2">Retry</button>
+                    </div>}
                     {/* TAB: DASHBOARD */}
                     {activeTab === 'dashboard' && (
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+                        <div className="grid grid-cols-1 gap-6">
+                            <div className="card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 order-1">
+                                <div>
+                                    <h2 className="font-bold text-lg text-gray-800 dark:text-gray-100">Your next reservation</h2>
+                                    <p className="text-sm text-gray-700 dark:text-gray-300">{nextBooking ? `${nextBooking.tool_name} · ${nextBooking.date} at ${nextBooking.time?.slice(0, 5)}` : 'No upcoming reservations.'}</p>
+                                </div>
+                                <button onClick={() => handleNavigation('tools')} className="btn btn-primary shrink-0">Book equipment</button>
+                            </div>
                             {/* Left Column: My Bookings Calendar */}
-                            <div className="lg:col-span-2 flex flex-col">
+                            <div className="flex flex-col order-3">
                                 <div className="flex justify-between items-center mb-4">
                                     <div>
                                         <h3 className="font-bold text-gray-800 dark:text-gray-200">My Bookings Calendar</h3>
                                         <span className="text-xs text-gray-500 dark:text-gray-400">Lab timezone: {LAB_TIMEZONE}</span>
+                                        {lastUpdated && <span className="block text-xs text-gray-500 dark:text-gray-400">Updated {lastUpdated.toLocaleTimeString()}</span>}
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <button
@@ -689,7 +762,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                             className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center gap-2 transition-colors px-2 py-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20"
                                             title="Subscribe to calendar feed (ICS)"
                                         >
-                                            <i className="fas fa-calendar-alt"></i> Sync Calendar
+                                            <Icon className="fas fa-calendar-alt" /> Sync Calendar
                                         </button>
                                     </div>
                                 </div>
@@ -704,7 +777,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                             </div>
 
                             {/* Right Column: Quick Book, Upcoming & Past Bookings */}
-                            <div className="lg:col-span-1 flex flex-col gap-6">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 order-2">
                                 {/* Quick Book */}
                                 <div className="flex flex-col">
                                     <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">Quick Book</h3>
@@ -713,7 +786,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                             {recentTools.length > 0 ? (
                                                 <div className="grid grid-cols-1 gap-4">
                                                     {recentTools.map(tool => (
-                                                        <div
+                                                        <button type="button"
                                                             key={tool.id}
                                                             className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg border dark:border-gray-700 hover:shadow-md transition cursor-pointer flex justify-between items-center group"
                                                             onClick={() => setSelectedTool(tool)}
@@ -725,14 +798,14 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                                                 <div className="text-xs text-gray-500 dark:text-gray-400">{tool.category}</div>
                                                             </div>
                                                             <div className="h-6 w-6 bg-white dark:bg-gray-800 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:bg-blue-100 dark:group-hover:bg-blue-800/50 transition-colors shadow-sm">
-                                                                <i className="fas fa-plus text-xs"></i>
+                                                                <Icon className="fas fa-plus text-xs" />
                                                             </div>
-                                                        </div>
+                                                        </button>
                                                     ))}
                                                 </div>
                                             ) : (
-                                                <div className="flex items-center justify-center text-gray-400 italic py-4">
-                                                    No recent equipment reservations found.
+                                                <div className="text-gray-600 dark:text-gray-300 py-4 text-sm">
+                                                    No recent equipment reservations. <button onClick={() => handleNavigation('tools')} className="text-blue-700 dark:text-blue-300 underline">Browse equipment</button>
                                                 </div>
                                             )}
                                         </div>
@@ -757,7 +830,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
 
                                 {/* Past Bookings (Fixes R6) */}
                                 <div className="flex flex-col">
-                                    <h3 className="font-bold text-gray-600 dark:text-gray-400 mb-4">Past Bookings</h3>
+                                    <div className="mb-4"><h3 className="font-bold text-gray-600 dark:text-gray-400">Past Bookings</h3><p className="text-xs text-gray-500 dark:text-gray-400">Showing reservations since {historyStart}</p></div>
                                     <div className="bg-gray-50 dark:bg-gray-900 rounded-lg shadow-sm border dark:border-gray-700 transition-colors flex flex-col max-h-[350px]">
                                         <div className="overflow-y-auto p-4 custom-scroll">
                                             <BookingList
@@ -767,7 +840,9 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                                 onUpdate={handleUpdateBooking}
                                                 onEdit={handleBookingClick}
                                                 readOnly={true}
+                                                showSort={true}
                                             />
+                                            <button onClick={() => setHistoryStart(formatLocalDate(addDays(historyStart, -90)))} className="mt-3 text-sm text-blue-700 dark:text-blue-300 underline">Load older reservations</button>
                                         </div>
                                     </div>
                                 </div>
@@ -795,14 +870,20 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                     className="btn btn-sm btn-ghost flex items-center gap-1 text-sm"
                                     title="Refresh bookings"
                                 >
-                                    <i className={`fas fa-sync-alt ${loadingAdminBookings ? 'fa-spin' : ''}`}></i> Refresh
+                                    <Icon className={`fas fa-sync-alt ${loadingAdminBookings ? 'fa-spin' : ''}`} /> Refresh
                                 </button>
                             </div>
 
                             <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border dark:border-gray-700 mb-4 grid grid-cols-1 md:grid-cols-4 gap-4 transition-colors">
+                                <div className="md:col-span-4 flex gap-3 text-sm">
+                                    <button onClick={() => setDateShortcut(0)} className="text-blue-700 dark:text-blue-300 underline">Today</button>
+                                    <button onClick={() => setDateShortcut(6)} className="text-blue-700 dark:text-blue-300 underline">Past week</button>
+                                    <button onClick={clearAdminFilters} className="text-blue-700 dark:text-blue-300 underline">Clear filters</button>
+                                </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
+                                    <label htmlFor="filter-start-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
                                     <input
+                                        id="filter-start-date"
                                         type="date"
                                         className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         value={filterStartDate}
@@ -810,8 +891,9 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
+                                    <label htmlFor="filter-end-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
                                     <input
+                                        id="filter-end-date"
                                         type="date"
                                         className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         value={filterEndDate}
@@ -819,8 +901,9 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">User Name</label>
+                                    <label htmlFor="filter-user" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">User Name</label>
                                     <input
+                                        id="filter-user"
                                         type="text"
                                         className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         placeholder="Filter by user..."
@@ -829,8 +912,9 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tool</label>
+                                    <label htmlFor="filter-tool" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tool</label>
                                     <select
+                                        id="filter-tool"
                                         className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         value={filterToolId}
                                         onChange={(e) => setFilterToolId(e.target.value)}
@@ -844,6 +928,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                             </div>
 
                             <div className="card p-4">
+                                {adminError && <p role="alert" className="mb-3 text-sm text-red-700 dark:text-red-300">Could not refresh this list: {adminError} <button onClick={fetchAdminBookings} className="underline">Retry</button></p>}
                                 {loadingAdminBookings ? (
                                     <div className="py-8 flex justify-center"><LoadingSpinner /></div>
                                 ) : (
@@ -854,8 +939,17 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                         onUpdate={handleUpdateBooking}
                                         onEdit={handleBookingClick}
                                         isAdminView={true}
+                                        isFiltered={Boolean(filterStartDate || filterEndDate || filterUserName || filterToolId)}
+                                        onClearFilters={clearAdminFilters}
                                     />
                                 )}
+                                <div className="flex items-center justify-between gap-3 mt-4 text-sm text-gray-700 dark:text-gray-300">
+                                    <span>{adminTotal ? `${adminPage * 200 + 1}–${Math.min((adminPage + 1) * 200, adminTotal)} of ${adminTotal}` : '0 bookings'}</span>
+                                    <div className="flex gap-2">
+                                        <button disabled={adminPage === 0 || loadingAdminBookings} onClick={() => setAdminPage(p => p - 1)} className="btn btn-secondary btn-sm">Previous</button>
+                                        <button disabled={(adminPage + 1) * 200 >= adminTotal || loadingAdminBookings} onClick={() => setAdminPage(p => p + 1)} className="btn btn-secondary btn-sm">Next</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -905,23 +999,30 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             {/* Calendar Subscription Feed Modal (Fixes R12) */}
             {calendarModalOpen && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4">
+                    <div ref={calendarDialogRef} role="dialog" aria-modal="true" aria-labelledby="calendar-dialog-title" tabIndex={-1} className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4">
                         <div className="flex justify-between items-center">
-                            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                                <i className="fas fa-calendar-alt text-blue-600 dark:text-blue-400"></i>
+                            <h3 id="calendar-dialog-title" className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                                <Icon className="fas fa-calendar-alt text-blue-600 dark:text-blue-400" />
                                 Calendar Subscription (ICS Feed)
                             </h3>
                             <button
                                 onClick={() => setCalendarModalOpen(false)}
+                                aria-label="Close calendar subscription dialog"
                                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                             >
-                                <i className="fas fa-times text-lg"></i>
+                                <Icon className="fas fa-times text-lg" />
                             </button>
                         </div>
 
                         <p className="text-sm text-gray-600 dark:text-gray-300">
                             Subscribe to your personal reservations in Google Calendar, Apple Calendar, or Outlook.
                         </p>
+                        <div className="text-xs text-gray-600 dark:text-gray-300 space-y-1">
+                            <p><strong>Google Calendar:</strong> Other calendars → From URL.</p>
+                            <p><strong>Apple Calendar:</strong> File → New Calendar Subscription.</p>
+                            <p><strong>Outlook:</strong> Add calendar → Subscribe from web.</p>
+                            <p>Paste the private URL below. Calendar apps control their own refresh schedules, so changes may take time to appear.</p>
+                        </div>
 
                         {calendarUrl ? (
                             <div className="space-y-3">
@@ -940,26 +1041,26 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                         onClick={handleManualCopy}
                                         className="btn btn-primary btn-sm flex items-center gap-1 whitespace-nowrap"
                                     >
-                                        <i className="fas fa-copy"></i> Copy
+                                        <Icon className="fas fa-copy" /> Copy
                                     </button>
                                 </div>
 
                                 {copyState.copied && (
                                     <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 font-medium">
-                                        <i className="fas fa-check-circle"></i> Link copied to clipboard! Paste this URL as a new calendar subscription in your calendar app.
+                                        <Icon className="fas fa-check-circle" /> Link copied to clipboard! Paste this URL as a new calendar subscription in your calendar app.
                                     </p>
                                 )}
 
                                 {copyState.failed && (
                                     <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 font-medium">
-                                        <i className="fas fa-exclamation-triangle"></i> Clipboard write was blocked by your browser. Please select and copy the URL manually above.
+                                        <Icon className="fas fa-exclamation-triangle" /> Clipboard write was blocked by your browser. Please select and copy the URL manually above.
                                     </p>
                                 )}
 
                                 <div className="pt-3 border-t dark:border-gray-700">
                                     <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-xs text-red-800 dark:text-red-300 space-y-2">
                                         <div className="font-semibold flex items-center gap-1">
-                                            <i className="fas fa-exclamation-circle"></i> Resetting invalidates active links
+                                            <Icon className="fas fa-exclamation-circle" /> Resetting invalidates active links
                                         </div>
                                         <p>
                                             If your feed URL was compromised, click below to generate a replacement link. Any existing calendar apps subscribed to the old link will stop syncing.
@@ -978,7 +1079,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                             <div className="space-y-4">
                                 <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-xs text-blue-800 dark:text-blue-300 space-y-1">
                                     <div className="font-semibold flex items-center gap-1">
-                                        <i className="fas fa-check-circle"></i> Calendar sync is active
+                                        <Icon className="fas fa-check-circle" /> Calendar sync is active
                                     </div>
                                     <p>
                                         For security, secret tokens are only revealed upon generation and are not stored in plaintext. If you need a new link or need to reconnect a calendar app, you can generate a new link below.
@@ -994,7 +1095,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                     disabled={isGeneratingToken}
                                     className="btn btn-primary w-full flex items-center justify-center gap-2"
                                 >
-                                    <i className={`fas fa-sync-alt ${isGeneratingToken ? 'fa-spin' : ''}`}></i>
+                                    <Icon className={`fas fa-sync-alt ${isGeneratingToken ? 'fa-spin' : ''}`} />
                                     {isGeneratingToken ? 'Generating...' : 'Generate New Calendar Link'}
                                 </button>
                             </div>
@@ -1008,7 +1109,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                     disabled={isGeneratingToken}
                                     className="btn btn-primary w-full flex items-center justify-center gap-2"
                                 >
-                                    <i className={`fas fa-link ${isGeneratingToken ? 'fa-spin' : ''}`}></i>
+                                    <Icon className={`fas fa-link ${isGeneratingToken ? 'fa-spin' : ''}`} />
                                     {isGeneratingToken ? 'Generating...' : 'Generate Calendar Feed URL'}
                                 </button>
                             </div>
