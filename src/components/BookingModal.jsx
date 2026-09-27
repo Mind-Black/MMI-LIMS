@@ -165,6 +165,7 @@ const BookingModal = ({
 
     const PIXELS_PER_30_MINS = 48;
     const START_HOUR = 0;
+    const TOTAL_GRID_HEIGHT = 48 * PIXELS_PER_30_MINS; // 2304px (48 slots * 48px)
 
     // Scroll to booking or 9 AM on mount
     useEffect(() => {
@@ -641,7 +642,7 @@ const BookingModal = ({
                         </div>
                     </div>
 
-                    <div className="flex flex-1 relative min-h-[1152px]">
+                    <div className="flex flex-1 relative" style={{ minHeight: `${TOTAL_GRID_HEIGHT}px` }}>
                         {/* Time labels */}
                         <div className="w-16 shrink-0 border-r dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/20 select-none">
                             {timeSlots.map((time, idx) => (
@@ -652,7 +653,7 @@ const BookingModal = ({
                         </div>
 
                         {/* Grid Columns */}
-                        <div className="flex-1 grid grid-cols-7 relative">
+                        <div className="flex-1 grid grid-cols-7 relative" style={{ minHeight: `${TOTAL_GRID_HEIGHT}px` }}>
                             {weekDates.map((date, dayIdx) => {
                                 const dateStr = formatDate(date);
                                 const dayBookings = groupedBookings.filter(b => b.date === dateStr);
@@ -664,7 +665,8 @@ const BookingModal = ({
                                 return (
                                     <div
                                         key={dayIdx}
-                                        className={`border-r dark:border-gray-700 last:border-0 relative h-full ${isToday(date) ? 'bg-blue-50/10' : ''}`}
+                                        className={`border-r dark:border-gray-700 last:border-0 relative ${isToday(date) ? 'bg-blue-50/10' : ''}`}
+                                        style={{ minHeight: `${TOTAL_GRID_HEIGHT}px` }}
                                     >
                                         {/* Current Time Indicator on Today's Column */}
                                         {isToday(date) && (
@@ -676,7 +678,7 @@ const BookingModal = ({
                                                 <div className="w-2.5 h-2.5 rounded-full bg-red-500 -ml-1.5 shadow-sm"></div>
                                             </div>
                                         )}
-                                        <div className="absolute inset-0">
+                                        <div className="relative" style={{ minHeight: `${TOTAL_GRID_HEIGHT}px` }}>
                                             {timeSlots.map((time, timeIdx) => {
                                                 const isBooked = isSlotBooked(dateStr, time);
                                                 const isPast = isSlotInPast(dateStr, time);
