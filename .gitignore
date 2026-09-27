@@ -27,3 +27,6 @@ dist-ssr
 
 # SQL files
 sql_archive
+
+# Supabase CLI temp files
+supabase/.temp/

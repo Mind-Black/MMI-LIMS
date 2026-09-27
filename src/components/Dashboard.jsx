@@ -7,7 +7,8 @@ import {
     getMonday,
     addDays,
     isBookingPast,
-    isBookingInProgress
+    isBookingInProgress,
+    getVilniusNow
 } from '../utils/bookingUtils';
 import BookingModal from './BookingModal';
 import ConfirmModal from './ConfirmModal';
@@ -64,12 +65,13 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const [filterToolId, setFilterToolId] = useState('');
 
     // Week State (Monday as start of week without timezone distortion - Fixes R6)
-    const [currentWeekStart, setCurrentWeekStart] = useState(() => getMonday(new Date()));
+    const [currentWeekStart, setCurrentWeekStart] = useState(() => getMonday(getVilniusNow().dateStr));
 
     const { showToast } = useToast();
     const { theme, toggleTheme } = useTheme();
     const querySeqRef = useRef(0);
     const isFetchingRef = useRef(false);
+    const cancelCallbackRef = useRef(null);
 
     // Bounded Fetch Data (Fixes R5, R10): separate calendar window from user history
     const fetchData = useCallback(async (isBackground = false) => {
@@ -350,7 +352,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
         }
     };
 
-    const initiateCancel = (ids) => {
+    const initiateCancel = (ids, onSuccess) => {
         const idsToCheck = Array.isArray(ids) ? ids : [ids];
         const allKnown = [...bookings, ...userBookings];
         const bookingsToCheck = allKnown.filter(b => idsToCheck.includes(b.id));
@@ -370,6 +372,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
         }
 
         setBookingIdToCancel(ids);
+        cancelCallbackRef.current = typeof onSuccess === 'function' ? onSuccess : null;
         setSendCancellationMessage(false);
         setConfirmModalOpen(true);
     };
@@ -428,6 +431,11 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             setAdminBookings(prev => prev.filter(b => !cancelledIds.includes(b.id)));
             showToast("Booking has been cancelled.", 'success');
 
+            if (cancelCallbackRef.current) {
+                cancelCallbackRef.current(cancelledIds);
+                cancelCallbackRef.current = null;
+            }
+
             // Send cancellation notification if requested and authorized event ID exists (Fixes R4)
             if (eventIdToNotify) {
                 const { data, error: notifyError } = await supabase.functions.invoke('notify-cancellation', {
@@ -453,6 +461,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             setIsCancelling(false);
             setConfirmModalOpen(false);
             setBookingIdToCancel(null);
+            cancelCallbackRef.current = null;
         }
     };
 
@@ -885,7 +894,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 title="Cancel Booking"
                 message="Are you sure you want to cancel this booking? This action cannot be undone."
                 onConfirm={handleConfirmCancel}
-                onCancel={() => { setConfirmModalOpen(false); setBookingIdToCancel(null); }}
+                onCancel={() => { setConfirmModalOpen(false); setBookingIdToCancel(null); cancelCallbackRef.current = null; }}
                 showCheckbox={true}
                 checkboxLabel="Send cancellation message to licensed users"
                 isCheckboxChecked={sendCancellationMessage}

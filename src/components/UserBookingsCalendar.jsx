@@ -1,16 +1,22 @@
 import React, { useMemo, useEffect, useRef, useState } from 'react';
-import { groupBookings, calculateEventLayout, formatLocalDate, formatDisplayDate } from '../utils/bookingUtils';
+import {
+    groupBookings,
+    calculateEventLayout,
+    formatLocalDate,
+    formatDisplayDate,
+    addDays,
+    getVilniusCurrentMinutes,
+    isVilniusToday
+} from '../utils/bookingUtils';
 
 const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBookingClick }) => {
     const scrollContainerRef = useRef(null);
 
-    // Helper to get dates for the week
+    // Helper to get dates for the week (timezone-safe)
     const weekDates = useMemo(() => {
         const dates = [];
         for (let i = 0; i < 7; i++) {
-            const d = new Date(currentWeekStart);
-            d.setDate(currentWeekStart.getDate() + i);
-            dates.push(d);
+            dates.push(addDays(currentWeekStart, i));
         }
         return dates;
     }, [currentWeekStart]);
@@ -34,23 +40,16 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
     useEffect(() => {
         const timer = setInterval(() => {
             setCurrentTime(new Date());
-        }, 60000);
+        }, 30000);
         return () => clearInterval(timer);
     }, []);
 
     const getCurrentTimeTop = () => {
-        const hours = currentTime.getHours();
-        const minutes = currentTime.getMinutes();
-        const totalMinutes = (hours - START_HOUR) * 60 + minutes;
+        const totalMinutes = getVilniusCurrentMinutes(currentTime);
         return (totalMinutes / 30) * PIXELS_PER_30_MINS;
     };
 
-    const isToday = (date) => {
-        const today = new Date();
-        return date.getDate() === today.getDate() &&
-            date.getMonth() === today.getMonth() &&
-            date.getFullYear() === today.getFullYear();
-    };
+    const isToday = (date) => isVilniusToday(date, currentTime);
 
     // Scroll to 9 AM on mount
     useEffect(() => {

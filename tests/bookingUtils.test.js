@@ -14,7 +14,12 @@ import {
     addDays,
     getVilniusInstant,
     isBookingPast,
-    isBookingInProgress
+    isBookingInProgress,
+    getVilniusNow,
+    getVilniusCurrentMinutes,
+    isVilniusToday,
+    isBookingStarted,
+    isSlotInPast
 } from '../src/utils/bookingUtils.js';
 
 test('timeToMinutes & minutesToTime conversion and clamping', () => {
@@ -223,5 +228,56 @@ test('isBookingPast and isBookingInProgress handle ends_at and legacy timestamps
         starts_at: futureDate,
         ends_at: farFutureDate
     }), false);
+});
+
+test('getVilniusNow, getVilniusCurrentMinutes, and isVilniusToday calculate Europe/Vilnius lab time (R6)', () => {
+    // 2026-07-01 10:00:00 UTC is 13:00:00 in Europe/Vilnius (EEST, UTC+3)
+    const summerUtc = new Date(Date.UTC(2026, 6, 1, 10, 0, 0));
+    const summerVilnius = getVilniusNow(summerUtc);
+    assert.strictEqual(summerVilnius.year, 2026);
+    assert.strictEqual(summerVilnius.month, 7);
+    assert.strictEqual(summerVilnius.day, 1);
+    assert.strictEqual(summerVilnius.hour, 13);
+    assert.strictEqual(summerVilnius.minute, 0);
+    assert.strictEqual(summerVilnius.dateStr, '2026-07-01');
+    assert.strictEqual(summerVilnius.timeStr, '13:00');
+    assert.strictEqual(getVilniusCurrentMinutes(summerUtc), 13 * 60);
+    assert.strictEqual(isVilniusToday('2026-07-01', summerUtc), true);
+    assert.strictEqual(isVilniusToday('2026-07-02', summerUtc), false);
+
+    // 2026-01-15 10:00:00 UTC is 12:00:00 in Europe/Vilnius (EET, UTC+2)
+    const winterUtc = new Date(Date.UTC(2026, 0, 15, 10, 0, 0));
+    const winterVilnius = getVilniusNow(winterUtc);
+    assert.strictEqual(winterVilnius.hour, 12);
+    assert.strictEqual(winterVilnius.minute, 0);
+    assert.strictEqual(winterVilnius.dateStr, '2026-01-15');
+    assert.strictEqual(getVilniusCurrentMinutes(winterUtc), 12 * 60);
+    assert.strictEqual(isVilniusToday('2026-01-15', winterUtc), true);
+});
+
+test('isSlotInPast and isBookingStarted enforce exact lab time and grace period (R6)', () => {
+    // Simulated "now" is 2026-07-01 10:00 UTC (13:00 in Vilnius)
+    const simulatedNow = new Date(Date.UTC(2026, 6, 1, 10, 0, 0));
+
+    // Slot at 12:30 Vilnius (started 30 min ago -> past)
+    assert.strictEqual(isSlotInPast('2026-07-01', '12:30', simulatedNow), true);
+
+    // Slot at 12:56 Vilnius (started 4 min ago -> within 5 min grace window -> not past)
+    assert.strictEqual(isSlotInPast('2026-07-01', '12:56', simulatedNow), false);
+
+    // Slot at 13:00 Vilnius (starts now -> not past)
+    assert.strictEqual(isSlotInPast('2026-07-01', '13:00', simulatedNow), false);
+
+    // Slot at 13:30 Vilnius (future -> not past)
+    assert.strictEqual(isSlotInPast('2026-07-01', '13:30', simulatedNow), false);
+
+    // isBookingStarted
+    const startedBooking = { date: '2026-07-01', startTime: '12:30' };
+    const startsAtBooking = { starts_at: new Date(Date.now() - 60000).toISOString() };
+    const futureBooking = { starts_at: new Date(Date.now() + 60000).toISOString() };
+
+    assert.strictEqual(isBookingStarted(startedBooking), true);
+    assert.strictEqual(isBookingStarted(startsAtBooking), true);
+    assert.strictEqual(isBookingStarted(futureBooking), false);
 });
 

@@ -101,14 +101,18 @@ BEGIN
     SELECT 1 FROM information_schema.columns 
     WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'calendar_token'
   ) THEN
-    INSERT INTO public.user_calendar_tokens (user_id, token_hash, created_at)
-    SELECT 
-      id AS user_id, 
-      encode(digest(calendar_token, 'sha256'), 'hex') AS token_hash,
-      timezone('utc'::text, now())
-    FROM public.profiles
-    WHERE calendar_token IS NOT NULL AND calendar_token <> ''
-    ON CONFLICT (user_id) DO NOTHING;
+    PERFORM set_config('search_path', current_setting('search_path') || ',extensions,public', true);
+
+    EXECUTE $mig$
+      INSERT INTO public.user_calendar_tokens (user_id, token_hash, created_at)
+      SELECT 
+        id AS user_id, 
+        encode(digest(calendar_token::bytea, 'sha256'), 'hex') AS token_hash,
+        timezone('utc'::text, now())
+      FROM public.profiles
+      WHERE calendar_token IS NOT NULL AND calendar_token <> ''
+      ON CONFLICT (user_id) DO NOTHING
+    $mig$;
 
     DROP INDEX IF EXISTS idx_profiles_calendar_token;
     ALTER TABLE public.profiles DROP COLUMN IF EXISTS calendar_token;

@@ -178,6 +178,81 @@ export const isBookingInProgress = (booking) => {
     return !isNaN(startMs) && !isNaN(endMs) && startMs <= now && endMs > now;
 };
 
+/**
+ * Returns current date and time components in Europe/Vilnius timezone.
+ * Authoritative for lab time regardless of browser timezone.
+ */
+export const getVilniusNow = (nowVal = new Date()) => {
+    const d = nowVal instanceof Date ? nowVal : new Date(nowVal);
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: LAB_TIMEZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+    const parts = formatter.formatToParts(d);
+    const getPart = (type) => Number(parts.find(p => p.type === type)?.value || 0);
+    const year = getPart('year');
+    const month = getPart('month');
+    const day = getPart('day');
+    let hour = getPart('hour');
+    if (hour === 24) hour = 0;
+    const minute = getPart('minute');
+    const second = getPart('second');
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    return { year, month, day, hour, minute, second, dateStr, timeStr };
+};
+
+/**
+ * Returns total minutes from midnight in Europe/Vilnius.
+ */
+export const getVilniusCurrentMinutes = (nowVal = new Date()) => {
+    const { hour, minute } = getVilniusNow(nowVal);
+    return (hour * 60) + minute;
+};
+
+/**
+ * Checks whether a given calendar date corresponds to today in Europe/Vilnius.
+ */
+export const isVilniusToday = (dateVal, nowVal = new Date()) => {
+    if (!dateVal) return false;
+    const dStr = formatLocalDate(dateVal);
+    const { dateStr } = getVilniusNow(nowVal);
+    return dStr === dateStr;
+};
+
+/**
+ * Checks whether a booking has already started in Europe/Vilnius.
+ */
+export const isBookingStarted = (booking) => {
+    if (!booking) return false;
+    if (booking.starts_at) {
+        const startMs = new Date(booking.starts_at).getTime();
+        if (!isNaN(startMs)) return startMs <= Date.now();
+    }
+    const dateStr = booking.date;
+    const timeStr = booking.startTime || booking.time || '00:00';
+    if (!dateStr) return false;
+    return getVilniusInstant(dateStr, timeStr) <= Date.now();
+};
+
+/**
+ * Checks whether a booking slot starting at timeStr on dateStr has already passed
+ * and can no longer be booked. Aligned with the database constraint allowing a 5-minute
+ * grace window. Timezone-authoritative for Europe/Vilnius.
+ */
+export const isSlotInPast = (dateStr, timeStr, nowVal = new Date()) => {
+    if (!dateStr || !timeStr) return false;
+    const slotStartMs = getVilniusInstant(dateStr, timeStr);
+    const nowMs = nowVal instanceof Date ? nowVal.getTime() : new Date(nowVal).getTime();
+    return (slotStartMs + 5 * 60 * 1000) < nowMs;
+};
+
 
 /**
  * Formats a date string or Date object for UI display

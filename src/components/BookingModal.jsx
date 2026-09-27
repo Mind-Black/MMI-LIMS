@@ -2,8 +2,6 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import StatusBadge from './StatusBadge';
 import { useToast } from '../context/useToast';
 import {
-    timeToMinutes,
-    minutesToTime,
     getNextSlotTime,
     groupBookings,
     checkCollision,
@@ -13,7 +11,11 @@ import {
     formatDisplayDate,
     getMonday,
     addDays,
-    getVilniusInstant
+    getVilniusNow,
+    getVilniusCurrentMinutes,
+    isVilniusToday,
+    isBookingStarted,
+    isSlotInPast
 } from '../utils/bookingUtils';
 import { useBookingInteraction } from '../hooks/useBookingInteraction';
 import { supabase } from '../supabaseClient';
@@ -31,9 +33,9 @@ const BookingModal = ({
     initialBooking = null,
     isAdminOverride = false
 }) => {
-    // Initialize week start to current week's Monday without timezone distortion (Fixes R6)
+    // Initialize week start to current week's Monday in lab timezone (Fixes R6)
     const [currentWeekStart, setCurrentWeekStart] = useState(() => {
-        return getMonday(initialDate || new Date());
+        return getMonday(initialDate || getVilniusNow().dateStr);
     });
 
     const [toolWeekBookings, setToolWeekBookings] = useState([]);
@@ -54,9 +56,11 @@ const BookingModal = ({
     const [currentTime, setCurrentTime] = useState(new Date());
 
     useEffect(() => {
-        const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+        const timer = setInterval(() => setCurrentTime(new Date()), 30000);
         return () => clearInterval(timer);
     }, []);
+
+    const vilniusNow = useMemo(() => getVilniusNow(currentTime), [currentTime]);
 
     // Message Modal State
     const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
@@ -124,30 +128,29 @@ const BookingModal = ({
     const weekEndStr = useMemo(() => formatLocalDate(addDays(currentWeekStart, 6)), [currentWeekStart]);
 
     // Fetch tool availability for the active week window in modal (Fixes R5)
-    useEffect(() => {
-        let isCancelled = false;
-        const fetchToolWeekBookings = async () => {
-            if (!tool?.id) return;
-            try {
-                const { data, error } = await supabase
-                    .from('bookings')
-                    .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at')
-                    .eq('tool_id', tool.id)
-                    .gte('date', weekStartStr)
-                    .lte('date', weekEndStr)
-                    .order('date', { ascending: true })
-                    .order('time', { ascending: true });
+    const fetchToolWeekBookings = useCallback(async () => {
+        if (!tool?.id) return;
+        try {
+            const { data, error } = await supabase
+                .from('bookings')
+                .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at')
+                .eq('tool_id', tool.id)
+                .gte('date', weekStartStr)
+                .lte('date', weekEndStr)
+                .order('date', { ascending: true })
+                .order('time', { ascending: true });
 
-                if (!isCancelled && !error && data) {
-                    setToolWeekBookings(data);
-                }
-            } catch (err) {
-                console.error('Error fetching tool week bookings:', err);
+            if (!error && data) {
+                setToolWeekBookings(data);
             }
-        };
-        fetchToolWeekBookings();
-        return () => { isCancelled = true; };
+        } catch (err) {
+            console.error('Error fetching tool week bookings:', err);
+        }
     }, [tool?.id, weekStartStr, weekEndStr]);
+
+    useEffect(() => {
+        fetchToolWeekBookings();
+    }, [fetchToolWeekBookings]);
 
     // Helper to generate 30-min slots from 00:00 to 24:00
     const timeSlots = useMemo(() => {
@@ -192,12 +195,6 @@ const BookingModal = ({
         return (h * 60) + m;
     };
 
-    const isSlotInPast = (dateStr, timeStr) => {
-        const slotEndMinutes = timeToMinutes(timeStr) + 30;
-        const endSlotTimeStr = minutesToTime(slotEndMinutes);
-        return getVilniusInstant(dateStr, endSlotTimeStr) < Date.now();
-    };
-
     const allKnownBookings = useMemo(() => {
         const map = new Map();
         for (const b of existingBookings) {
@@ -230,18 +227,11 @@ const BookingModal = ({
     }, [allKnownBookings, tool.id]);
 
     const getCurrentTimeTop = () => {
-        const hours = currentTime.getHours();
-        const minutes = currentTime.getMinutes();
-        const totalMinutes = (hours - START_HOUR) * 60 + minutes;
+        const totalMinutes = getVilniusCurrentMinutes(currentTime);
         return (totalMinutes / 30) * PIXELS_PER_30_MINS;
     };
 
-    const isToday = (date) => {
-        const today = new Date();
-        return date.getDate() === today.getDate() &&
-            date.getMonth() === today.getMonth() &&
-            date.getFullYear() === today.getFullYear();
-    };
+    const isToday = (date) => isVilniusToday(date, currentTime);
 
     // Group bookings for display
     const displayBookings = useMemo(() => {
@@ -320,7 +310,14 @@ const BookingModal = ({
     const handleCancelClick = (e, booking) => {
         e.stopPropagation();
         if (onCancel && booking && booking.ids) {
-            onCancel(booking.ids);
+            onCancel(booking.ids, (cancelledIds) => {
+                const idsToRemove = Array.isArray(cancelledIds) ? cancelledIds : booking.ids;
+                setToolWeekBookings(prev => prev.filter(b => !idsToRemove.includes(b.id)));
+                setEditingBooking(null);
+                setOriginalBookingState(null);
+                setSelectedSlots([]);
+                fetchToolWeekBookings();
+            });
             setEditingBooking(null);
         }
     };
@@ -486,7 +483,7 @@ const BookingModal = ({
 
     const handleToday = () => {
         setSelectedSlots([]);
-        setCurrentWeekStart(getMonday(new Date()));
+        setCurrentWeekStart(getMonday(getVilniusNow(currentTime).dateStr));
     };
 
     // Mutation with draft preservation (L5)
@@ -504,6 +501,7 @@ const BookingModal = ({
                 if (result?.success) {
                     setEditingBooking(null);
                     setOriginalBookingState(null);
+                    fetchToolWeekBookings();
                 }
             } finally {
                 setIsSubmitting(false);
@@ -598,7 +596,7 @@ const BookingModal = ({
                             )}
                         </div>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            {tool.category} &bull; {tool.location} &bull; Lab Timezone: Europe/Vilnius
+                            {tool.category} &bull; {tool.location} &bull; Lab Timezone: Europe/Vilnius (Current: {vilniusNow.timeStr})
                         </p>
                     </div>
 
@@ -653,14 +651,6 @@ const BookingModal = ({
                             ))}
                         </div>
 
-                        {/* Current Time Indicator Line */}
-                        <div
-                            className="absolute left-16 right-0 border-t-2 border-red-500 z-10 pointer-events-none flex items-center"
-                            style={{ top: `${getCurrentTimeTop()}px` }}
-                        >
-                            <div className="w-2 h-2 rounded-full bg-red-500 -ml-1"></div>
-                        </div>
-
                         {/* Grid Columns */}
                         <div className="flex-1 grid grid-cols-7 relative">
                             {weekDates.map((date, dayIdx) => {
@@ -676,6 +666,16 @@ const BookingModal = ({
                                         key={dayIdx}
                                         className={`border-r dark:border-gray-700 last:border-0 relative h-full ${isToday(date) ? 'bg-blue-50/10' : ''}`}
                                     >
+                                        {/* Current Time Indicator on Today's Column */}
+                                        {isToday(date) && (
+                                            <div
+                                                className="absolute left-0 right-0 border-t-2 border-red-500 z-20 pointer-events-none flex items-center"
+                                                style={{ top: `${getCurrentTimeTop()}px` }}
+                                                title={`Current Lab Time: ${vilniusNow.timeStr}`}
+                                            >
+                                                <div className="w-2.5 h-2.5 rounded-full bg-red-500 -ml-1.5 shadow-sm"></div>
+                                            </div>
+                                        )}
                                         <div className="absolute inset-0">
                                             {timeSlots.map((time, timeIdx) => {
                                                 const isBooked = isSlotBooked(dateStr, time);
@@ -709,9 +709,7 @@ const BookingModal = ({
                                                 const isOwnBooking = booking.user_id === user.id;
                                                 const canEdit = isAdmin || isOwnBooking;
 
-                                                const now = new Date();
-                                                const bookingStart = new Date(`${booking.date}T${booking.startTime}`);
-                                                const isStarted = bookingStart <= now;
+                                                const isStarted = isBookingStarted(booking);
 
                                                 const canMove = canEdit && (!isStarted || isAdminOverride);
                                                 const canResizeTop = canEdit && (!isStarted || isAdminOverride);
