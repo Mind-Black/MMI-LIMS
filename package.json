@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test tests/**/*.test.js && node test_booking_logic.js",
+    "test": "node --test tests/*.test.js && node test_booking_logic.js",
     "preview": "vite preview"
   },
   "dependencies": {
