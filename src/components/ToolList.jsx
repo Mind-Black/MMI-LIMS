@@ -106,7 +106,11 @@ const ToolTable = ({ toolsList, title, profile, onStatusChange, onBook, expanded
                                     <td colSpan="6" className="p-6">
                                         <div className="flex flex-col md:flex-row gap-6 animate-fadeIn">
                                             {/* Image or Placeholder */}
-                                            {toolImage ? (
+                                            {tool.image_url ? (
+                                                <div className="w-full md:w-64 h-48 bg-white dark:bg-gray-800 rounded-lg flex items-center justify-center shrink-0 border dark:border-gray-700 overflow-hidden">
+                                                    <img src={tool.image_url} alt={tool.name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                                                </div>
+                                            ) : toolImage ? (
                                                 <div className="w-full md:w-64 h-48 bg-white dark:bg-gray-800 rounded-lg flex items-center justify-center shrink-0 border dark:border-gray-700 overflow-hidden">
                                                     <picture className="w-full h-full">
                                                         <source type="image/avif" srcSet={`${getToolImage(tool.id, 256, 'avif')} 1x, ${getToolImage(tool.id, 512, 'avif')} 2x`} />
@@ -164,7 +168,7 @@ const ToolTable = ({ toolsList, title, profile, onStatusChange, onBook, expanded
     </div>
 );
 
-const ToolList = ({ tools, profile, onStatusChange, onBook }) => {
+const ToolList = ({ tools, profile, onStatusChange, onBook, onOpenAddModal }) => {
     const [filterCategory, setFilterCategory] = useState('All');
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedToolId, setExpandedToolId] = useState(null);
@@ -203,14 +207,37 @@ const ToolList = ({ tools, profile, onStatusChange, onBook }) => {
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
                 </div>
-                <select
-                    aria-label="Filter equipment by category"
-                    className="select-input"
-                    value={filterCategory}
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                >
-                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <div className="flex flex-wrap items-center gap-2">
+                    <select
+                        aria-label="Filter equipment by category"
+                        className="select-input"
+                        value={filterCategory}
+                        onChange={(e) => setFilterCategory(e.target.value)}
+                    >
+                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    {profile?.access_level === 'admin' && onOpenAddModal && (
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={() => onOpenAddModal('single')}
+                                className="btn btn-primary btn-sm flex items-center gap-1.5 whitespace-nowrap"
+                            >
+                                <Icon className="fas fa-plus" />
+                                Add Equipment
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => onOpenAddModal('bulk')}
+                                className="btn btn-secondary btn-sm flex items-center gap-1.5 whitespace-nowrap"
+                                title="Import equipment from CSV file"
+                            >
+                                <Icon className="fas fa-file-csv" />
+                                Import CSV
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
 
             <ToolTable

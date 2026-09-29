@@ -3,7 +3,8 @@ import {
     CalendarDays, Microscope, List, UsersRound, Moon, Sun, LogOut, Menu,
     Plus, RefreshCw, Copy, CircleCheck, TriangleAlert, CircleAlert,
     Link, X, LoaderCircle, ChevronLeft, ChevronRight, Mail, Camera,
-    CircleX, Circle, Clock
+    CircleX, Circle, Clock, FileSpreadsheet, Upload, Download, Server,
+    Pencil, Trash2
 } from 'lucide-react';
 
 const icons = {
@@ -30,7 +31,13 @@ const icons = {
     'fa-camera': Camera,
     'fa-times-circle': CircleX,
     'fa-circle': Circle,
-    'fa-clock': Clock
+    'fa-clock': Clock,
+    'fa-file-csv': FileSpreadsheet,
+    'fa-upload': Upload,
+    'fa-download': Download,
+    'fa-server': Server,
+    'fa-edit': Pencil,
+    'fa-trash': Trash2
 };
 
 const Icon = ({ className = '', ...props }) => {

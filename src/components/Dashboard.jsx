@@ -20,9 +20,11 @@ import { useToast } from '../context/useToast';
 import { useTheme } from '../context/useTheme';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 
-// Code split admin-heavy UserManagement component (P4)
+// Code split admin-heavy components (P4)
 const UserManagement = lazy(() => import('./UserManagement'));
 const BookingModal = lazy(() => import('./BookingModal'));
+const InfrastructureManagement = lazy(() => import('./InfrastructureManagement'));
+const AddInfrastructureModal = lazy(() => import('./AddInfrastructureModal'));
 const BOOKING_FIELDS = 'id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at';
 const PAGE_SIZE = 500;
 
@@ -50,7 +52,7 @@ async function computeSha256(message) {
 const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const [activeTab, setActiveTab] = useState(() => {
         const view = new URLSearchParams(window.location.search).get('view');
-        return ['dashboard', 'tools', ...(profile?.access_level === 'admin' ? ['all_bookings', 'users'] : [])].includes(view) ? view : 'dashboard';
+        return ['dashboard', 'tools', ...(profile?.access_level === 'admin' ? ['all_bookings', 'users', 'infrastructure'] : [])].includes(view) ? view : 'dashboard';
     });
     const [tools, setTools] = useState([]);
     const [bookings, setBookings] = useState([]);
@@ -59,6 +61,19 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const [loadingAdminBookings, setLoadingAdminBookings] = useState(false);
     const [adminError, setAdminError] = useState('');
     const [hasCalendarToken, setHasCalendarToken] = useState(false);
+
+    // Infrastructure Modal State (Admin)
+    const [infraModalOpen, setInfraModalOpen] = useState(false);
+    const [infraModalMode, setInfraModalMode] = useState('single'); // 'single' | 'bulk'
+
+    const handleInfrastructureAdded = (newTools) => {
+        const toAdd = Array.isArray(newTools) ? newTools : [newTools];
+        setTools(prev => {
+            const existingIds = new Set(prev.map(t => t.id));
+            const filtered = toAdd.filter(t => !existingIds.has(t.id));
+            return [...prev, ...filtered].sort((a, b) => a.id - b.id);
+        });
+    };
 
     // Calendar sync modal state (R12)
     const [calendarModalOpen, setCalendarModalOpen] = useState(false);
@@ -695,6 +710,13 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                 <Icon className="fas fa-users-cog w-5 text-center" />
                                 User Management
                             </button>
+                            <button
+                                onClick={() => handleNavigation('infrastructure')}
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${activeTab === 'infrastructure' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                            >
+                                <Icon className="fas fa-server w-5 text-center" />
+                                Infrastructure
+                            </button>
                         </>
                     )}
                 </nav>
@@ -857,6 +879,10 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                             profile={profile}
                             onStatusChange={handleStatusChange}
                             onBook={setSelectedTool}
+                            onOpenAddModal={(mode = 'single') => {
+                                setInfraModalMode(mode);
+                                setInfraModalOpen(true);
+                            }}
                         />
                     )}
 
@@ -964,8 +990,35 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                             />
                         </Suspense>
                     )}
+
+                    {/* TAB: INFRASTRUCTURE (ADMIN ONLY - Lazy Loaded) */}
+                    {activeTab === 'infrastructure' && profile?.access_level === 'admin' && (
+                        <Suspense fallback={<div className="p-8 text-center"><LoadingSpinner /></div>}>
+                            <InfrastructureManagement
+                                tools={tools}
+                                onStatusChange={handleStatusChange}
+                                onToolsChange={setTools}
+                                onOpenAddModal={(mode = 'single') => {
+                                    setInfraModalMode(mode);
+                                    setInfraModalOpen(true);
+                                }}
+                            />
+                        </Suspense>
+                    )}
                 </main>
             </div>
+
+            {infraModalOpen && profile?.access_level === 'admin' && (
+                <Suspense fallback={null}>
+                    <AddInfrastructureModal
+                        isOpen={infraModalOpen}
+                        onClose={() => setInfraModalOpen(false)}
+                        onSuccess={handleInfrastructureAdded}
+                        existingTools={tools}
+                        defaultMode={infraModalMode}
+                    />
+                </Suspense>
+            )}
 
             {selectedTool && (
                 <BookingModal
