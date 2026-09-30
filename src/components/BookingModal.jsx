@@ -722,6 +722,8 @@ const BookingModal = ({
                             <Icon aria-hidden="true" className="fas fa-times text-lg" />
                         </button>
                     </div>
+                </div>
+
                 {/* Level Notice Banners */}
                 {eligibility.level === TOOL_ACCESS_LEVELS.LEVEL_2 && (
                     <div className="bg-blue-50 dark:bg-blue-900/30 border-b border-blue-200 dark:border-blue-800/40 px-4 py-2 text-xs text-blue-800 dark:text-blue-200 flex items-center gap-2 shrink-0">
