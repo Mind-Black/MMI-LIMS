@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import logo from '../assets/ktu_mmi.svg';
 import { useToast } from '../context/useToast';
+import { JOB_TITLES } from '../utils/userConstants';
 
 const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete }) => {
     const [loading, setLoading] = useState(false);
@@ -166,15 +167,21 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete }) => {
                                     </div>
                                     <div>
                                         <label htmlFor="signup-job-title" className="label">Job Title</label>
-                                        <input
-                                            id="signup-job-title" autoComplete="organization-title"
-                                            type="text"
+                                        <select
+                                            id="signup-job-title"
+                                            autoComplete="organization-title"
                                             required
                                             value={jobTitle}
                                             onChange={(e) => setJobTitle(e.target.value)}
-                                            className="input-field"
-                                            placeholder="Researcher"
-                                        />
+                                            className="input-field cursor-pointer"
+                                        >
+                                            <option value="" disabled>Select Job Title</option>
+                                            {JOB_TITLES.map((title) => (
+                                                <option key={title} value={title}>
+                                                    {title}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
                                 </>
                             )}
