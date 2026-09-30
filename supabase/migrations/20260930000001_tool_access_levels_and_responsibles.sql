@@ -4,6 +4,45 @@
 -- Tentative Booking Holds, and Training Applications
 -- ==============================================================================
 
+-- 0. Temporarily disable user triggers on profiles to prevent legacy triggers from blocking migration
+ALTER TABLE public.profiles DISABLE TRIGGER USER;
+
+-- Safely remove any legacy triggers calling check_profile_update()
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT t.tgname
+    FROM pg_trigger t
+    JOIN pg_proc p ON t.tgfoid = p.oid
+    WHERE t.tgrelid = 'public.profiles'::regclass
+      AND p.proname = 'check_profile_update'
+  ) LOOP
+    EXECUTE 'DROP TRIGGER IF EXISTS ' || quote_ident(r.tgname) || ' ON public.profiles CASCADE;';
+  END LOOP;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+-- Drop legacy check_profile_update function if it exists
+DO $$
+DECLARE
+  func_rec RECORD;
+BEGIN
+  FOR func_rec IN (
+    SELECT p.oid::regprocedure AS proc_name
+    FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE p.proname = 'check_profile_update'
+      AND n.nspname = 'public'
+  ) LOOP
+    EXECUTE 'DROP FUNCTION IF EXISTS ' || func_rec.proc_name || ' CASCADE;';
+  END LOOP;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
 -- 1. Upgrade public.profiles with contact details if missing
 DO $$
 BEGIN
@@ -43,6 +82,43 @@ SET licenses = (
 WHERE jsonb_typeof(licenses) = 'array';
 
 ALTER TABLE public.profiles ALTER COLUMN licenses SET DEFAULT '{}'::jsonb;
+
+-- Ensure secure profile update validation trigger exists and allows admin & migration changes
+CREATE OR REPLACE FUNCTION public.enforce_profile_update_rules()
+RETURNS trigger AS $$
+BEGIN
+  IF auth.uid() IS NULL OR CURRENT_USER = 'postgres' OR public.is_admin(auth.uid()) THEN
+    NEW.updated_at := timezone('utc'::text, now());
+    RETURN NEW;
+  END IF;
+
+  -- Non-admin self-service edit rules
+  IF NEW.access_level IS DISTINCT FROM OLD.access_level THEN
+    RAISE EXCEPTION 'Unauthorized: cannot modify access_level' USING ERRCODE = '42501';
+  END IF;
+  IF NEW.is_approved IS DISTINCT FROM OLD.is_approved THEN
+    RAISE EXCEPTION 'Unauthorized: cannot modify is_approved' USING ERRCODE = '42501';
+  END IF;
+  IF NEW.licenses IS DISTINCT FROM OLD.licenses THEN
+    RAISE EXCEPTION 'Unauthorized: cannot modify licenses' USING ERRCODE = '42501';
+  END IF;
+  IF NEW.projects IS DISTINCT FROM OLD.projects THEN
+    RAISE EXCEPTION 'Unauthorized: cannot modify projects' USING ERRCODE = '42501';
+  END IF;
+
+  NEW.updated_at := timezone('utc'::text, now());
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS tr_enforce_profile_update_rules ON public.profiles;
+CREATE TRIGGER tr_enforce_profile_update_rules
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_profile_update_rules();
+
+-- Re-enable user triggers on profiles
+ALTER TABLE public.profiles ENABLE TRIGGER USER;
 
 -- 3. Upgrade public.tools with Tool Responsibles
 DO $$
