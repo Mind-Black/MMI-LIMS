@@ -257,6 +257,7 @@ const BookingModal = ({
         }
         return occupied;
     }, [allKnownBookings, tool.id]);
+
     const isSlotBooked = useCallback((dateStr, timeStr) => occupiedSlots.has(`${dateStr}:${getMinutes(timeStr)}`), [occupiedSlots]);
     const selectedSlotKeys = useMemo(() => new Set(selectedSlots.map(s => `${s.date}:${s.time}`)), [selectedSlots]);
     const pastSlots = useMemo(() => {
@@ -274,6 +275,20 @@ const BookingModal = ({
         setFormNeedsCheck(true);
         setSelectedSlots([]);
         if (date) setCurrentWeekStart(getMonday(date));
+    };
+
+    const handlePrevDay = () => {
+        if (!formDate) return;
+        const [y, m, d] = formDate.split('-').map(Number);
+        const prevDate = new Date(y, m - 1, d - 1);
+        handleFormDateChange(formatLocalDate(prevDate));
+    };
+
+    const handleNextDay = () => {
+        if (!formDate) return;
+        const [y, m, d] = formDate.split('-').map(Number);
+        const nextDate = new Date(y, m - 1, d + 1);
+        handleFormDateChange(formatLocalDate(nextDate));
     };
 
     const applyFormSelection = () => {
@@ -301,6 +316,95 @@ const BookingModal = ({
         } else {
             setSelectedSlots(slots);
         }
+        setFormNeedsCheck(false);
+    };
+
+    // Quick duration preset applicator
+    const applyDuration = (hours, minutes = 0) => {
+        const startMinutes = getMinutes(formStart);
+        const totalMinutes = (hours * 60) + minutes;
+        const targetEndMinutes = Math.min(24 * 60, startMinutes + totalMinutes);
+        const endH = Math.floor(targetEndMinutes / 60);
+        const endM = targetEndMinutes % 60;
+        const endStr = `${endH < 10 ? '0' + endH : endH}:${endM < 10 ? '0' + endM : endM}`;
+        setFormEnd(endStr);
+        setFormError('');
+
+        if (!availabilityReady) {
+            setFormNeedsCheck(true);
+            return;
+        }
+        if (!canBook) {
+            setFormError(eligibility.reason || 'Booking is restricted.');
+            return;
+        }
+
+        const slots = [];
+        for (let m = startMinutes; m < targetEndMinutes; m += 30) {
+            const time = timeSlots[m / 30];
+            const overlaps = editingBooking
+                ? checkCollision({ tool_id: tool.id, date: formDate, time, end_time: getNextSlotTime(time) }, allKnownBookings, editingBooking.ids || [editingBooking.id])
+                : isSlotBooked(formDate, time);
+            if (!time || overlaps || (!isAdminOverride && isSlotInPast(formDate, time, currentTime))) {
+                setFormError(`Requested duration contains booked or past slot: ${time}`);
+                setFormNeedsCheck(true);
+                return;
+            }
+            slots.push({ date: formDate, time });
+        }
+
+        if (editingBooking) {
+            setEditingBooking(prev => ({ ...prev, date: formDate, startTime: formStart, endTime: endStr }));
+        } else {
+            setSelectedSlots(slots);
+        }
+        setFormNeedsCheck(false);
+    };
+
+    // Mobile slot tap handler (tap to select, tap later slot to extend range)
+    const handleSlotTap = (time) => {
+        if (!canBook) {
+            setFormError(eligibility.reason || 'Booking is restricted.');
+            return;
+        }
+        const nextSlot = getNextSlotTime(time);
+        const isBooked = isSlotBooked(formDate, time);
+        const isPast = !isAdminOverride && isSlotInPast(formDate, time, currentTime);
+        if (isBooked || isPast) return;
+
+        // If a slot is already selected on the same day and user clicks a later slot, extend selection
+        if (selectedSlots.length > 0 && selectedSlots[0].date === formDate) {
+            const firstMin = getMinutes(selectedSlots[0].time);
+            const clickedMin = getMinutes(time);
+            if (clickedMin > firstMin) {
+                const slots = [];
+                let blocked = false;
+                for (let m = firstMin; m <= clickedMin; m += 30) {
+                    const t = timeSlots[m / 30];
+                    const overlaps = isSlotBooked(formDate, t);
+                    if (!t || overlaps || (!isAdminOverride && isSlotInPast(formDate, t, currentTime))) {
+                        blocked = true;
+                        break;
+                    }
+                    slots.push({ date: formDate, time: t });
+                }
+                if (!blocked) {
+                    const newEnd = getNextSlotTime(time);
+                    setFormStart(selectedSlots[0].time);
+                    setFormEnd(newEnd);
+                    setSelectedSlots(slots);
+                    setFormError('');
+                    setFormNeedsCheck(false);
+                    return;
+                }
+            }
+        }
+
+        // Single slot select
+        setFormStart(time);
+        setFormEnd(nextSlot);
+        setSelectedSlots([{ date: formDate, time }]);
+        setFormError('');
         setFormNeedsCheck(false);
     };
 
@@ -433,6 +537,15 @@ const BookingModal = ({
         }
 
         setSelectedSlots(newSlots);
+        if (newSlots.length > 0) {
+            const sorted = [...newSlots].sort((a, b) => {
+                if (a.date !== b.date) return a.date.localeCompare(b.date);
+                return a.time.localeCompare(b.time);
+            });
+            setFormDate(sorted[0].date);
+            setFormStart(sorted[0].time);
+            setFormEnd(getNextSlotTime(sorted[sorted.length - 1].time));
+        }
     }, [weekDates, timeSlots, isAdminOverride, isSlotBooked, pastSlots]);
 
     const handleGridMouseDown = (dateStr, timeIndex) => {
@@ -513,6 +626,43 @@ const BookingModal = ({
         };
     }, [isSelecting, weekDates, updateSelectedSlots]);
 
+    // Week navigation (Fixes R11, R6)
+    const handlePrevWeek = useCallback(() => {
+        setSelectedSlots([]);
+        setCurrentWeekStart(prev => addDays(prev, -7));
+    }, []);
+
+    const handleNextWeek = useCallback(() => {
+        setSelectedSlots([]);
+        setCurrentWeekStart(prev => addDays(prev, 7));
+    }, []);
+
+    const handleToday = useCallback(() => {
+        setSelectedSlots([]);
+        setCurrentWeekStart(getMonday(getVilniusNow(currentTime).dateStr));
+    }, [currentTime]);
+
+    // Keyboard shortcuts for PC desktop users (T = Today, Alt+Left = Prev Week, Alt+Right = Next Week)
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            const tagName = document.activeElement?.tagName?.toLowerCase();
+            if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') return;
+
+            if (e.key === 't' || e.key === 'T') {
+                e.preventDefault();
+                handleToday();
+            } else if (e.key === 'ArrowLeft' && e.altKey) {
+                e.preventDefault();
+                handlePrevWeek();
+            } else if (e.key === 'ArrowRight' && e.altKey) {
+                e.preventDefault();
+                handleNextWeek();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handleToday, handlePrevWeek, handleNextWeek]);
+
     const handleGridTouchStart = (e, dateStr, timeIndex) => {
         longPressTimer.current = setTimeout(() => {
             setEditingBooking(null);
@@ -563,22 +713,6 @@ const BookingModal = ({
         if (longPressTimer.current) {
             clearTimeout(longPressTimer.current);
         }
-    };
-
-    // Week navigation (Fixes R11, R6)
-    const handlePrevWeek = () => {
-        setSelectedSlots([]);
-        setCurrentWeekStart(prev => addDays(prev, -7));
-    };
-
-    const handleNextWeek = () => {
-        setSelectedSlots([]);
-        setCurrentWeekStart(prev => addDays(prev, 7));
-    };
-
-    const handleToday = () => {
-        setSelectedSlots([]);
-        setCurrentWeekStart(getMonday(getVilniusNow(currentTime).dateStr));
     };
 
     // Mutation with draft preservation (L5)
@@ -690,7 +824,7 @@ const BookingModal = ({
 
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-2 sm:p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-            <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="booking-dialog-title" tabIndex={-1} className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-7xl h-auto max-h-[95vh] md:h-[95vh] flex flex-col overflow-hidden border dark:border-gray-700 transition-colors" onClick={(e) => e.stopPropagation()}>
+            <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="booking-dialog-title" tabIndex={-1} className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-7xl h-auto max-h-[96vh] md:h-[95vh] flex flex-col overflow-hidden border dark:border-gray-700 transition-colors" onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
                 <div className="p-4 border-b dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-gray-800 shrink-0 z-30 transition-colors">
                     <div>
@@ -724,13 +858,13 @@ const BookingModal = ({
 
                     <div className="flex items-center gap-2 self-stretch md:self-auto justify-between md:justify-end">
                         <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
-                            <button onClick={handlePrevWeek} className="btn-icon text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-600" title="Previous Week">
+                            <button onClick={handlePrevWeek} className="btn-icon text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-600" title="Previous Week (Alt+Left)">
                                 <Icon className="fas fa-chevron-left text-xs" />
                             </button>
-                            <button onClick={handleToday} className="px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded">
+                            <button onClick={handleToday} className="px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded" title="Jump to today (T)">
                                 Today
                             </button>
-                            <button onClick={handleNextWeek} className="btn-icon text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-600" title="Next Week">
+                            <button onClick={handleNextWeek} className="btn-icon text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-600" title="Next Week (Alt+Right)">
                                 <Icon className="fas fa-chevron-right text-xs" />
                             </button>
                         </div>
@@ -757,43 +891,196 @@ const BookingModal = ({
                     </div>
                 )}
 
-                <div className="p-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 space-y-3 overflow-y-auto shrink-0 max-h-[55vh]">
-                    <h3 className="font-semibold text-gray-800 dark:text-gray-100">Choose a booking time</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-300">Enter a date and time, then check availability. Times use the Europe/Vilnius lab timezone.</p>
+                {/* Form and Controls Section */}
+                <div className="p-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 space-y-3 overflow-y-auto shrink-0 max-h-[58vh]">
+                    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                        <div>
+                            <h3 className="font-semibold text-gray-800 dark:text-gray-100 text-sm">Choose a booking time</h3>
+                            <p className="text-xs text-gray-600 dark:text-gray-400">Select date and duration or tap slots on the timeline below.</p>
+                        </div>
+                        {/* Quick Presets */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Quick duration:</span>
+                            {[
+                                { label: '30m', h: 0, m: 30 },
+                                { label: '1h', h: 1, m: 0 },
+                                { label: '2h', h: 2, m: 0 },
+                                { label: '3h', h: 3, m: 0 },
+                                { label: '4h', h: 4, m: 0 },
+                                { label: '8h', h: 8, m: 0 }
+                            ].map(d => (
+                                <button
+                                    key={d.label}
+                                    type="button"
+                                    onClick={() => applyDuration(d.h, d.m)}
+                                    className="px-2 py-0.5 text-xs font-medium rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-300 transition-colors shadow-2xs cursor-pointer"
+                                >
+                                    +{d.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
-                        <label className="text-sm text-gray-700 dark:text-gray-200">Date
-                            <input type="date" className="input-field mt-1" value={formDate} onChange={e => handleFormDateChange(e.target.value)} />
+                        <label className="text-xs font-medium text-gray-700 dark:text-gray-200">
+                            Date
+                            <div className="flex items-center gap-1 mt-1">
+                                <button
+                                    type="button"
+                                    onClick={handlePrevDay}
+                                    className="p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0 cursor-pointer min-h-[36px] min-w-[32px] flex items-center justify-center"
+                                    title="Previous Day"
+                                >
+                                    <Icon className="fas fa-chevron-left text-[10px]" />
+                                </button>
+                                <input
+                                    type="date"
+                                    className="input-field flex-1 text-xs py-1.5 min-h-[36px]"
+                                    value={formDate}
+                                    onChange={e => handleFormDateChange(e.target.value)}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleNextDay}
+                                    className="p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0 cursor-pointer min-h-[36px] min-w-[32px] flex items-center justify-center"
+                                    title="Next Day"
+                                >
+                                    <Icon className="fas fa-chevron-right text-[10px]" />
+                                </button>
+                            </div>
                         </label>
-                        <label className="text-sm text-gray-700 dark:text-gray-200">Start
-                            <select className="select-input w-full mt-1" value={formStart} onChange={e => { setFormStart(e.target.value); setFormError(''); setFormNeedsCheck(true); setSelectedSlots([]); }}>
+                        <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Start
+                            <select className="select-input w-full mt-1 text-xs min-h-[36px]" value={formStart} onChange={e => { setFormStart(e.target.value); setFormError(''); setFormNeedsCheck(true); setSelectedSlots([]); }}>
                                 {timeSlots.map(time => <option key={time} value={time}>{time}</option>)}
                             </select>
                         </label>
-                        <label className="text-sm text-gray-700 dark:text-gray-200">End
-                            <select className="select-input w-full mt-1" value={formEnd} onChange={e => { setFormEnd(e.target.value); setFormError(''); setFormNeedsCheck(true); setSelectedSlots([]); }}>
+                        <label className="text-xs font-medium text-gray-700 dark:text-gray-200">End
+                            <select className="select-input w-full mt-1 text-xs min-h-[36px]" value={formEnd} onChange={e => { setFormEnd(e.target.value); setFormError(''); setFormNeedsCheck(true); setSelectedSlots([]); }}>
                                 {[...timeSlots.slice(1), '24:00'].map(time => <option key={time} value={time}>{time}</option>)}
                             </select>
                         </label>
-                        <label className="text-sm text-gray-700 dark:text-gray-200">Project
-                            <select value={selectedProject} onChange={e => setSelectedProject(e.target.value)} className="select-input w-full mt-1">
+                        <label className="text-xs font-medium text-gray-700 dark:text-gray-200">Project
+                            <select value={selectedProject} onChange={e => setSelectedProject(e.target.value)} className="select-input w-full mt-1 text-xs min-h-[36px]">
                                 <option value="General">General</option>
                                 {profile?.projects?.map(proj => <option key={proj} value={proj}>{proj}</option>)}
                             </select>
                         </label>
-                        <button type="button" onClick={applyFormSelection} disabled={!canBook || !availabilityReady} className="btn btn-primary">Check this time</button>
+                        <button type="button" onClick={applyFormSelection} disabled={!canBook || !availabilityReady} className="btn btn-primary text-xs min-h-[36px]">Check time</button>
                     </div>
-                    <div role="status" aria-live="polite" className="text-sm text-gray-700 dark:text-gray-200">
+
+                    <div role="status" aria-live="polite" className="text-xs text-gray-700 dark:text-gray-200">
                         {availability.key !== availabilityKey || availability.state === 'loading' ? 'Checking availability…' : availability.state === 'error' ? availability.message : 'Availability loaded.'}
-                        {availability.state === 'error' && <button type="button" onClick={fetchToolWeekBookings} className="ml-2 underline text-blue-700 dark:text-blue-300">Retry</button>}
+                        {availability.state === 'error' && <button type="button" onClick={fetchToolWeekBookings} className="ml-2 underline text-blue-700 dark:text-blue-300 cursor-pointer">Retry</button>}
                     </div>
-                    {formError && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{formError}</p>}
-                    {formNeedsCheck && <p className="text-sm text-amber-700 dark:text-amber-300">Check this time to apply your changes.</p>}
-                    {selectedSlots.length > 0 && !editingBooking && <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Selected: {selectedSlots[0].date}{selectedSlots[0].date !== selectedSlots[selectedSlots.length - 1].date ? ` through ${selectedSlots[selectedSlots.length - 1].date}` : ''}, {selectedSlots[0].time}–{getNextSlotTime(selectedSlots[selectedSlots.length - 1].time)} ({selectedSlots.length * 30} minutes total), {selectedProject}</p>}
-                    {editingBooking && <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Reservation: {editingBooking.date}, {editingBooking.startTime}–{editingBooking.endTime}, {selectedProject}</p>}
+                    {formError && <p role="alert" className="text-xs text-red-700 dark:text-red-300 font-semibold">{formError}</p>}
+                    {formNeedsCheck && <p className="text-xs text-amber-700 dark:text-amber-300">Check this time to apply your changes.</p>}
+
+                    {/* Selected Summary Card */}
+                    {selectedSlots.length > 0 && !editingBooking && (
+                        <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800/50 rounded-lg p-2.5 flex items-center justify-between text-xs text-blue-900 dark:text-blue-200 animate-fadeIn">
+                            <div className="flex items-center gap-2">
+                                <Icon className="fas fa-check-circle text-blue-600 dark:text-blue-400 text-sm" />
+                                <div>
+                                    <span className="font-bold">
+                                        Selected: {selectedSlots[0].date}{selectedSlots[0].date !== selectedSlots[selectedSlots.length - 1].date ? ` through ${selectedSlots[selectedSlots.length - 1].date}` : ''}, {selectedSlots[0].time}–{getNextSlotTime(selectedSlots[selectedSlots.length - 1].time)}
+                                    </span>
+                                    <span className="ml-2 font-medium opacity-85">
+                                        ({Math.floor((selectedSlots.length * 30) / 60)}h {(selectedSlots.length * 30) % 60 ? `${(selectedSlots.length * 30) % 60}m` : ''}) &bull; {selectedProject}
+                                    </span>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedSlots([])}
+                                className="text-blue-600 dark:text-blue-400 hover:underline font-semibold text-xs ml-2 cursor-pointer"
+                            >
+                                Clear
+                            </button>
+                        </div>
+                    )}
+                    {editingBooking && (
+                        <p className="text-xs font-semibold text-blue-800 dark:text-blue-200">
+                            Reservation: {editingBooking.date}, {editingBooking.startTime}–{editingBooking.endTime}, {selectedProject}
+                        </p>
+                    )}
+
+                    {/* Mobile Day Availability Timeline & Slot Picker (Visible on mobile screens) */}
+                    <div className="md:hidden pt-3 border-t dark:border-gray-700 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                            <div className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                                <Icon className="fas fa-calendar-day text-blue-600 dark:text-blue-400" />
+                                <span>Day Timeline ({formDate})</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400">
+                                <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Free</span>
+                                <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-600"></span> Selected</span>
+                                <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-400"></span> Busy</span>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 max-h-52 overflow-y-auto p-1.5 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
+                            {timeSlots.map(time => {
+                                const isBooked = isSlotBooked(formDate, time);
+                                const isPast = !isAdminOverride && isSlotInPast(formDate, time, currentTime);
+                                const isSelected = selectedSlotKeys.has(`${formDate}:${time}`);
+                                const slotBooking = isBooked ? groupedBookings.find(b => {
+                                    if (b.date !== formDate) return false;
+                                    const sm = getMinutes(time);
+                                    const bmStart = getMinutes(b.startTime || b.time);
+                                    const bmEnd = getMinutes(b.endTime || b.end_time || getNextSlotTime(b.startTime || b.time));
+                                    return sm >= bmStart && sm < bmEnd;
+                                }) : null;
+
+                                const isOwnBooking = slotBooking?.user_id === user.id;
+
+                                let chipStyle = "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/40 hover:bg-emerald-100 cursor-pointer";
+                                if (isSelected) {
+                                    chipStyle = "bg-blue-600 text-white border-blue-700 font-bold shadow-xs cursor-pointer";
+                                } else if (isBooked) {
+                                    chipStyle = isOwnBooking
+                                        ? "bg-blue-100 dark:bg-blue-900/40 text-blue-900 dark:text-blue-200 border-blue-300 dark:border-blue-700 opacity-80 cursor-not-allowed"
+                                        : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 opacity-60 cursor-not-allowed";
+                                } else if (isPast) {
+                                    chipStyle = "bg-gray-50 dark:bg-gray-800/40 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-gray-700/50 opacity-40 cursor-not-allowed";
+                                }
+
+                                return (
+                                    <button
+                                        key={time}
+                                        type="button"
+                                        disabled={(isBooked && !isSelected) || isPast}
+                                        onClick={() => handleSlotTap(time)}
+                                        className={`py-1.5 px-1 rounded text-xs border text-center transition-all flex flex-col items-center justify-center min-h-[42px] ${chipStyle}`}
+                                        title={isBooked ? `Booked by ${slotBooking?.user_name || 'User'}` : isPast ? 'Past slot' : `Select ${time}`}
+                                    >
+                                        <span className="font-mono text-xs">{time}</span>
+                                        {isBooked ? (
+                                            <span className="text-[9px] truncate max-w-full px-0.5 leading-none mt-0.5 opacity-90">
+                                                {isOwnBooking ? 'Mine' : (slotBooking?.user_name?.split(' ')[0] || 'Busy')}
+                                            </span>
+                                        ) : isSelected ? (
+                                            <span className="text-[9px] leading-none mt-0.5">Selected</span>
+                                        ) : null}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
                 </div>
 
-                {/* Calendar Body */}
+                {/* Calendar Body (Desktop) */}
                 <div ref={scrollContainerRef} className="hidden md:flex flex-1 overflow-y-auto relative select-none flex-col bg-white dark:bg-gray-800 transition-colors" aria-label="Visual week calendar; use the form above for keyboard booking">
+                    {/* Live Drag/Selection Duration Tooltip Badge */}
+                    {selectedSlots.length > 0 && (
+                        <div className="sticky top-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none self-center bg-blue-600 text-white text-xs font-semibold px-3.5 py-1.5 rounded-full shadow-lg backdrop-blur-xs flex items-center gap-2 animate-fadeIn">
+                            <Icon className="fas fa-clock text-[11px]" />
+                            <span>
+                                {selectedSlots[0].time} – {getNextSlotTime(selectedSlots[selectedSlots.length - 1].time)}
+                                {' '}({Math.floor((selectedSlots.length * 30) / 60)}h {(selectedSlots.length * 30) % 60 ? `${(selectedSlots.length * 30) % 60}m` : ''})
+                            </span>
+                        </div>
+                    )}
+
                     <div className="sticky top-0 z-20 flex border-b dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm transition-colors">
                         <div className="w-16 shrink-0 border-r dark:border-gray-700 p-2 text-center text-xs font-bold text-gray-400">
                             Time

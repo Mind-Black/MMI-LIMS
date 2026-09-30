@@ -107,6 +107,26 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const [refreshError, setRefreshError] = useState('');
     const [lastUpdated, setLastUpdated] = useState(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+        try {
+            return localStorage.getItem('mmi_sidebar_collapsed') === 'true';
+        } catch {
+            return false;
+        }
+    });
+
+    const toggleSidebarCollapse = () => {
+        setIsSidebarCollapsed(prev => {
+            const next = !prev;
+            try {
+                localStorage.setItem('mmi_sidebar_collapsed', String(next));
+            } catch {
+                // Ignore storage errors
+            }
+            return next;
+        });
+    };
+
     const [confirmModalOpen, setConfirmModalOpen] = useState(false);
     const [bookingIdToCancel, setBookingIdToCancel] = useState(null);
     const [sendCancellationMessage, setSendCancellationMessage] = useState(false);
@@ -356,6 +376,24 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const nextBooking = useMemo(() => [...myBookings]
         .filter(b => !isBookingPast(b))
         .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`))[0], [myBookings]);
+
+    // Total booked lab hours for current user in visible week
+    const thisWeekUserHours = useMemo(() => {
+        const mondayStr = formatLocalDate(currentWeekStart);
+        const sundayStr = formatLocalDate(addDays(currentWeekStart, 6));
+        return myBookings
+            .filter(b => b.date >= mondayStr && b.date <= sundayStr && b.status !== 'rejected')
+            .reduce((acc, b) => {
+                const start = (b.time || '00:00').split(':').map(Number);
+                const end = (b.end_time || '00:30').split(':').map(Number);
+                const durationMins = (end[0] * 60 + end[1]) - (start[0] * 60 + start[1]);
+                return acc + (durationMins > 0 ? durationMins / 60 : 0.5);
+            }, 0);
+    }, [myBookings, currentWeekStart]);
+
+    const totalPendingActions = useMemo(() => {
+        return pendingRequests.length + pendingBookings.length;
+    }, [pendingRequests, pendingBookings]);
     const clearAdminFilters = () => {
         setFilterStartDate(''); setFilterEndDate(''); setFilterUserName(''); setFilterToolId('');
     };
@@ -855,233 +893,392 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             )}
 
             {/* Sidebar */}
-            <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 shadow-lg flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="h-16 flex items-center justify-center border-b border-blue-900 lims-header transition-colors">
-                    <div className="font-bold text-xl tracking-wider flex items-center">
-                        <img src={logo} alt="Logo" className="h-8 mr-2 brightness-0 invert" />
-                        MMI-LIMS
+            <aside className={`fixed inset-y-0 left-0 z-50 bg-white dark:bg-gray-800 shadow-lg flex flex-col transition-all duration-300 ease-in-out lg:static lg:inset-auto ${isSidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full lg:translate-x-0'} ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}`}>
+                <div className="h-16 flex items-center justify-center border-b border-blue-900 lims-header transition-colors px-3">
+                    <div className="font-bold text-xl tracking-wider flex items-center justify-center overflow-hidden">
+                        <img src={logo} alt="Logo" className="h-8 brightness-0 invert shrink-0" />
+                        {!isSidebarCollapsed && <span className="ml-2 truncate">MMI-LIMS</span>}
                     </div>
                 </div>
 
-                <div className="p-4 border-b dark:border-gray-700">
-                    <div className="text-sm text-gray-500 dark:text-gray-400">Logged in as</div>
-                    <div className="font-bold text-gray-800 dark:text-gray-200 truncate">
-                        {profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : user.email}
-                    </div>
-                    <div className="text-xs text-blue-600 dark:text-blue-400 font-semibold uppercase mt-1">
-                        {profile?.job_title || 'Researcher'}
-                        {profile?.access_level === 'admin' && <span className="ml-2 bg-red-600 text-white px-1 rounded text-[10px]">ADMIN</span>}
-                    </div>
-                    <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
-                        Timezone: <span className="font-medium text-gray-600 dark:text-gray-300">{LAB_TIMEZONE}</span>
-                    </div>
+                <div className={`p-4 border-b dark:border-gray-700 ${isSidebarCollapsed ? 'text-center px-2' : ''}`}>
+                    {!isSidebarCollapsed ? (
+                        <>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Logged in as</div>
+                            <div className="font-bold text-gray-800 dark:text-gray-200 truncate">
+                                {profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : user.email}
+                            </div>
+                            <div className="text-xs text-blue-600 dark:text-blue-400 font-semibold uppercase mt-1 flex items-center gap-1.5 flex-wrap">
+                                <span>{profile?.job_title || 'Researcher'}</span>
+                                {profile?.access_level === 'admin' && <span className="bg-red-600 text-white px-1.5 py-0.5 rounded text-[10px]">ADMIN</span>}
+                            </div>
+                            <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
+                                Timezone: <span className="font-medium text-gray-600 dark:text-gray-300">{LAB_TIMEZONE}</span>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex flex-col items-center" title={`${profile ? `${profile.first_name || ''} ${profile.last_name || ''}` : user.email} (${profile?.job_title || 'Researcher'})`}>
+                            <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold text-sm shadow-xs">
+                                {profile?.first_name ? profile.first_name[0] : (user.email ? user.email[0].toUpperCase() : 'U')}
+                            </div>
+                            {profile?.access_level === 'admin' && (
+                                <span className="mt-1 bg-red-600 text-white px-1 rounded text-[9px] font-bold">ADM</span>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* Navigation Links */}
-                <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+                <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto custom-scroll">
                     <button
                         onClick={() => handleNavigation('dashboard')}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${activeTab === 'dashboard' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                        title="My Dashboard"
+                        className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-3 rounded-lg text-sm font-medium transition ${activeTab === 'dashboard' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/60'}`}
                     >
-                        <Icon className="fas fa-calendar-alt w-5 text-center" />
-                        My Dashboard
+                        <Icon className="fas fa-calendar-alt text-base text-center shrink-0" />
+                        {!isSidebarCollapsed && <span>My Dashboard</span>}
                     </button>
                     <button
                         onClick={() => handleNavigation('tools')}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${activeTab === 'tools' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                        title="Equipment List"
+                        className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-3 rounded-lg text-sm font-medium transition ${activeTab === 'tools' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/60'}`}
                     >
-                        <Icon className="fas fa-microscope w-5 text-center" />
-                        Equipment List
+                        <Icon className="fas fa-microscope text-base text-center shrink-0" />
+                        {!isSidebarCollapsed && <span>Equipment List</span>}
                     </button>
 
                     {profile?.access_level === 'admin' && (
                         <>
-                            <div className="pt-4 pb-1">
-                                <div className="px-4 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                                    Administration
-                                </div>
+                            <div className="pt-3 pb-1">
+                                {!isSidebarCollapsed ? (
+                                    <div className="px-4 text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                                        Administration
+                                    </div>
+                                ) : (
+                                    <div className="border-t dark:border-gray-700 my-2"></div>
+                                )}
                             </div>
                             <button
                                 onClick={() => handleNavigation('all_bookings')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${activeTab === 'all_bookings' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                                title="All Bookings"
+                                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-3 rounded-lg text-sm font-medium transition ${activeTab === 'all_bookings' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/60'}`}
                             >
-                                <Icon className="fas fa-list-alt w-5 text-center" />
-                                All Bookings
+                                <Icon className="fas fa-list-alt text-base text-center shrink-0" />
+                                {!isSidebarCollapsed && <span>All Bookings</span>}
                             </button>
                             <button
                                 onClick={() => handleNavigation('users')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${activeTab === 'users' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                                title="User Management"
+                                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-3 rounded-lg text-sm font-medium transition ${activeTab === 'users' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/60'}`}
                             >
-                                <Icon className="fas fa-users-cog w-5 text-center" />
-                                User Management
+                                <Icon className="fas fa-users-cog text-base text-center shrink-0" />
+                                {!isSidebarCollapsed && <span>User Management</span>}
                             </button>
                             <button
                                 onClick={() => handleNavigation('infrastructure')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${activeTab === 'infrastructure' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                                title="Infrastructure"
+                                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-3 rounded-lg text-sm font-medium transition ${activeTab === 'infrastructure' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/60'}`}
                             >
-                                <Icon className="fas fa-server w-5 text-center" />
-                                Infrastructure
+                                <Icon className="fas fa-server text-base text-center shrink-0" />
+                                {!isSidebarCollapsed && <span>Infrastructure</span>}
                             </button>
                         </>
                     )}
                 </nav>
 
-                <div className="p-4 border-t dark:border-gray-700 space-y-2">
+                <div className="p-3 border-t dark:border-gray-700 space-y-2">
+                    {/* Desktop Sidebar Collapse Toggle */}
+                    <button
+                        onClick={toggleSidebarCollapse}
+                        title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                        className={`hidden lg:flex w-full items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'justify-between px-3'} py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors`}
+                    >
+                        {!isSidebarCollapsed && <span>Collapse Sidebar</span>}
+                        <Icon className={`fas ${isSidebarCollapsed ? 'fa-chevron-right' : 'fa-chevron-left'} text-sm`} />
+                    </button>
+
                     <button
                         onClick={toggleTheme}
                         aria-pressed={theme === 'dark'}
                         aria-label={`Dark theme ${theme === 'dark' ? 'on' : 'off'}. Switch theme`}
-                        className="w-full flex items-center justify-between px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition"
+                        title={theme === 'dark' ? "Switch to light theme" : "Switch to dark theme"}
+                        className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'justify-between px-3'} py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition`}
                     >
-                        <span>Dark Theme</span>
+                        {!isSidebarCollapsed && <span>Dark Theme</span>}
                         <Icon className={`fas ${theme === 'dark' ? 'fa-moon text-blue-400' : 'fa-sun text-yellow-500'}`} />
                     </button>
                     <button
                         onClick={onLogout}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
+                        title="Sign Out"
+                        className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition`}
                     >
-                        <Icon className="fas fa-sign-out-alt w-5 text-center" />
-                        Sign Out
+                        <Icon className="fas fa-sign-out-alt text-base text-center shrink-0" />
+                        {!isSidebarCollapsed && <span>Sign Out</span>}
                     </button>
                 </div>
-            </div>
+            </aside>
 
             {/* Main Content */}
             <div className="flex-1 flex flex-col overflow-hidden">
                 {/* Mobile Header */}
-                <header className="h-16 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between px-4 lg:hidden">
-                    <button
-                        onClick={() => setIsSidebarOpen(true)}
-                        aria-label="Open navigation menu"
-                        className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
-                    >
-                        <Icon className="fas fa-bars text-xl" />
-                    </button>
-                    <span className="font-bold text-lg text-gray-800 dark:text-gray-200">MMI-LIMS</span>
-                    <div className="w-8"></div>
+                <header className="h-16 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between px-4 lg:hidden sticky top-0 z-30 shadow-xs">
+                    <div className="flex items-center gap-2.5">
+                        <button
+                            onClick={() => setIsSidebarOpen(true)}
+                            aria-label="Open navigation menu"
+                            className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer"
+                        >
+                            <Icon className="fas fa-bars text-xl" />
+                        </button>
+                        <div className="flex items-center gap-2 font-bold text-base text-gray-800 dark:text-gray-100">
+                            <img src={logo} alt="Logo" className="h-6 w-auto" />
+                            <span>MMI-LIMS</span>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <button
+                            onClick={handleOpenCalendarModal}
+                            className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer"
+                            title="Subscribe to calendar feed (ICS)"
+                            aria-label="Subscribe to calendar feed"
+                        >
+                            <Icon className="fas fa-calendar-alt text-base" />
+                        </button>
+                        <button
+                            onClick={toggleTheme}
+                            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+                            className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer"
+                        >
+                            <Icon className={`fas ${theme === 'dark' ? 'fa-moon text-blue-400' : 'fa-sun text-yellow-500'} text-base`} />
+                        </button>
+                    </div>
                 </header>
 
-                <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+                <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pb-24 lg:pb-8">
                     {refreshError && <div role="alert" className="mb-4 p-3 rounded bg-amber-50 dark:bg-amber-900/30 text-amber-900 dark:text-amber-200 text-sm">
                         Booking data may be out of date: {refreshError} <button onClick={() => fetchData(true, true)} className="underline ml-2">Retry</button>
                     </div>}
                     {/* TAB: DASHBOARD */}
                     {activeTab === 'dashboard' && (
-                        <div className="grid grid-cols-1 gap-6">
-                            <div className="card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 order-1">
-                                <div>
-                                    <h2 className="font-bold text-lg text-gray-800 dark:text-gray-100">Your next reservation</h2>
-                                    <p className="text-sm text-gray-700 dark:text-gray-300 flex items-center flex-wrap gap-2">
+                        <div className="space-y-6">
+                            {/* Top Stats & Quick Status Hub */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                {/* Next Booking Card */}
+                                <div className="card p-4 flex flex-col justify-between border-l-4 border-l-blue-600">
+                                    <div className="flex justify-between items-start">
+                                        <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Next Reservation</span>
+                                        <Icon className="fas fa-clock text-blue-600 dark:text-blue-400 text-sm" />
+                                    </div>
+                                    <div className="mt-2 min-w-0">
                                         {nextBooking ? (
                                             <>
-                                                <span>{nextBooking.tool_name} · {nextBooking.date} at {nextBooking.time?.slice(0, 5)}</span>
+                                                <div className="font-bold text-gray-900 dark:text-gray-100 truncate text-sm">
+                                                    {nextBooking.tool_name}
+                                                </div>
+                                                <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+                                                    {nextBooking.date} · {nextBooking.time?.slice(0, 5)}
+                                                </div>
                                                 {nextBooking.status === 'pending_approval' && (
-                                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-700">
+                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded-full mt-1.5 border border-amber-300 dark:border-amber-700">
                                                         <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
                                                         Pending Confirmation
                                                     </span>
                                                 )}
                                             </>
-                                        ) : 'No upcoming reservations.'}
-                                    </p>
+                                        ) : (
+                                            <div className="text-xs text-gray-500 dark:text-gray-400 italic">No upcoming reservations</div>
+                                        )}
+                                    </div>
                                 </div>
-                                <button onClick={() => handleNavigation('tools')} className="btn btn-primary shrink-0">Book equipment</button>
-                            </div>
-                            {/* Left Column: My Bookings Calendar */}
-                            <div className="flex flex-col order-3">
-                                <div className="flex justify-between items-center mb-4">
+
+                                {/* Active Hours This Week */}
+                                <div className="card p-4 flex flex-col justify-between border-l-4 border-l-indigo-600">
+                                    <div className="flex justify-between items-start">
+                                        <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">This Week's Bookings</span>
+                                        <Icon className="fas fa-business-time text-indigo-600 dark:text-indigo-400 text-sm" />
+                                    </div>
+                                    <div className="mt-2">
+                                        <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                                            {thisWeekUserHours.toFixed(1)} <span className="text-xs font-normal text-gray-500">hours</span>
+                                        </div>
+                                        <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                            {myBookings.filter(b => !isBookingPast(b)).length} upcoming session(s)
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Lab Status & Actions */}
+                                <div className="card p-4 flex flex-col justify-between border-l-4 border-l-amber-500">
+                                    <div className="flex justify-between items-start">
+                                        <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                            {totalPendingActions > 0 ? 'Pending Actions' : 'Lab Availability'}
+                                        </span>
+                                        <Icon className={`fas ${totalPendingActions > 0 ? 'fa-bell text-amber-500 animate-bounce' : 'fa-check-circle text-green-500'} text-sm`} />
+                                    </div>
+                                    <div className="mt-2">
+                                        {totalPendingActions > 0 ? (
+                                            <>
+                                                <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">
+                                                    {totalPendingActions}
+                                                </div>
+                                                <div className="text-[11px] text-gray-600 dark:text-gray-300">
+                                                    Item(s) awaiting confirmation
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                                                    {tools.filter(t => t.status === 'up').length} <span className="text-xs font-normal text-gray-500">/ {tools.length}</span>
+                                                </div>
+                                                <div className="text-[11px] text-green-600 dark:text-green-400 font-medium">
+                                                    Instruments operational
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Quick Reserve Button Card */}
+                                <div className="card p-4 flex flex-col justify-between bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-md">
                                     <div>
-                                        <h3 className="font-bold text-gray-800 dark:text-gray-200">My Bookings Calendar</h3>
-                                        <span className="text-xs text-gray-500 dark:text-gray-400">Lab timezone: {LAB_TIMEZONE}</span>
-                                        {lastUpdated && <span className="block text-xs text-gray-500 dark:text-gray-400">Updated {lastUpdated.toLocaleTimeString()}</span>}
+                                        <div className="text-xs font-bold uppercase tracking-wider text-blue-100">Reserve Instrument</div>
+                                        <div className="text-xs text-blue-100 mt-1">Book equipment in the cleanroom and analytical lab.</div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={handleOpenCalendarModal}
-                                            className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center gap-2 transition-colors px-2 py-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                                            title="Subscribe to calendar feed (ICS)"
-                                        >
-                                            <Icon className="fas fa-calendar-alt" /> Sync Calendar
-                                        </button>
-                                    </div>
+                                    <button
+                                        onClick={() => handleNavigation('tools')}
+                                        className="mt-3 w-full bg-white text-blue-700 hover:bg-blue-50 font-bold py-2 px-3 rounded-lg text-xs transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                                    >
+                                        <Icon className="fas fa-plus text-xs" />
+                                        <span>Browse & Book</span>
+                                    </button>
                                 </div>
-                                <UserBookingsCalendar
-                                    bookings={myBookings}
-                                    allBookings={allCalendarBookings}
-                                    onUpdate={handleUpdateBooking}
-                                    currentWeekStart={currentWeekStart}
-                                    onWeekChange={setCurrentWeekStart}
-                                    onBookingClick={handleBookingClick}
-                                />
                             </div>
 
-                            {/* Right Column: Quick Book, Upcoming & Past Bookings */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 order-2">
-                                {/* Quick Book */}
-                                <div className="flex flex-col">
-                                    <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">Quick Book</h3>
-                                    <div className="card max-h-[350px] flex flex-col p-0">
-                                        <div className="overflow-y-auto p-4 custom-scroll">
-                                            {recentTools.length > 0 ? (
-                                                <div className="grid grid-cols-1 gap-4">
-                                                    {recentTools.map(tool => (
-                                                        <button type="button"
-                                                            key={tool.id}
-                                                            className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg border dark:border-gray-700 hover:shadow-md transition cursor-pointer flex justify-between items-center group"
-                                                            onClick={() => setSelectedTool(tool)}
-                                                        >
-                                                            <div>
-                                                                <div className="font-bold text-sm text-gray-800 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                                                                    {tool.name}
+                            {/* Main Desktop Grid: 8 Cols Calendar + 4 Cols Side Panel */}
+                            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+                                {/* Center Column: My Bookings Calendar (8 cols on desktop) */}
+                                <div className="xl:col-span-8 flex flex-col space-y-4">
+                                    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-xs border dark:border-gray-700">
+                                        <div>
+                                            <h3 className="font-bold text-base text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                                                <Icon className="fas fa-calendar-alt text-blue-600 dark:text-blue-400" />
+                                                <span>Weekly Reservation Calendar</span>
+                                            </h3>
+                                            <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 mt-0.5">
+                                                <span>Timezone: <strong>{LAB_TIMEZONE}</strong></span>
+                                                {lastUpdated && <span>· Updated {lastUpdated.toLocaleTimeString()}</span>}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={handleOpenCalendarModal}
+                                                className="btn btn-secondary btn-sm flex items-center gap-1.5 text-xs"
+                                                title="Subscribe to calendar feed (ICS)"
+                                            >
+                                                <Icon className="fas fa-calendar-plus text-blue-600 dark:text-blue-400" />
+                                                <span>Sync External Calendar</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <UserBookingsCalendar
+                                        bookings={myBookings}
+                                        allBookings={allCalendarBookings}
+                                        onUpdate={handleUpdateBooking}
+                                        currentWeekStart={currentWeekStart}
+                                        onWeekChange={setCurrentWeekStart}
+                                        onBookingClick={handleBookingClick}
+                                    />
+                                </div>
+
+                                {/* Right Side Panel: Quick Book, Upcoming & Past Bookings (4 cols on desktop) */}
+                                <div className="xl:col-span-4 flex flex-col space-y-6">
+                                    {/* Quick Book */}
+                                    <div className="flex flex-col">
+                                        <div className="flex justify-between items-center mb-3">
+                                            <h3 className="font-bold text-sm text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
+                                                <Icon className="fas fa-bolt text-amber-500" />
+                                                <span>Quick Book (Recent Tools)</span>
+                                            </h3>
+                                        </div>
+                                        <div className="card p-0">
+                                            <div className="overflow-y-auto p-3 custom-scroll max-h-[300px]">
+                                                {recentTools.length > 0 ? (
+                                                    <div className="grid grid-cols-1 gap-2.5">
+                                                        {recentTools.map(tool => (
+                                                            <button
+                                                                type="button"
+                                                                key={tool.id}
+                                                                className="bg-gray-50 dark:bg-gray-900/60 p-3 rounded-lg border dark:border-gray-700 hover:shadow-xs hover:border-blue-300 dark:hover:border-blue-600 transition cursor-pointer flex justify-between items-center group text-left"
+                                                                onClick={() => setSelectedTool(tool)}
+                                                            >
+                                                                <div className="min-w-0 pr-2">
+                                                                    <div className="font-bold text-xs text-gray-800 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">
+                                                                        {tool.name}
+                                                                    </div>
+                                                                    <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{tool.category}</div>
                                                                 </div>
-                                                                <div className="text-xs text-gray-500 dark:text-gray-400">{tool.category}</div>
-                                                            </div>
-                                                            <div className="h-6 w-6 bg-white dark:bg-gray-800 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:bg-blue-100 dark:group-hover:bg-blue-800/50 transition-colors shadow-sm">
-                                                                <Icon className="fas fa-plus text-xs" />
-                                                            </div>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <div className="text-gray-600 dark:text-gray-300 py-4 text-sm">
-                                                    No recent equipment reservations. <button onClick={() => handleNavigation('tools')} className="text-blue-700 dark:text-blue-300 underline">Browse equipment</button>
-                                                </div>
-                                            )}
+                                                                <div className="h-7 w-7 shrink-0 bg-white dark:bg-gray-800 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-xs">
+                                                                    <Icon className="fas fa-plus text-xs" />
+                                                                </div>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-gray-500 dark:text-gray-400 py-4 text-xs text-center">
+                                                        No recent equipment reservations.<br />
+                                                        <button onClick={() => handleNavigation('tools')} className="text-blue-600 dark:text-blue-400 underline font-semibold mt-1">Browse full equipment catalog</button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                {/* Upcoming Bookings (Fixes R6) */}
-                                <div className="flex flex-col">
-                                    <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">Upcoming Bookings</h3>
-                                    <div className="card max-h-[350px] flex flex-col p-0">
-                                        <div className="overflow-y-auto p-4 custom-scroll">
-                                            <BookingList
-                                                bookings={myBookings.filter(b => !isBookingPast(b))}
-                                                allBookings={allCalendarBookings}
-                                                onCancel={initiateCancel}
-                                                onUpdate={handleUpdateBooking}
-                                                onEdit={handleBookingClick}
-                                            />
+                                    {/* Upcoming Bookings */}
+                                    <div className="flex flex-col">
+                                        <div className="flex justify-between items-center mb-3">
+                                            <h3 className="font-bold text-sm text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
+                                                <Icon className="fas fa-calendar-check text-green-600 dark:text-green-400" />
+                                                <span>Upcoming Bookings</span>
+                                            </h3>
+                                        </div>
+                                        <div className="card p-0 max-h-[350px] flex flex-col">
+                                            <div className="overflow-y-auto p-3 custom-scroll">
+                                                <BookingList
+                                                    bookings={myBookings.filter(b => !isBookingPast(b))}
+                                                    allBookings={allCalendarBookings}
+                                                    onCancel={initiateCancel}
+                                                    onUpdate={handleUpdateBooking}
+                                                    onEdit={handleBookingClick}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                {/* Past Bookings (Fixes R6) */}
-                                <div className="flex flex-col">
-                                    <div className="mb-4"><h3 className="font-bold text-gray-600 dark:text-gray-400">Past Bookings</h3><p className="text-xs text-gray-500 dark:text-gray-400">Showing reservations since {historyStart}</p></div>
-                                    <div className="bg-gray-50 dark:bg-gray-900 rounded-lg shadow-sm border dark:border-gray-700 transition-colors flex flex-col max-h-[350px]">
-                                        <div className="overflow-y-auto p-4 custom-scroll">
-                                            <BookingList
-                                                bookings={myBookings.filter(b => isBookingPast(b))}
-                                                allBookings={allCalendarBookings}
-                                                onCancel={initiateCancel}
-                                                onUpdate={handleUpdateBooking}
-                                                onEdit={handleBookingClick}
-                                                readOnly={true}
-                                                showSort={true}
-                                            />
-                                            <button onClick={() => setHistoryStart(formatLocalDate(addDays(historyStart, -90)))} className="mt-3 text-sm text-blue-700 dark:text-blue-300 underline">Load older reservations</button>
+                                    {/* Past Bookings */}
+                                    <div className="flex flex-col">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <h3 className="font-bold text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1.5">
+                                                <Icon className="fas fa-history text-gray-400" />
+                                                <span>Past Reservations</span>
+                                            </h3>
+                                        </div>
+                                        <div className="card p-0 bg-gray-50/70 dark:bg-gray-900/40 max-h-[320px] flex flex-col">
+                                            <div className="overflow-y-auto p-3 custom-scroll">
+                                                <BookingList
+                                                    bookings={myBookings.filter(b => isBookingPast(b))}
+                                                    allBookings={allCalendarBookings}
+                                                    onCancel={initiateCancel}
+                                                    onUpdate={handleUpdateBooking}
+                                                    onEdit={handleBookingClick}
+                                                    readOnly={true}
+                                                    showSort={true}
+                                                />
+                                                <div className="text-center pt-2">
+                                                    <button onClick={() => setHistoryStart(formatLocalDate(addDays(historyStart, -90)))} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
+                                                        Load older history
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1420,6 +1617,49 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                     </div>
                 </div>
             )}
+
+            {/* Fixed Mobile Bottom Navigation Bar */}
+            <nav aria-label="Mobile Navigation" className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex items-center justify-around px-1 z-40 shadow-lg">
+                <button
+                    onClick={() => handleNavigation('dashboard')}
+                    className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-xs font-medium transition-colors ${activeTab === 'dashboard' ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
+                >
+                    <Icon className="fas fa-calendar-alt text-lg mb-0.5" />
+                    <span>Dashboard</span>
+                </button>
+                <button
+                    onClick={() => handleNavigation('tools')}
+                    className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-xs font-medium transition-colors ${activeTab === 'tools' ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
+                >
+                    <Icon className="fas fa-microscope text-lg mb-0.5" />
+                    <span>Equipment</span>
+                </button>
+                {profile?.access_level === 'admin' ? (
+                    <button
+                        onClick={() => handleNavigation('all_bookings')}
+                        className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-xs font-medium transition-colors ${activeTab === 'all_bookings' ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
+                    >
+                        <Icon className="fas fa-list-alt text-lg mb-0.5" />
+                        <span>Bookings</span>
+                    </button>
+                ) : null}
+                {profile?.access_level === 'admin' ? (
+                    <button
+                        onClick={() => handleNavigation('users')}
+                        className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-xs font-medium transition-colors ${activeTab === 'users' ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
+                    >
+                        <Icon className="fas fa-users-cog text-lg mb-0.5" />
+                        <span>Users</span>
+                    </button>
+                ) : null}
+                <button
+                    onClick={() => setIsSidebarOpen(true)}
+                    className="flex flex-col items-center justify-center flex-1 h-full py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                >
+                    <Icon className="fas fa-bars text-lg mb-0.5" />
+                    <span>Menu</span>
+                </button>
+            </nav>
         </div>
     );
 };
