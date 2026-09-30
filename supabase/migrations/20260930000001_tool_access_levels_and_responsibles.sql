@@ -222,16 +222,16 @@ BEGIN
 
   -- Support legacy JSON array (e.g. ["1", "2"] -> Level III)
   IF jsonb_typeof(p_licenses) = 'array' THEN
-    IF p_licenses ? p_tool_id::text OR p_licenses @> to_jsonb(p_tool_id) THEN
+    IF p_licenses ? p_tool_id::text OR p_licenses @> to_jsonb(p_tool_id) OR p_licenses @> to_jsonb(p_tool_id::text) THEN
       RETURN 'level_3';
     ELSE
       RETURN 'none';
     END IF;
   END IF;
 
-  -- JSON Object map (e.g. {"1": "level_2"})
+  -- JSON Object map (e.g. {"1": "level_2", "1": "level_3"})
   IF jsonb_typeof(p_licenses) = 'object' THEN
-    v_val := p_licenses->>p_tool_id::text;
+    v_val := lower(trim(COALESCE(p_licenses->>p_tool_id::text, '')));
     IF v_val IN ('level_1', 'level_2', 'level_3') THEN
       RETURN v_val;
     END IF;
@@ -262,6 +262,35 @@ $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public;
 
 REVOKE EXECUTE ON FUNCTION public.is_tool_responsible(uuid, bigint) FROM public;
 GRANT EXECUTE ON FUNCTION public.is_tool_responsible(uuid, bigint) TO authenticated;
+
+-- 6.5 Clean up legacy validate_and_set_booking_range triggers from baseline schema
+DROP TRIGGER IF EXISTS trg_validate_and_set_booking_range ON public.bookings;
+DROP TRIGGER IF EXISTS tr_validate_and_set_booking_range ON public.bookings;
+
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT t.tgname
+    FROM pg_trigger t
+    JOIN pg_proc p ON t.tgfoid = p.oid
+    WHERE t.tgrelid = 'public.bookings'::regclass
+      AND p.proname = 'validate_and_set_booking_range'
+  ) LOOP
+    EXECUTE 'DROP TRIGGER IF EXISTS ' || quote_ident(r.tgname) || ' ON public.bookings CASCADE;';
+  END LOOP;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+-- Neutralize validate_and_set_booking_range if anything still references it
+CREATE OR REPLACE FUNCTION public.validate_and_set_booking_range()
+RETURNS trigger AS $$
+BEGIN
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
 -- 7. Update Booking Enforcement Trigger for Level I, II, III
 CREATE OR REPLACE FUNCTION public.enforce_booking_rules()
@@ -301,6 +330,33 @@ BEGIN
   SELECT * INTO v_profile FROM public.profiles WHERE id = NEW.user_id;
   IF NOT FOUND OR NOT v_profile.is_approved THEN
     RAISE EXCEPTION 'User profile not found or not approved' USING ERRCODE = '42501';
+  END IF;
+
+  -- Compute canonical timestamps & metadata (Europe/Vilnius)
+  IF NEW.end_time IS NULL THEN
+    NEW.end_time := (NEW.time + interval '30 minutes')::time;
+  END IF;
+
+  IF NEW.end_time <= NEW.time THEN
+    RAISE EXCEPTION 'end_time (%) must be after time (%)', NEW.end_time, NEW.time;
+  END IF;
+
+  IF NEW.starts_at IS NULL THEN
+    NEW.starts_at := (NEW.date::text || ' ' || NEW.time::text)::timestamp AT TIME ZONE 'Europe/Vilnius';
+  END IF;
+  IF NEW.ends_at IS NULL THEN
+    NEW.ends_at := (NEW.date::text || ' ' || NEW.end_time::text)::timestamp AT TIME ZONE 'Europe/Vilnius';
+  END IF;
+
+  IF NEW.tool_name IS NULL OR NEW.tool_name = '' THEN
+    NEW.tool_name := v_tool.name;
+  END IF;
+
+  IF NEW.user_name IS NULL OR NEW.user_name = '' THEN
+    NEW.user_name := TRIM(COALESCE(v_profile.first_name, '') || ' ' || COALESCE(v_profile.last_name, ''));
+    IF NEW.user_name = '' THEN
+      NEW.user_name := 'User ' || SUBSTRING(NEW.user_id::text, 1, 8);
+    END IF;
   END IF;
 
   -- 4. Access Level & License Verification
@@ -364,6 +420,61 @@ CREATE TRIGGER tr_enforce_booking_rules
   BEFORE INSERT OR UPDATE ON public.bookings
   FOR EACH ROW
   EXECUTE FUNCTION public.enforce_booking_rules();
+
+-- Atomic Multi-Slot Booking Update RPC (5-arg signature matching Dashboard)
+CREATE OR REPLACE FUNCTION public.update_booking_group(
+  p_old_ids bigint[],
+  p_date date,
+  p_start_time time,
+  p_end_time time,
+  p_project text
+)
+RETURNS public.bookings AS $$
+DECLARE
+  v_primary_id bigint;
+  v_updated_booking public.bookings%ROWTYPE;
+  v_first_booking public.bookings%ROWTYPE;
+  v_is_admin boolean;
+BEGIN
+  IF p_old_ids IS NULL OR array_length(p_old_ids, 1) = 0 THEN
+    RAISE EXCEPTION 'No booking IDs provided for update';
+  END IF;
+
+  v_primary_id := p_old_ids[1];
+  v_is_admin := public.is_admin(auth.uid());
+
+  SELECT * INTO v_first_booking FROM public.bookings
+  WHERE id = v_primary_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Booking not found: %', v_primary_id;
+  END IF;
+
+  IF NOT v_is_admin AND v_first_booking.user_id <> auth.uid() THEN
+    RAISE EXCEPTION 'Unauthorized: not owner of booking %', v_primary_id;
+  END IF;
+
+  IF array_length(p_old_ids, 1) > 1 THEN
+    DELETE FROM public.bookings
+    WHERE id = ANY(p_old_ids[2:array_length(p_old_ids, 1)]);
+  END IF;
+
+  UPDATE public.bookings
+  SET
+    date = p_date,
+    time = p_start_time,
+    end_time = p_end_time,
+    project = p_project
+  WHERE id = v_primary_id
+  RETURNING * INTO v_updated_booking;
+
+  RETURN v_updated_booking;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE EXECUTE ON FUNCTION public.update_booking_group(bigint[], date, time, time, text) FROM public;
+GRANT EXECUTE ON FUNCTION public.update_booking_group(bigint[], date, time, time, text) TO authenticated;
 
 -- 8. Booking Confirmation & Rejection RPCs
 CREATE OR REPLACE FUNCTION public.confirm_booking(p_booking_id bigint)
