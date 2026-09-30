@@ -16,7 +16,9 @@ import {
     getVilniusCurrentMinutes,
     isVilniusToday,
     isBookingStarted,
-    isSlotInPast
+    isSlotInPast,
+    isToolResponsibleUser,
+    TOOL_ACCESS_LEVELS
 } from '../utils/bookingUtils';
 import { useBookingInteraction } from '../hooks/useBookingInteraction';
 import { supabase } from '../supabaseClient';
@@ -150,7 +152,7 @@ const BookingModal = ({
             const all = [];
             for (let offset = 0; ;) {
                 const { data, error } = await supabase.from('bookings')
-                    .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at')
+                    .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at, status, confirmed_by, confirmed_at')
                     .eq('tool_id', tool.id).gte('date', weekStartStr).lte('date', weekEndStr)
                     .order('date', { ascending: true }).order('time', { ascending: true }).order('id', { ascending: true })
                     .range(offset, offset + 499);
@@ -223,10 +225,13 @@ const BookingModal = ({
         return existingBookings.filter(b => String(b.tool_id) === String(tool.id) && b.date >= weekStartStr && b.date <= weekEndStr);
     }, [availabilityReady, existingBookings, toolWeekBookings, tool.id, weekStartStr, weekEndStr]);
 
+    const isResponsible = isAdmin || isToolResponsibleUser(tool, profile);
+
     const occupiedSlots = useMemo(() => {
         const occupied = new Set();
         for (const b of allKnownBookings) {
             if (String(b.tool_id ?? b.toolId) !== String(tool.id)) continue;
+            if (b.status === 'rejected' || b.status === 'cancelled') continue;
             const start = getMinutes(b.startTime || b.time);
             const end = getMinutes(b.endTime || b.end_time || getNextSlotTime(b.startTime || b.time));
             for (let minutes = start; minutes < end; minutes += 30) occupied.add(`${b.date}:${minutes}`);
@@ -287,23 +292,30 @@ const BookingModal = ({
 
     const isToday = (date) => isVilniusToday(date, currentTime);
 
-    // Group bookings for display
+    // Group bookings for display (Pending bookings only appear for Tool Responsible, Admin, or creator)
     const displayBookings = useMemo(() => {
-        if (!editingBooking) return allKnownBookings;
+        const visibleKnown = allKnownBookings.filter(b => {
+            if (b.status === 'pending_approval') {
+                return isResponsible || b.user_id === user.id;
+            }
+            return b.status !== 'rejected' && b.status !== 'cancelled';
+        });
+
+        if (!editingBooking) return visibleKnown;
 
         const editIds = editingBooking.ids || [editingBooking.id];
         const primaryId = editIds[0];
 
-        if (!primaryId) return allKnownBookings;
+        if (!primaryId) return visibleKnown;
 
-        return allKnownBookings.map(b => {
+        return visibleKnown.map(b => {
             if (b.id === primaryId) {
                 return editingBooking;
             }
             if (editIds.includes(b.id)) return null;
             return b;
         }).filter(Boolean);
-    }, [allKnownBookings, editingBooking]);
+    }, [allKnownBookings, editingBooking, isResponsible, user.id]);
 
     const groupedBookings = useMemo(() => {
         const toolBookings = displayBookings.filter(b => b.tool_id === tool.id);
@@ -615,6 +627,7 @@ const BookingModal = ({
             });
             if (currentRange) ranges.push(currentRange);
 
+            const isPending = eligibility.requiresConfirmation;
             const newBookings = ranges.map(range => ({
                 tool_id: tool.id,
                 tool_name: tool.name,
@@ -624,6 +637,7 @@ const BookingModal = ({
                 date: range.date,
                 time: range.startTime,
                 end_time: range.endTime,
+                status: isPending ? 'pending_approval' : 'confirmed',
                 created_at: now
             }));
 
@@ -636,6 +650,9 @@ const BookingModal = ({
             const result = await onConfirm(newBookings);
             if (result?.success) {
                 setSelectedSlots([]);
+                if (isPending) {
+                    showToast('Reservation submitted! Awaiting confirmation from Tool Responsible.', 'success');
+                }
             }
         } finally {
             setIsSubmitting(false);
@@ -658,21 +675,31 @@ const BookingModal = ({
                 {/* Header */}
                 <div className="p-4 border-b dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-gray-800 shrink-0 z-30 transition-colors">
                     <div>
-                        <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
                             <h2 id="booking-dialog-title" className="text-xl font-bold text-gray-800 dark:text-gray-100">Book {tool.name}</h2>
                             <StatusBadge status={tool.status} />
-                            {isAdmin && (tool.status !== 'up' || (tool.license_req && !profile?.licenses?.includes(tool.id))) && (
-                                <span className="text-xs text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded">Administrator equipment override</span>
+                            {isAdmin && (tool.status !== 'up' || (tool.license_req && eligibility.level === TOOL_ACCESS_LEVELS.NONE)) && (
+                                <span className="text-xs text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded font-medium">Administrator equipment override</span>
                             )}
-                            {isAdminOverride && <span className="text-xs text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded">Past-time override</span>}
-                            {!canBook && (
+                            {isAdminOverride && <span className="text-xs text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded font-medium">Past-time override</span>}
+                            {eligibility.level === TOOL_ACCESS_LEVELS.LEVEL_2 && (
+                                <span className="text-xs text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 rounded font-medium flex items-center gap-1">
+                                    <Icon className="fas fa-user-check text-[10px]" /> Level II (Requires Confirmation)
+                                </span>
+                            )}
+                            {eligibility.level === TOOL_ACCESS_LEVELS.LEVEL_1 && (
+                                <span className="text-xs text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded font-medium flex items-center gap-1">
+                                    <Icon className="fas fa-user-graduate text-[10px]" /> Level I (In Training)
+                                </span>
+                            )}
+                            {!canBook && eligibility.level !== TOOL_ACCESS_LEVELS.LEVEL_1 && (
                                 <span className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-xs px-2 py-0.5 rounded font-medium">
                                     {eligibility.reason || 'Booking Restricted'}
                                 </span>
                             )}
                         </div>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            {tool.category} &bull; {tool.location} &bull; Lab Timezone: Europe/Vilnius (Current: {vilniusNow.timeStr})
+                            {tool.category} &bull; {tool.location || 'Lab'} &bull; Responsible: <span className="font-semibold text-gray-700 dark:text-gray-200">{tool.primary_responsible ? `${tool.primary_responsible.first_name || ''} ${tool.primary_responsible.last_name || ''}`.trim() : 'Lab Administrator'}</span>{tool.primary_responsible?.email ? ` (${tool.primary_responsible.email})` : ''} &bull; Lab Timezone: Europe/Vilnius
                         </p>
                     </div>
 
@@ -695,7 +722,19 @@ const BookingModal = ({
                             <Icon aria-hidden="true" className="fas fa-times text-lg" />
                         </button>
                     </div>
-                </div>
+                {/* Level Notice Banners */}
+                {eligibility.level === TOOL_ACCESS_LEVELS.LEVEL_2 && (
+                    <div className="bg-blue-50 dark:bg-blue-900/30 border-b border-blue-200 dark:border-blue-800/40 px-4 py-2 text-xs text-blue-800 dark:text-blue-200 flex items-center gap-2 shrink-0">
+                        <Icon className="fas fa-info-circle text-blue-600 dark:text-blue-400 shrink-0" />
+                        <span>Notice: As a <strong>Level II (Supervised)</strong> operator, your reservation will be tentatively held and submitted for confirmation by the Tool Responsible. It will appear on the active calendar once approved.</span>
+                    </div>
+                )}
+                {eligibility.level === TOOL_ACCESS_LEVELS.LEVEL_1 && (
+                    <div className="bg-amber-50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800/40 px-4 py-2 text-xs text-amber-800 dark:text-amber-200 flex items-center gap-2 shrink-0">
+                        <Icon className="fas fa-user-graduate text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>Notice: You currently have <strong>Level I (In Training)</strong> access for this instrument. Equipment booking is restricted until training is completed and your access is upgraded.</span>
+                    </div>
+                )}
 
                 <div className="p-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 space-y-3 overflow-y-auto shrink-0 max-h-[55vh]">
                     <h3 className="font-semibold text-gray-800 dark:text-gray-100">Choose a booking time</h3>
@@ -819,6 +858,7 @@ const BookingModal = ({
                                                 if (isInteracting) return null;
 
                                                 const isOwnBooking = booking.user_id === user.id;
+                                                const isPending = booking.status === 'pending_approval';
                                                 const canEdit = isAdmin || isOwnBooking;
 
                                                 const isStarted = isBookingStarted(booking);
@@ -831,7 +871,11 @@ const BookingModal = ({
                                                     <div
                                                         key={booking.ids[0]}
                                                         className={`absolute border rounded p-1 text-xs overflow-hidden transition-all group 
-                                                            ${isOwnBooking ? 'bg-blue-100 dark:bg-blue-900/60 border-blue-300 dark:border-blue-700' : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600'}
+                                                            ${isPending
+                                                                ? 'bg-amber-100/90 dark:bg-amber-900/40 border-dashed border-amber-400 dark:border-amber-600 text-amber-950 dark:text-amber-100'
+                                                                : isOwnBooking
+                                                                    ? 'bg-blue-100 dark:bg-blue-900/60 border-blue-300 dark:border-blue-700'
+                                                                    : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600'}
                                                             ${canEdit ? 'hover:z-10 hover:shadow-md cursor-pointer' : ''}
                                                             ${editingBooking && editingBooking.id === booking.ids[0] ? 'ring-2 ring-blue-500 z-20' : ''}
                                                             `}
@@ -844,8 +888,8 @@ const BookingModal = ({
                                                         role="button"
                                                         tabIndex={canEdit ? 0 : -1}
                                                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleBookingClick(e, booking); } }}
-                                                        aria-label={`${booking.user_name}, ${booking.project}, ${booking.startTime} to ${booking.endTime}`}
-                                                        title={`Booked by: ${booking.user_name}\nProject: ${booking.project}`}
+                                                        aria-label={`${booking.user_name}, ${booking.project}, ${booking.startTime} to ${booking.endTime}${isPending ? ' (Pending Confirmation)' : ''}`}
+                                                        title={`Booked by: ${booking.user_name}\nProject: ${booking.project}${isPending ? '\nStatus: Pending Confirmation' : ''}`}
                                                     >
                                                         {canResizeTop && (
                                                             <div
@@ -857,8 +901,12 @@ const BookingModal = ({
                                                             ></div>
                                                         )}
 
-                                                        <div className={`font-bold truncate pointer-events-none ${isOwnBooking ? 'text-blue-900 dark:text-blue-100' : 'text-gray-800 dark:text-gray-200'}`}>{booking.user_name}</div>
-                                                        <div className={`truncate text-[10px] pointer-events-none ${isOwnBooking ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'}`}>{booking.project}</div>
+                                                        <div className={`font-bold truncate pointer-events-none flex items-center gap-1 ${isPending ? 'text-amber-900 dark:text-amber-100' : isOwnBooking ? 'text-blue-900 dark:text-blue-100' : 'text-gray-800 dark:text-gray-200'}`}>
+                                                            {isPending && <Icon className="fas fa-clock text-amber-600 text-[10px]" />}
+                                                            <span className="truncate">{booking.user_name}</span>
+                                                            {isPending && <span className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold shrink-0">(Pending)</span>}
+                                                        </div>
+                                                        <div className={`truncate text-[10px] pointer-events-none ${isPending ? 'text-amber-700 dark:text-amber-300' : isOwnBooking ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'}`}>{booking.project}</div>
 
                                                         {editingBooking && editingBooking.id === booking.ids[0] && (isAdmin || isOwnBooking) && (!isStarted || isAdminOverride) && (
                                                             <div

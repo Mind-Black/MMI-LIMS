@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Icon from './Icon';
 import { supabase } from '../supabaseClient';
 import { useToast } from '../context/useToast';
@@ -16,6 +16,7 @@ const AddInfrastructureModal = ({
     const [mode, setMode] = useState(defaultMode); // 'single' | 'bulk'
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { showToast } = useToast();
+    const [availableUsers, setAvailableUsers] = useState([]);
 
     // Dialog Focus Trap & Escape handler
     const dialogRef = useDialogFocus(isOpen, onClose);
@@ -40,9 +41,37 @@ const AddInfrastructureModal = ({
         status: 'up',
         license_req: true,
         image_url: '',
-        description: ''
+        description: '',
+        primary_responsible_id: '',
+        secondary_responsible_id: ''
     });
     const [formErrors, setFormErrors] = useState({});
+
+    // Fetch users for Tool Responsible selection
+    useEffect(() => {
+        const fetchUsers = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('profiles')
+                    .select('id, first_name, last_name, email, phone, job_title, access_level')
+                    .order('last_name');
+                if (!error && data) {
+                    setAvailableUsers(data);
+                    // Default primary responsible to the first admin user
+                    const defaultAdmin = data.find(u => u.access_level === 'admin');
+                    if (defaultAdmin) {
+                        setFormData(prev => ({
+                            ...prev,
+                            primary_responsible_id: prev.primary_responsible_id || defaultAdmin.id
+                        }));
+                    }
+                }
+            } catch (err) {
+                console.error('Error fetching users for tool responsible:', err);
+            }
+        };
+        fetchUsers();
+    }, []);
 
     // --- Bulk CSV State ---
     const [csvFile, setCsvFile] = useState(null);
@@ -108,20 +137,24 @@ const AddInfrastructureModal = ({
             status: formData.status,
             license_req: Boolean(formData.license_req),
             description: formData.description.trim() || null,
-            image_url: formData.image_url.trim() || null
+            image_url: formData.image_url.trim() || null,
+            primary_responsible_id: formData.primary_responsible_id || null,
+            secondary_responsible_id: formData.secondary_responsible_id || null
         };
 
         try {
-            // Attempt insertion with image_url
+            // Attempt insertion with responsible IDs and image_url
             let { data, error } = await supabase
                 .from('tools')
                 .insert([payload])
-                .select('id, name, category, status, location, license_req, description, image_url')
+                .select('id, name, category, status, location, license_req, description, image_url, primary_responsible_id, secondary_responsible_id')
                 .single();
 
-            // Backward compatibility fallback: if image_url column doesn't exist yet on DB
-            if (error && error.message && error.message.includes('image_url')) {
+            // Backward compatibility fallback: if responsible columns or image_url don't exist yet on DB
+            if (error && error.message) {
                 const legacyPayload = { ...payload };
+                delete legacyPayload.primary_responsible_id;
+                delete legacyPayload.secondary_responsible_id;
                 delete legacyPayload.image_url;
                 const retry = await supabase
                     .from('tools')
@@ -134,9 +167,17 @@ const AddInfrastructureModal = ({
 
             if (error) throw error;
 
+            const primaryUser = availableUsers.find(u => u.id === data.primary_responsible_id) || null;
+            const secondaryUser = availableUsers.find(u => u.id === data.secondary_responsible_id) || null;
+            const enrichedData = {
+                ...data,
+                primary_responsible: primaryUser,
+                secondary_responsible: secondaryUser
+            };
+
             showToast(`Equipment "${data.name}" successfully created!`, 'success');
             if (onSuccess) {
-                onSuccess(data);
+                onSuccess(enrichedData);
             }
             onClose();
         } catch (err) {
@@ -393,6 +434,46 @@ const AddInfrastructureModal = ({
                                         Require Operator License
                                     </span>
                                 </label>
+                            </div>
+
+                            {/* Primary Tool Responsible */}
+                            <div>
+                                <label htmlFor="infra-primary-resp" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Primary Tool Responsible
+                                </label>
+                                <select
+                                    id="infra-primary-resp"
+                                    value={formData.primary_responsible_id}
+                                    onChange={(e) => handleInputChange('primary_responsible_id', e.target.value)}
+                                    className="select-input"
+                                >
+                                    <option value="">-- Select Responsible (Default: Admin) --</option>
+                                    {availableUsers.map(u => (
+                                        <option key={u.id} value={u.id}>
+                                            {`${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email} {u.job_title ? `(${u.job_title})` : ''} {u.access_level === 'admin' ? '[Admin]' : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Secondary Tool Responsible */}
+                            <div>
+                                <label htmlFor="infra-secondary-resp" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Secondary Tool Responsible <span className="text-xs text-gray-500 font-normal">(Optional)</span>
+                                </label>
+                                <select
+                                    id="infra-secondary-resp"
+                                    value={formData.secondary_responsible_id}
+                                    onChange={(e) => handleInputChange('secondary_responsible_id', e.target.value)}
+                                    className="select-input"
+                                >
+                                    <option value="">-- None --</option>
+                                    {availableUsers.filter(u => u.id !== formData.primary_responsible_id).map(u => (
+                                        <option key={u.id} value={u.id}>
+                                            {`${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email} {u.job_title ? `(${u.job_title})` : ''} {u.access_level === 'admin' ? '[Admin]' : ''}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
 
                             {/* Image URL */}

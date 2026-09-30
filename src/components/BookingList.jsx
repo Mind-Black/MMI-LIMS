@@ -25,7 +25,15 @@ const BookingList = ({ bookings, onCancel, onEdit, isAdminView = false, readOnly
                     {groupedBookings.map(b => (
                         <div key={b.ids[0]} className={`card p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-0 ${readOnly ? 'opacity-75 bg-gray-50 dark:bg-gray-900' : ''}`}>
                             <div>
-                                <div className={`font-bold ${readOnly ? 'text-gray-700 dark:text-gray-300' : 'text-blue-900 dark:text-blue-100'}`}>{b.tool_name}</div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className={`font-bold ${readOnly ? 'text-gray-700 dark:text-gray-300' : 'text-blue-900 dark:text-blue-100'}`}>{b.tool_name}</span>
+                                    {b.status === 'pending_approval' && (
+                                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-100 dark:bg-amber-900/40 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-700" title="Waiting for Tool Responsible confirmation. Slot is tentatively held.">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                            Pending Confirmation
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="text-sm text-gray-600 dark:text-gray-400">
                                     {isAdminView && (
                                         <span className="font-semibold text-gray-800 dark:text-gray-200 mr-1">{b.user_name} |</span>

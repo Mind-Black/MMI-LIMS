@@ -25,7 +25,8 @@ const UserManagement = lazy(() => import('./UserManagement'));
 const BookingModal = lazy(() => import('./BookingModal'));
 const InfrastructureManagement = lazy(() => import('./InfrastructureManagement'));
 const AddInfrastructureModal = lazy(() => import('./AddInfrastructureModal'));
-const BOOKING_FIELDS = 'id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at';
+const ApplyTrainingModal = lazy(() => import('./ApplyTrainingModal'));
+const BOOKING_FIELDS = 'id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at, status, confirmed_by, confirmed_at';
 const PAGE_SIZE = 500;
 
 async function fetchAllPages(makeQuery) {
@@ -58,6 +59,9 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const [bookings, setBookings] = useState([]);
     const [userBookings, setUserBookings] = useState([]);
     const [adminBookings, setAdminBookings] = useState([]);
+    const [pendingRequests, setPendingRequests] = useState([]);
+    const [pendingBookings, setPendingBookings] = useState([]);
+    const [applyModalTool, setApplyModalTool] = useState(null);
     const [loadingAdminBookings, setLoadingAdminBookings] = useState(false);
     const [adminError, setAdminError] = useState('');
     const [hasCalendarToken, setHasCalendarToken] = useState(false);
@@ -132,15 +136,44 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             // User history cutoff: last 60 days
             const needCatalog = !catalogLoadedRef.current || refreshCatalog;
             const needHistory = historyLoadedRef.current !== historyStart || refreshCatalog;
-            const [toolsRes, calendarRows, userRows, tokenRes] = await Promise.all([
-                needCatalog ? supabase.from('tools').select('id, name, category, status, location, license_req, description').order('id') : null,
+
+            const fetchToolsQuery = async () => {
+                let res = await supabase.from('tools').select(`
+                    id, name, category, status, location, license_req, description, image_url,
+                    primary_responsible_id, secondary_responsible_id,
+                    primary_responsible:primary_responsible_id(id, first_name, last_name, email, phone, job_title),
+                    secondary_responsible:secondary_responsible_id(id, first_name, last_name, email, phone, job_title)
+                `).order('id');
+
+                if (res.error) {
+                    const fallback = await supabase.from('tools')
+                        .select('id, name, category, status, location, license_req, description, image_url, primary_responsible_id, secondary_responsible_id')
+                        .order('id');
+                    if (!fallback.error) {
+                        res = fallback;
+                    }
+                }
+                return res;
+            };
+
+            const [toolsRes, calendarRows, userRows, tokenRes, pendingReqsRes, pendingBookingsRes] = await Promise.all([
+                needCatalog ? fetchToolsQuery() : null,
                 fetchAllPages(() => supabase.from('bookings').select(BOOKING_FIELDS)
                     .gte('date', startStr).lte('date', endStr)
                     .order('date').order('time').order('id')),
                 !needHistory ? null : fetchAllPages(() => supabase.from('bookings').select(BOOKING_FIELDS)
                     .eq('user_id', user.id).gte('date', historyStart)
                     .order('date', { ascending: false }).order('time', { ascending: false }).order('id', { ascending: false })),
-                needCatalog ? supabase.rpc('has_calendar_token') : null
+                needCatalog ? supabase.rpc('has_calendar_token') : null,
+                supabase.from('training_requests')
+                    .select('id, tool_id, tool_name, user_id, user_name, user_email, description, preferred_date, status, created_at')
+                    .eq('status', 'pending')
+                    .order('created_at', { ascending: false }),
+                supabase.from('bookings')
+                    .select(BOOKING_FIELDS)
+                    .eq('status', 'pending_approval')
+                    .order('date')
+                    .order('time')
             ]);
 
             // If a newer query resolved already, discard this response
@@ -159,6 +192,12 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             }
             if (tokenRes && !tokenRes.error && tokenRes.data !== undefined) {
                 setHasCalendarToken(Boolean(tokenRes.data));
+            }
+            if (pendingReqsRes?.data) {
+                setPendingRequests(pendingReqsRes.data);
+            }
+            if (pendingBookingsRes?.data) {
+                setPendingBookings(pendingBookingsRes.data);
             }
             setRefreshError('');
             setLastUpdated(new Date());
@@ -344,6 +383,10 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
 
             setBookings(prev => [...prev, ...data]);
             setUserBookings(prev => [...prev, ...data]);
+            const pending = data.filter(b => b.status === 'pending_approval');
+            if (pending.length > 0) {
+                setPendingBookings(prev => [...prev, ...pending]);
+            }
             setSelectedTool(null);
             setInitialDate(null);
             showToast(`Successfully created ${data.length} reservation(s).`, 'success');
@@ -500,6 +543,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             setBookings(prev => prev.filter(b => !cancelledIds.includes(b.id)));
             setUserBookings(prev => prev.filter(b => !cancelledIds.includes(b.id)));
             setAdminBookings(prev => prev.filter(b => !cancelledIds.includes(b.id)));
+            setPendingBookings(prev => prev.filter(b => !cancelledIds.includes(b.id)));
             showToast("Booking has been cancelled.", 'success');
 
             if (cancelCallbackRef.current) {
@@ -533,6 +577,79 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             setConfirmModalOpen(false);
             setBookingIdToCancel(null);
             cancelCallbackRef.current = null;
+        }
+    };
+
+    // Confirm a Level II pending reservation (Tool Responsible or Admin)
+    const handleConfirmBookingApproval = async (booking) => {
+        try {
+            const { error } = await supabase.rpc('confirm_booking', {
+                p_booking_id: booking.id
+            });
+            if (error) throw error;
+            showToast(`Confirmed reservation for ${booking.user_name} on ${booking.tool_name}.`, 'success');
+            const updater = prev => prev.map(b => b.id === booking.id ? { ...b, status: 'confirmed' } : b);
+            setBookings(updater);
+            setUserBookings(updater);
+            setAdminBookings(updater);
+            setPendingBookings(prev => prev.filter(b => b.id !== booking.id));
+        } catch (err) {
+            console.error('Error confirming booking approval:', err);
+            showToast('Failed to confirm booking: ' + (err.message || 'Unknown error'), 'error');
+        }
+    };
+
+    // Reject a Level II pending reservation (Tool Responsible or Admin)
+    const handleRejectBookingApproval = async (booking, reason = null) => {
+        try {
+            const { error } = await supabase.rpc('reject_booking', {
+                p_booking_id: booking.id,
+                p_reason: reason
+            });
+            if (error) throw error;
+            showToast(`Reservation rejected. Time slot released.`, 'info');
+            const remover = prev => prev.filter(b => b.id !== booking.id);
+            setBookings(remover);
+            setUserBookings(remover);
+            setAdminBookings(remover);
+            setPendingBookings(remover);
+        } catch (err) {
+            console.error('Error rejecting booking approval:', err);
+            showToast('Failed to reject booking: ' + (err.message || 'Unknown error'), 'error');
+        }
+    };
+
+    // Approve training request -> Assigns Level I (Training)
+    const handleApproveTrainingRequest = async (request) => {
+        try {
+            const { error } = await supabase.rpc('approve_training_request', {
+                p_request_id: request.id
+            });
+            if (error) throw error;
+            showToast(`Approved training application for ${request.user_name} on ${request.tool_name} (Level I assigned).`, 'success');
+            setPendingRequests(prev => prev.filter(r => r.id !== request.id));
+            if (request.user_id === user.id && onProfileRefresh) {
+                onProfileRefresh();
+            }
+        } catch (err) {
+            console.error('Error approving training request:', err);
+            showToast('Failed to approve request: ' + (err.message || 'Unknown error'), 'error');
+        }
+    };
+
+    // Reject training request
+    const handleRejectTrainingRequest = async (request, notes = null) => {
+        try {
+            const { error } = await supabase.rpc('reject_training_request', {
+                p_request_id: request.id,
+                p_notes: notes
+            });
+            if (error) throw error;
+            showToast(`Rejected training application for ${request.user_name}.`, 'info');
+            setPendingRequests(prev => prev.filter(r => r.id !== request.id));
+        } catch (err) {
+            console.error('Error rejecting training request:', err);
+            showToast('Failed to reject request: ' + (err.message || 'Unknown error'), 'error');
         }
     };
 
@@ -766,7 +883,19 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                             <div className="card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 order-1">
                                 <div>
                                     <h2 className="font-bold text-lg text-gray-800 dark:text-gray-100">Your next reservation</h2>
-                                    <p className="text-sm text-gray-700 dark:text-gray-300">{nextBooking ? `${nextBooking.tool_name} · ${nextBooking.date} at ${nextBooking.time?.slice(0, 5)}` : 'No upcoming reservations.'}</p>
+                                    <p className="text-sm text-gray-700 dark:text-gray-300 flex items-center flex-wrap gap-2">
+                                        {nextBooking ? (
+                                            <>
+                                                <span>{nextBooking.tool_name} · {nextBooking.date} at {nextBooking.time?.slice(0, 5)}</span>
+                                                {nextBooking.status === 'pending_approval' && (
+                                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-700">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                                        Pending Confirmation
+                                                    </span>
+                                                )}
+                                            </>
+                                        ) : 'No upcoming reservations.'}
+                                    </p>
                                 </div>
                                 <button onClick={() => handleNavigation('tools')} className="btn btn-primary shrink-0">Book equipment</button>
                             </div>
@@ -883,6 +1012,13 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                 setInfraModalMode(mode);
                                 setInfraModalOpen(true);
                             }}
+                            onApplyTraining={setApplyModalTool}
+                            pendingRequests={pendingRequests}
+                            pendingBookings={pendingBookings}
+                            onApproveRequest={handleApproveTrainingRequest}
+                            onRejectRequest={handleRejectTrainingRequest}
+                            onConfirmBooking={handleConfirmBookingApproval}
+                            onRejectBooking={handleRejectBookingApproval}
                         />
                     )}
 
@@ -1034,6 +1170,23 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                     onCancel={initiateCancel}
                     isAdminOverride={profile?.access_level === 'admin' && activeTab === 'all_bookings'}
                 />
+            )}
+
+            {applyModalTool && (
+                <Suspense fallback={null}>
+                    <ApplyTrainingModal
+                        isOpen={Boolean(applyModalTool)}
+                        onClose={() => setApplyModalTool(null)}
+                        tool={applyModalTool}
+                        user={user}
+                        profile={profile}
+                        onSuccess={(newReq) => {
+                            if (newReq) {
+                                setPendingRequests(prev => [newReq, ...prev]);
+                            }
+                        }}
+                    />
+                </Suspense>
             )}
 
             <ConfirmModal

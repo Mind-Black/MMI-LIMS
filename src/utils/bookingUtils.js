@@ -260,29 +260,121 @@ export const formatDisplayDate = (date) => {
     }
 };
 
+export const TOOL_ACCESS_LEVELS = {
+    NONE: 'none',
+    LEVEL_1: 'level_1', // Training (Cannot book)
+    LEVEL_2: 'level_2', // Supervised (Booking requires confirmation, holds slot tentatively)
+    LEVEL_3: 'level_3'  // Independent (Direct booking)
+};
+
+export const ACCESS_LEVEL_LABELS = {
+    none: 'No License',
+    level_1: 'Level I – In Training',
+    level_2: 'Level II – Supervised',
+    level_3: 'Level III – Independent'
+};
+
+/**
+ * Resolves a user's access level for a tool from profile.licenses.
+ * Supports:
+ * - Object format: { "1": "level_2" }
+ * - Array format (legacy backwards compatibility): ["1", 2] -> 'level_3'
+ */
+export const getToolAccessLevel = (profile, toolId) => {
+    if (!profile?.licenses || toolId == null) return TOOL_ACCESS_LEVELS.NONE;
+
+    // Legacy array format
+    if (Array.isArray(profile.licenses)) {
+        const has = profile.licenses.includes(toolId) ||
+            profile.licenses.includes(String(toolId)) ||
+            profile.licenses.includes(Number(toolId));
+        return has ? TOOL_ACCESS_LEVELS.LEVEL_3 : TOOL_ACCESS_LEVELS.NONE;
+    }
+
+    // Object format: { [toolId]: 'level_1' | 'level_2' | 'level_3' }
+    if (typeof profile.licenses === 'object') {
+        const val = profile.licenses[toolId] || profile.licenses[String(toolId)];
+        if (val && Object.values(TOOL_ACCESS_LEVELS).includes(val)) {
+            return val;
+        }
+    }
+
+    return TOOL_ACCESS_LEVELS.NONE;
+};
+
+/**
+ * Checks if a user is designated as Tool Responsible (primary or secondary) for a tool.
+ */
+export const isToolResponsibleUser = (tool, userOrProfile) => {
+    if (!tool || !userOrProfile) return false;
+    const uid = userOrProfile.id;
+    if (!uid) return false;
+    return tool.primary_responsible_id === uid || tool.secondary_responsible_id === uid;
+};
+
 /**
  * Centralized equipment booking eligibility check.
- * Handles license-free equipment (tool.license_req = false) and admin overrides.
+ * Handles license-free equipment (tool.license_req = false), 3-tier access levels, and admin overrides.
  */
 export const checkBookingEligibility = (tool, profile, isAdminOverride = false) => {
     if (!tool) {
-        return { canBook: false, reason: 'Tool details missing' };
+        return { canBook: false, level: TOOL_ACCESS_LEVELS.NONE, reason: 'Tool details missing' };
     }
     const isAdmin = profile?.access_level === 'admin';
     if (isAdmin || isAdminOverride) {
-        return { canBook: true, reason: null };
+        return { canBook: true, level: TOOL_ACCESS_LEVELS.LEVEL_3, requiresConfirmation: false, reason: null };
     }
     if (!profile?.is_approved) {
-        return { canBook: false, reason: 'Your account is pending administrator approval' };
+        return { canBook: false, level: TOOL_ACCESS_LEVELS.NONE, reason: 'Your account is pending administrator approval' };
     }
     if (tool.status !== 'up') {
-        return { canBook: false, reason: `Equipment is currently ${tool.status}` };
+        return { canBook: false, level: TOOL_ACCESS_LEVELS.NONE, reason: `Equipment is currently ${tool.status}` };
     }
-    const hasLicense = Array.isArray(profile?.licenses) && profile.licenses.includes(tool.id);
-    if (tool.license_req && !hasLicense) {
-        return { canBook: false, reason: 'License required for this equipment' };
+    if (!tool.license_req) {
+        return { canBook: true, level: TOOL_ACCESS_LEVELS.LEVEL_3, requiresConfirmation: false, reason: null };
     }
-    return { canBook: true, reason: null };
+
+    const level = getToolAccessLevel(profile, tool.id);
+
+    if (level === TOOL_ACCESS_LEVELS.NONE) {
+        return {
+            canBook: false,
+            level: TOOL_ACCESS_LEVELS.NONE,
+            canApply: true,
+            requiresConfirmation: false,
+            reason: 'License required for this equipment'
+        };
+    }
+
+    if (level === TOOL_ACCESS_LEVELS.LEVEL_1) {
+        return {
+            canBook: false,
+            level: TOOL_ACCESS_LEVELS.LEVEL_1,
+            canApply: false,
+            requiresConfirmation: false,
+            reason: 'Level I users are undergoing training and cannot book'
+        };
+    }
+
+    if (level === TOOL_ACCESS_LEVELS.LEVEL_2) {
+        return {
+            canBook: true,
+            level: TOOL_ACCESS_LEVELS.LEVEL_2,
+            requiresConfirmation: true,
+            reason: null
+        };
+    }
+
+    if (level === TOOL_ACCESS_LEVELS.LEVEL_3) {
+        return {
+            canBook: true,
+            level: TOOL_ACCESS_LEVELS.LEVEL_3,
+            requiresConfirmation: false,
+            reason: null
+        };
+    }
+
+    return { canBook: false, level: TOOL_ACCESS_LEVELS.NONE, reason: 'License required for this equipment' };
 };
 
 /**
@@ -362,9 +454,10 @@ export const groupBookings = (bookings) => {
             const isSameTool = slot.tool_id === currentGroup.tool_id;
             const isSameUser = slot.user_id === currentGroup.user_id;
             const isSameProject = slot.project === currentGroup.project;
+            const isSameStatus = (slot.status || 'confirmed') === (currentGroup.status || 'confirmed');
             const isContinuous = slotStart === currentGroup.endTime;
 
-            if (isSameDate && isSameTool && isSameUser && isSameProject && isContinuous) {
+            if (isSameDate && isSameTool && isSameUser && isSameProject && isSameStatus && isContinuous) {
                 currentGroup.ids.push(slot.id);
                 currentGroup.endTime = slotEnd;
                 currentGroup.end_time = slotEnd;

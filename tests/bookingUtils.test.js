@@ -19,7 +19,10 @@ import {
     getVilniusCurrentMinutes,
     isVilniusToday,
     isBookingStarted,
-    isSlotInPast
+    isSlotInPast,
+    getToolAccessLevel,
+    isToolResponsibleUser,
+    TOOL_ACCESS_LEVELS
 } from '../src/utils/bookingUtils.js';
 
 test('timeToMinutes & minutesToTime conversion and clamping', () => {
@@ -76,6 +79,39 @@ test('checkBookingEligibility handles license-free equipment and admin overrides
 
     // Admin override flag
     assert.strictEqual(checkBookingEligibility(downTool, approvedUserWithoutLicense, true).canBook, true);
+});
+
+test('checkBookingEligibility enforces 3-tier access levels (Level I, II, III)', () => {
+    const licensedTool = { id: 5, name: 'Raith EBPG 5200', license_req: true, status: 'up' };
+
+    const level1User = { access_level: 'user', is_approved: true, licenses: { 5: 'level_1' } };
+    const level2User = { access_level: 'user', is_approved: true, licenses: { 5: 'level_2' } };
+    const level3User = { access_level: 'user', is_approved: true, licenses: { 5: 'level_3' } };
+    const unlicensedUser = { access_level: 'user', is_approved: true, licenses: {} };
+
+    // Level I: Training in progress - cannot book
+    const res1 = checkBookingEligibility(licensedTool, level1User);
+    assert.strictEqual(res1.canBook, false);
+    assert.strictEqual(res1.level, 'level_1');
+    assert.match(res1.reason, /training/i);
+
+    // Level II: Supervised - can book, requires confirmation
+    const res2 = checkBookingEligibility(licensedTool, level2User);
+    assert.strictEqual(res2.canBook, true);
+    assert.strictEqual(res2.level, 'level_2');
+    assert.strictEqual(res2.requiresConfirmation, true);
+
+    // Level III: Independent - can book directly, no confirmation required
+    const res3 = checkBookingEligibility(licensedTool, level3User);
+    assert.strictEqual(res3.canBook, true);
+    assert.strictEqual(res3.level, 'level_3');
+    assert.strictEqual(res3.requiresConfirmation, false);
+
+    // Unlicensed: cannot book, but can apply
+    const resNone = checkBookingEligibility(licensedTool, unlicensedUser);
+    assert.strictEqual(resNone.canBook, false);
+    assert.strictEqual(resNone.level, 'none');
+    assert.strictEqual(resNone.canApply, true);
 });
 
 test('groupBookings is idempotent and preserves all group IDs (L2)', () => {
@@ -288,5 +324,69 @@ test('isSlotInPast and isBookingStarted enforce exact lab time and grace period 
     assert.strictEqual(isBookingStarted(startedBooking), true);
     assert.strictEqual(isBookingStarted(startsAtBooking), true);
     assert.strictEqual(isBookingStarted(futureBooking), false);
+});
+
+test('getToolAccessLevel resolves object map, legacy array, and default states', () => {
+    // Object map format
+    const profileWithMap = {
+        licenses: {
+            '1': 'level_1',
+            '2': 'level_2',
+            '3': 'level_3'
+        }
+    };
+    assert.strictEqual(getToolAccessLevel(profileWithMap, 1), TOOL_ACCESS_LEVELS.LEVEL_1);
+    assert.strictEqual(getToolAccessLevel(profileWithMap, 2), TOOL_ACCESS_LEVELS.LEVEL_2);
+    assert.strictEqual(getToolAccessLevel(profileWithMap, 3), TOOL_ACCESS_LEVELS.LEVEL_3);
+    assert.strictEqual(getToolAccessLevel(profileWithMap, 4), TOOL_ACCESS_LEVELS.NONE);
+
+    // Legacy array format maps to Level III
+    const profileWithArray = { licenses: [1, '2'] };
+    assert.strictEqual(getToolAccessLevel(profileWithArray, 1), TOOL_ACCESS_LEVELS.LEVEL_3);
+    assert.strictEqual(getToolAccessLevel(profileWithArray, 2), TOOL_ACCESS_LEVELS.LEVEL_3);
+    assert.strictEqual(getToolAccessLevel(profileWithArray, 3), TOOL_ACCESS_LEVELS.NONE);
+
+    // Empty or missing profile
+    assert.strictEqual(getToolAccessLevel(null, 1), TOOL_ACCESS_LEVELS.NONE);
+    assert.strictEqual(getToolAccessLevel({}, 1), TOOL_ACCESS_LEVELS.NONE);
+    assert.strictEqual(getToolAccessLevel({ licenses: null }, 1), TOOL_ACCESS_LEVELS.NONE);
+});
+
+test('isToolResponsibleUser identifies primary and secondary assigned responsibles', () => {
+    const tool = {
+        id: 10,
+        primary_responsible_id: 'uuid-admin-1',
+        secondary_responsible_id: 'uuid-admin-2'
+    };
+
+    assert.strictEqual(isToolResponsibleUser(tool, { id: 'uuid-admin-1' }), true);
+    assert.strictEqual(isToolResponsibleUser(tool, { id: 'uuid-admin-2' }), true);
+    assert.strictEqual(isToolResponsibleUser(tool, { id: 'uuid-other-user' }), false);
+    assert.strictEqual(isToolResponsibleUser(tool, null), false);
+    assert.strictEqual(isToolResponsibleUser(null, { id: 'uuid-admin-1' }), false);
+});
+
+test('groupBookings preserves status and does not merge differing statuses', () => {
+    const slots = [
+        { id: 1, tool_id: 1, date: '2026-10-01', time: '10:00', user_id: 'u1', project: 'P1', status: 'confirmed' },
+        { id: 2, tool_id: 1, date: '2026-10-01', time: '10:30', user_id: 'u1', project: 'P1', status: 'pending_approval' },
+        { id: 3, tool_id: 1, date: '2026-10-01', time: '11:00', user_id: 'u1', project: 'P1', status: 'pending_approval' }
+    ];
+
+    const grouped = groupBookings(slots);
+    // Slot 1 (confirmed) should NOT merge with slot 2 (pending_approval), but 2 and 3 (both pending_approval) SHOULD merge
+    assert.strictEqual(grouped.length, 2);
+
+    const pendingGroup = grouped.find(g => g.status === 'pending_approval');
+    const confirmedGroup = grouped.find(g => g.status === 'confirmed');
+
+    assert.ok(pendingGroup);
+    assert.ok(confirmedGroup);
+    assert.deepStrictEqual(pendingGroup.ids, [2, 3]);
+    assert.strictEqual(pendingGroup.startTime, '10:30');
+    assert.strictEqual(pendingGroup.endTime, '11:30');
+    assert.deepStrictEqual(confirmedGroup.ids, [1]);
+    assert.strictEqual(confirmedGroup.startTime, '10:00');
+    assert.strictEqual(confirmedGroup.endTime, '10:30');
 });
 

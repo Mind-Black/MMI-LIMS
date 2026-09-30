@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Icon from './Icon';
 import StatusBadge from './StatusBadge';
 import { supabase } from '../supabaseClient';
@@ -21,7 +21,26 @@ const InfrastructureManagement = ({
     const [editingTool, setEditingTool] = useState(null);
     const [isSavingEdit, setIsSavingEdit] = useState(false);
     const [deletingToolId, setDeletingToolId] = useState(null);
+    const [availableUsers, setAvailableUsers] = useState([]);
     const { showToast } = useToast();
+
+    // Fetch users for Tool Responsible assignment dropdown
+    useEffect(() => {
+        const fetchUsers = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('profiles')
+                    .select('id, first_name, last_name, email, phone, job_title, access_level')
+                    .order('last_name');
+                if (!error && data) {
+                    setAvailableUsers(data);
+                }
+            } catch (err) {
+                console.error('Error fetching users for tool responsible:', err);
+            }
+        };
+        fetchUsers();
+    }, []);
 
     // Categories
     const categories = useMemo(() => {
@@ -65,7 +84,9 @@ const InfrastructureManagement = ({
             location: editingTool.location?.trim() || null,
             license_req: Boolean(editingTool.license_req),
             description: editingTool.description?.trim() || null,
-            image_url: editingTool.image_url?.trim() || null
+            image_url: editingTool.image_url?.trim() || null,
+            primary_responsible_id: editingTool.primary_responsible_id || null,
+            secondary_responsible_id: editingTool.secondary_responsible_id || null
         };
 
         try {
@@ -73,12 +94,14 @@ const InfrastructureManagement = ({
                 .from('tools')
                 .update(updates)
                 .eq('id', editingTool.id)
-                .select('id, name, category, status, location, license_req, description, image_url')
+                .select('id, name, category, status, location, license_req, description, image_url, primary_responsible_id, secondary_responsible_id')
                 .single();
 
-            // Fallback if image_url column not yet applied on DB
-            if (error && error.message && error.message.includes('image_url')) {
+            // Fallback if newly added columns not yet applied on DB
+            if (error && error.message) {
                 const legacyUpdates = { ...updates };
+                delete legacyUpdates.primary_responsible_id;
+                delete legacyUpdates.secondary_responsible_id;
                 delete legacyUpdates.image_url;
                 const retry = await supabase
                     .from('tools')
@@ -92,9 +115,19 @@ const InfrastructureManagement = ({
 
             if (error) throw error;
 
+            // Attach rich responsible profile references
+            const primaryUser = availableUsers.find(u => u.id === updates.primary_responsible_id) || null;
+            const secondaryUser = availableUsers.find(u => u.id === updates.secondary_responsible_id) || null;
+
+            const enrichedTool = {
+                ...data,
+                primary_responsible: primaryUser,
+                secondary_responsible: secondaryUser
+            };
+
             showToast(`Updated "${data.name}" successfully!`, 'success');
             if (onToolsChange) {
-                onToolsChange(prev => prev.map(t => t.id === data.id ? { ...t, ...data } : t));
+                onToolsChange(prev => prev.map(t => t.id === data.id ? { ...t, ...enrichedTool } : t));
             }
             setEditingTool(null);
         } catch (err) {
@@ -141,7 +174,7 @@ const InfrastructureManagement = ({
                         Infrastructure Management
                     </h2>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        Configure laboratory equipment, register new instruments, and manage operational statuses.
+                        Configure laboratory equipment, assign designated Tool Responsibles, and manage operational statuses.
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -247,6 +280,7 @@ const InfrastructureManagement = ({
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-gray-300">ID</th>
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-gray-300">Equipment</th>
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-gray-300">Category</th>
+                                <th className="p-3 text-xs font-semibold text-gray-600 dark:text-gray-300">Tool Responsible</th>
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-gray-300">Location</th>
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-gray-300">Operational Status</th>
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-gray-300">License</th>
@@ -257,6 +291,9 @@ const InfrastructureManagement = ({
                             {filteredTools.map(tool => {
                                 const staticImg = getToolImage(tool.id);
                                 const imgSrc = tool.image_url || staticImg;
+                                const resp = tool.primary_responsible;
+                                const respName = resp ? `${resp.first_name || ''} ${resp.last_name || ''}`.trim() : 'Lab Administrator';
+
                                 return (
                                     <tr key={tool.id} className="hover:bg-blue-50/20 dark:hover:bg-blue-900/10 transition">
                                         <td className="p-3 font-mono text-gray-500 dark:text-gray-400 text-xs">
@@ -287,6 +324,17 @@ const InfrastructureManagement = ({
                                             <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded text-xs font-semibold">
                                                 {tool.category}
                                             </span>
+                                        </td>
+                                        <td className="p-3 text-xs">
+                                            <div className="font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-1">
+                                                <Icon className="fas fa-user-shield text-blue-600 dark:text-blue-400 text-[10px]" />
+                                                <span>{respName}</span>
+                                            </div>
+                                            {resp?.email && (
+                                                <div className="text-gray-500 dark:text-gray-400 text-[11px] truncate max-w-[150px]">
+                                                    {resp.email}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="p-3 text-gray-700 dark:text-gray-300 text-xs">
                                             {tool.location || <span className="text-gray-400 italic">Unassigned</span>}
@@ -323,7 +371,7 @@ const InfrastructureManagement = ({
                                                     type="button"
                                                     onClick={() => setEditingTool(tool)}
                                                     className="btn btn-secondary btn-sm p-1.5 text-xs"
-                                                    title="Edit equipment metadata"
+                                                    title="Edit equipment metadata & Tool Responsibles"
                                                 >
                                                     <Icon className="fas fa-edit" />
                                                 </button>
@@ -354,7 +402,7 @@ const InfrastructureManagement = ({
             {/* Edit Metadata Modal */}
             {editingTool && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4 border dark:border-gray-700">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4 border dark:border-gray-700 max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-center border-b dark:border-gray-700 pb-2">
                             <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
                                 <Icon className="fas fa-edit text-blue-600 dark:text-blue-400" />
@@ -406,6 +454,47 @@ const InfrastructureManagement = ({
                                     />
                                 </div>
                             </div>
+
+                            {/* Tool Responsible Selection (1 or 2 users) */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-blue-50/50 dark:bg-blue-900/10 rounded-lg border border-blue-100 dark:border-blue-900/30">
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase mb-1 flex items-center gap-1">
+                                        <Icon className="fas fa-user-shield text-blue-600 text-xs" />
+                                        Primary Responsible
+                                    </label>
+                                    <select
+                                        value={editingTool.primary_responsible_id || ''}
+                                        onChange={(e) => setEditingTool({ ...editingTool, primary_responsible_id: e.target.value || null })}
+                                        className="select-input text-xs w-full"
+                                    >
+                                        <option value="">Default (Administrator)</option>
+                                        {availableUsers.map(u => (
+                                            <option key={u.id} value={u.id}>
+                                                {u.first_name} {u.last_name} ({u.access_level === 'admin' ? 'Admin' : u.job_title || 'User'})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase mb-1 flex items-center gap-1">
+                                        <Icon className="fas fa-user-plus text-blue-600 text-xs" />
+                                        Secondary Responsible
+                                    </label>
+                                    <select
+                                        value={editingTool.secondary_responsible_id || ''}
+                                        onChange={(e) => setEditingTool({ ...editingTool, secondary_responsible_id: e.target.value || null })}
+                                        className="select-input text-xs w-full"
+                                    >
+                                        <option value="">None</option>
+                                        {availableUsers.map(u => (
+                                            <option key={u.id} value={u.id}>
+                                                {u.first_name} {u.last_name} ({u.access_level === 'admin' ? 'Admin' : u.job_title || 'User'})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
                             <div>
                                 <label className="relative flex items-center gap-2 cursor-pointer select-none">
                                     <input

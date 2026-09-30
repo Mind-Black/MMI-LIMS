@@ -122,12 +122,18 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
                 <button type="button" onClick={() => setMobileDate(getVilniusNow().dateStr)} className="text-sm text-blue-700 dark:text-blue-300 underline">Today</button>
                 <button type="button" onClick={() => { if (!mobileWeekView) onWeekChange(getMonday(mobileDate)); setMobileWeekView(value => !value); }} aria-pressed={mobileWeekView} className="text-sm text-blue-700 dark:text-blue-300 underline">{mobileWeekView ? 'Day agenda' : 'Week view'}</button>
             </div>
-            {!mobileWeekView && (groupedBookings.filter(b => b.date === mobileDate).length ? groupedBookings.filter(b => b.date === mobileDate).map(booking => (
-                <button key={booking.ids[0]} type="button" onClick={() => onBookingClick?.(booking)} className="block w-full text-left p-3 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100">
-                    <span className="font-semibold">{booking.startTime}–{booking.endTime} · {booking.tool_name}</span>
-                    <span className="block text-sm">{booking.project}</span>
-                </button>
-            )) : <p className="text-sm text-gray-600 dark:text-gray-300">No reservations on this day.</p>)}
+            {!mobileWeekView && (groupedBookings.filter(b => b.date === mobileDate).length ? groupedBookings.filter(b => b.date === mobileDate).map(booking => {
+                const isPending = booking.status === 'pending_approval';
+                return (
+                    <button key={booking.ids[0]} type="button" onClick={() => onBookingClick?.(booking)} className={`block w-full text-left p-3 rounded ${isPending ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-900 dark:text-amber-100 border border-amber-300 dark:border-amber-700' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100'}`}>
+                        <div className="flex items-center justify-between">
+                            <span className="font-semibold">{booking.startTime}–{booking.endTime} · {booking.tool_name}</span>
+                            {isPending && <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 px-1.5 py-0.5 rounded font-bold">Pending</span>}
+                        </div>
+                        <span className="block text-sm">{booking.project}</span>
+                    </button>
+                );
+            }) : <p className="text-sm text-gray-600 dark:text-gray-300">No reservations on this day.</p>)}
         </div>
         <div className={`${mobileWeekView ? 'flex' : 'hidden'} md:flex bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 flex-col overflow-hidden h-[min(75vh,850px)] transition-colors`}>
             {/* Header */}
@@ -192,19 +198,29 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
                                         )}
 
                                         {/* Events Overlay */}
-                                        {positionedBookings.map(booking => (
-                                            <div
-                                                key={booking.ids[0]}
-                                                className="absolute bg-blue-100 dark:bg-blue-900/50 border border-blue-300 dark:border-blue-700 rounded p-1 text-xs overflow-hidden transition-all hover:z-10 hover:shadow-md cursor-pointer"
-                                                style={getEventStyle(booking)}
-                                                onClick={() => onBookingClick && onBookingClick(booking)}
-                                                title="Click to edit booking"
-                                            >
-                                                <div className="font-bold text-blue-900 dark:text-blue-100 truncate pointer-events-none">{booking.tool_name}</div>
-                                                <div className="text-blue-700 dark:text-blue-300 truncate text-[10px] pointer-events-none">{booking.project}</div>
-                                                <div className="text-blue-600 dark:text-blue-400 text-[10px] pointer-events-none">{booking.startTime} - {booking.endTime}</div>
-                                            </div>
-                                        ))}
+                                        {positionedBookings.map(booking => {
+                                            const isPending = booking.status === 'pending_approval';
+                                            return (
+                                                <div
+                                                    key={booking.ids[0]}
+                                                    className={`absolute border rounded p-1 text-xs overflow-hidden transition-all hover:z-10 hover:shadow-md cursor-pointer ${isPending
+                                                        ? 'bg-amber-100/90 dark:bg-amber-900/40 border-amber-400 dark:border-amber-600 border-dashed text-amber-900 dark:text-amber-200'
+                                                        : 'bg-blue-100 dark:bg-blue-900/50 border-blue-300 dark:border-blue-700'}`}
+                                                    style={getEventStyle(booking)}
+                                                    onClick={() => onBookingClick && onBookingClick(booking)}
+                                                    title={isPending ? 'Pending confirmation by Tool Responsible (tentative hold)' : 'Click to edit booking'}
+                                                >
+                                                    <div className={`font-bold truncate pointer-events-none ${isPending ? 'text-amber-900 dark:text-amber-100 flex items-center gap-1' : 'text-blue-900 dark:text-blue-100'}`}>
+                                                        {isPending && <Icon className="fas fa-clock text-[10px] text-amber-600 shrink-0" />}
+                                                        <span className="truncate">{booking.tool_name}</span>
+                                                    </div>
+                                                    <div className={`${isPending ? 'text-amber-700 dark:text-amber-300' : 'text-blue-700 dark:text-blue-300'} truncate text-[10px] pointer-events-none`}>{booking.project}</div>
+                                                    <div className={`${isPending ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-blue-600 dark:text-blue-400'} text-[10px] pointer-events-none`}>
+                                                        {booking.startTime} - {booking.endTime} {isPending ? '(Pending)' : ''}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             );
