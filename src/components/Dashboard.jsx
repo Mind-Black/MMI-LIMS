@@ -27,15 +27,28 @@ const InfrastructureManagement = lazy(() => import('./InfrastructureManagement')
 const AddInfrastructureModal = lazy(() => import('./AddInfrastructureModal'));
 const ApplyTrainingModal = lazy(() => import('./ApplyTrainingModal'));
 const BOOKING_FIELDS = 'id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at, status, confirmed_by, confirmed_at';
+const LEGACY_BOOKING_FIELDS = 'id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at';
 const PAGE_SIZE = 500;
 
-async function fetchAllPages(makeQuery) {
+async function fetchAllPages(makeQuery, fallbackQuery = null) {
     const rows = [];
+    let useFallback = false;
     for (let offset = 0; ;) {
-        const { data, error } = await makeQuery().range(offset, offset + PAGE_SIZE - 1);
+        const currentQuery = (useFallback && fallbackQuery) ? fallbackQuery : makeQuery;
+        let { data, error } = await currentQuery().range(offset, offset + PAGE_SIZE - 1);
+        if (error && fallbackQuery && !useFallback && (error.message?.includes('status') || error.message?.includes('does not exist') || error.message?.includes('column'))) {
+            useFallback = true;
+            const fallbackRes = await fallbackQuery().range(offset, offset + PAGE_SIZE - 1);
+            data = fallbackRes.data ? fallbackRes.data.map(b => ({ ...b, status: 'confirmed' })) : null;
+            error = fallbackRes.error;
+        }
         if (error) throw error;
         if (!data?.length) return rows;
+        if (useFallback) {
+            data = data.map(b => (b.status ? b : { ...b, status: 'confirmed' }));
+        }
         rows.push(...data);
+        if (data.length < PAGE_SIZE) return rows;
         offset += data.length;
     }
 }
@@ -146,9 +159,19 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 `).order('id');
 
                 if (res.error) {
-                    const fallback = await supabase.from('tools')
+                    let fallback = await supabase.from('tools')
                         .select('id, name, category, status, location, license_req, description, image_url, primary_responsible_id, secondary_responsible_id')
                         .order('id');
+                    if (fallback.error) {
+                        fallback = await supabase.from('tools')
+                            .select('id, name, category, status, location, license_req, description, image_url')
+                            .order('id');
+                    }
+                    if (fallback.error) {
+                        fallback = await supabase.from('tools')
+                            .select('id, name, category, status, location, license_req, description')
+                            .order('id');
+                    }
                     if (!fallback.error) {
                         res = fallback;
                     }
@@ -156,24 +179,54 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 return res;
             };
 
+            const fetchPendingRequests = async () => {
+                try {
+                    const res = await supabase.from('training_requests')
+                        .select('id, tool_id, tool_name, user_id, user_name, user_email, description, preferred_date, status, created_at')
+                        .eq('status', 'pending')
+                        .order('created_at', { ascending: false });
+                    if (res?.error) return { data: [] };
+                    return res?.data ? res : { data: [] };
+                } catch {
+                    return { data: [] };
+                }
+            };
+
+            const fetchPendingBookings = async () => {
+                try {
+                    const res = await supabase.from('bookings')
+                        .select(BOOKING_FIELDS)
+                        .eq('status', 'pending_approval')
+                        .order('date')
+                        .order('time');
+                    if (res?.error) return { data: [] };
+                    return res?.data ? res : { data: [] };
+                } catch {
+                    return { data: [] };
+                }
+            };
+
             const [toolsRes, calendarRows, userRows, tokenRes, pendingReqsRes, pendingBookingsRes] = await Promise.all([
                 needCatalog ? fetchToolsQuery() : null,
-                fetchAllPages(() => supabase.from('bookings').select(BOOKING_FIELDS)
-                    .gte('date', startStr).lte('date', endStr)
-                    .order('date').order('time').order('id')),
-                !needHistory ? null : fetchAllPages(() => supabase.from('bookings').select(BOOKING_FIELDS)
-                    .eq('user_id', user.id).gte('date', historyStart)
-                    .order('date', { ascending: false }).order('time', { ascending: false }).order('id', { ascending: false })),
+                fetchAllPages(
+                    () => supabase.from('bookings').select(BOOKING_FIELDS)
+                        .gte('date', startStr).lte('date', endStr)
+                        .order('date').order('time').order('id'),
+                    () => supabase.from('bookings').select(LEGACY_BOOKING_FIELDS)
+                        .gte('date', startStr).lte('date', endStr)
+                        .order('date').order('time').order('id')
+                ),
+                !needHistory ? null : fetchAllPages(
+                    () => supabase.from('bookings').select(BOOKING_FIELDS)
+                        .eq('user_id', user.id).gte('date', historyStart)
+                        .order('date', { ascending: false }).order('time', { ascending: false }).order('id', { ascending: false }),
+                    () => supabase.from('bookings').select(LEGACY_BOOKING_FIELDS)
+                        .eq('user_id', user.id).gte('date', historyStart)
+                        .order('date', { ascending: false }).order('time', { ascending: false }).order('id', { ascending: false })
+                ),
                 needCatalog ? supabase.rpc('has_calendar_token') : null,
-                supabase.from('training_requests')
-                    .select('id, tool_id, tool_name, user_id, user_name, user_email, description, preferred_date, status, created_at')
-                    .eq('status', 'pending')
-                    .order('created_at', { ascending: false }),
-                supabase.from('bookings')
-                    .select(BOOKING_FIELDS)
-                    .eq('status', 'pending_approval')
-                    .order('date')
-                    .order('time')
+                fetchPendingRequests(),
+                fetchPendingBookings()
             ]);
 
             // If a newer query resolved already, discard this response
@@ -321,18 +374,37 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             const rows = [];
             let total = 0;
             let offset = adminPage * 200;
+            let useFallback = false;
             while (rows.length < 200) {
-                let query = supabase.from('bookings').select(BOOKING_FIELDS, { count: 'exact' })
+                let query = supabase.from('bookings').select(useFallback ? LEGACY_BOOKING_FIELDS : BOOKING_FIELDS, { count: 'exact' })
                     .order('date', { ascending: false }).order('time', { ascending: false }).order('id', { ascending: false });
                 if (filterStartDate) query = query.gte('date', filterStartDate);
                 if (filterEndDate) query = query.lte('date', filterEndDate);
                 if (debouncedUserName.trim()) query = query.ilike('user_name', `%${debouncedUserName.trim()}%`);
                 if (filterToolId) query = query.eq('tool_id', filterToolId);
-                const { data, error, count } = await query.range(offset, offset + 199 - rows.length);
+                let { data, error, count } = await query.range(offset, offset + 199 - rows.length);
+                if (error && !useFallback && (error.message?.includes('status') || error.message?.includes('does not exist') || error.message?.includes('column'))) {
+                    useFallback = true;
+                    let legacyQuery = supabase.from('bookings').select(LEGACY_BOOKING_FIELDS, { count: 'exact' })
+                        .order('date', { ascending: false }).order('time', { ascending: false }).order('id', { ascending: false });
+                    if (filterStartDate) legacyQuery = legacyQuery.gte('date', filterStartDate);
+                    if (filterEndDate) legacyQuery = legacyQuery.lte('date', filterEndDate);
+                    if (debouncedUserName.trim()) legacyQuery = legacyQuery.ilike('user_name', `%${debouncedUserName.trim()}%`);
+                    if (filterToolId) legacyQuery = legacyQuery.eq('tool_id', filterToolId);
+                    const legacyRes = await legacyQuery.range(offset, offset + 199 - rows.length);
+                    data = legacyRes.data ? legacyRes.data.map(b => ({ ...b, status: 'confirmed' })) : null;
+                    error = legacyRes.error;
+                    count = legacyRes.count;
+                }
                 if (error) throw error;
                 total = count || 0;
                 if (!data?.length) break;
-                rows.push(...data);
+                const formattedData = useFallback ? data.map(b => (b.status ? b : { ...b, status: 'confirmed' })) : data;
+                rows.push(...formattedData);
+                if (data.length < (200 - (rows.length - data.length))) {
+                    offset += data.length;
+                    break;
+                }
                 offset += data.length;
             }
             if (request !== adminQuerySeqRef.current) return;
@@ -371,10 +443,20 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
 
         try {
             querySeqRef.current++; // Invalidate in-flight reads
-            const { data, error } = await supabase
+            let { data, error } = await supabase
                 .from('bookings')
                 .insert(newBookings)
                 .select();
+
+            if (error && (error.message?.includes('status') || error.message?.includes('does not exist') || error.message?.includes('column'))) {
+                const sanitized = newBookings.map(({ status, confirmed_by, confirmed_at, ...rest }) => rest);
+                const retry = await supabase
+                    .from('bookings')
+                    .insert(sanitized)
+                    .select();
+                data = retry.data ? retry.data.map(b => ({ ...b, status: 'confirmed' })) : null;
+                error = retry.error;
+            }
 
             if (error) throw error;
             if (!data || data.length === 0) {

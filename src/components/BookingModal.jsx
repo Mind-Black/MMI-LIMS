@@ -150,15 +150,34 @@ const BookingModal = ({
         setAvailability({ key, state: 'loading', message: '' });
         try {
             const all = [];
+            let useFallback = false;
             for (let offset = 0; ;) {
-                const { data, error } = await supabase.from('bookings')
-                    .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at, status, confirmed_by, confirmed_at')
+                const selectFields = useFallback
+                    ? 'id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at'
+                    : 'id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at, status, confirmed_by, confirmed_at';
+
+                let { data, error } = await supabase.from('bookings')
+                    .select(selectFields)
                     .eq('tool_id', tool.id).gte('date', weekStartStr).lte('date', weekEndStr)
                     .order('date', { ascending: true }).order('time', { ascending: true }).order('id', { ascending: true })
                     .range(offset, offset + 499);
+
+                if (error && !useFallback && (error.message?.includes('status') || error.message?.includes('does not exist') || error.message?.includes('column'))) {
+                    useFallback = true;
+                    const fallbackRes = await supabase.from('bookings')
+                        .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at')
+                        .eq('tool_id', tool.id).gte('date', weekStartStr).lte('date', weekEndStr)
+                        .order('date', { ascending: true }).order('time', { ascending: true }).order('id', { ascending: true })
+                        .range(offset, offset + 499);
+                    data = fallbackRes.data ? fallbackRes.data.map(b => ({ ...b, status: 'confirmed' })) : null;
+                    error = fallbackRes.error;
+                }
+
                 if (error) throw error;
                 if (!data?.length) break;
-                all.push(...data);
+                const formatted = useFallback ? data.map(b => (b.status ? b : { ...b, status: 'confirmed' })) : data;
+                all.push(...formatted);
+                if (data.length < 500) break;
                 offset += data.length;
             }
             if (request === requestRef.current) {

@@ -55,7 +55,10 @@ const ApplyTrainingModal = ({ isOpen, onClose, tool, user, profile, onSuccess })
             onClose();
         } catch (err) {
             console.error('Error submitting training request:', err);
-            showToast('Failed to submit application: ' + (err.message || 'Unknown error'), 'error');
+            const msg = err.message?.includes('training_requests') || err.message?.includes('does not exist')
+                ? 'Training request system is pending database migration. Please notify the administrator.'
+                : ('Failed to submit application: ' + (err.message || 'Unknown error'));
+            showToast(msg, 'error');
         } finally {
             setIsSubmitting(false);
         }
