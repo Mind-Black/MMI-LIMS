@@ -449,7 +449,13 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 .select();
 
             if (error && (error.message?.includes('status') || error.message?.includes('does not exist') || error.message?.includes('column'))) {
-                const sanitized = newBookings.map(({ status, confirmed_by, confirmed_at, ...rest }) => rest);
+                const sanitized = newBookings.map(b => {
+                    const copy = { ...b };
+                    delete copy.status;
+                    delete copy.confirmed_by;
+                    delete copy.confirmed_at;
+                    return copy;
+                });
                 const retry = await supabase
                     .from('bookings')
                     .insert(sanitized)
