@@ -244,7 +244,7 @@ def build_tool_description(row):
     Constructs clean, professional tool description containing:
     1. Short description note summarizing instrument capabilities and applications.
     2. Tool hourly rates (Department, KTU, External).
-    Strictly excludes any personal names or responsible persons.
+    Strictly excludes any personal names, responsible persons, and inventory numbers.
     """
     inv = clean_text(row[11])
     raw_name_en = clean_text(row[6]) if len(row) > 6 else ''
@@ -259,6 +259,10 @@ def build_tool_description(row):
         if not desc_en or desc_en == '-' or desc_en.lower() == 'null':
             desc_en = f"{raw_name_en or raw_name_lt}."
         note = desc_en
+    
+    # Ensure no inventory numbers or 'Inv. No' strings exist in the note
+    note = re.sub(r'KT\d+[A-Za-z0-9_-]*', '', note)
+    note = re.sub(r'Inv\.?\s*(No\.?)?:?\s*', '', note, flags=re.IGNORECASE).strip()
     
     # 2. Format hourly rates nicely
     rates_formatted = ''
@@ -330,6 +334,8 @@ def main():
         assert status in ('up', 'down', 'service'), f'Row {idx}: Invalid status {status}'
         assert license_req in ('true', 'false'), f'Row {idx}: Invalid license_req {license_req}'
         assert len(description) > 0, f'Row {idx}: Missing description'
+        assert not re.search(r'KT\d+', description), f'Row {idx}: Description contains inventory number: {description}'
+        assert 'Responsible:' not in description, f'Row {idx}: Description contains Responsible: {description}'
 
         record = {
             'name': name,
