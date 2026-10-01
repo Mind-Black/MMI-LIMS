@@ -211,7 +211,7 @@ function normalizeHeader(header) {
  *   hasErrors: boolean
  * }}
  */
-export function parseInfrastructureCsv(csvText) {
+export function parseInfrastructureCsv(csvText, existingTools = []) {
     const rawRows = parseRawCsv(csvText);
 
     if (rawRows.length === 0) {
@@ -321,10 +321,74 @@ export function parseInfrastructureCsv(csvText) {
         }
     }
 
+    // Partition valid rows against existing database tools if provided
+    const newRows = [];
+    const existingRows = [];
+
+    validRows.forEach(row => {
+        const matched = findMatchingExistingTool(row.name, existingTools);
+        if (matched) {
+            existingRows.push({ ...row, matchedExisting: matched });
+        } else {
+            newRows.push(row);
+        }
+    });
+
     return {
         totalRows: rawRows.length - 1,
         validRows,
+        newRows,
+        existingRows,
         invalidRows,
         hasErrors: invalidRows.length > 0
     };
+}
+
+/**
+ * Checks whether an incoming equipment name matches an existing tool in the database.
+ * Matches exact normalized names, key model identifiers, and significant substrings.
+ * @param {string} toolName - Name of tool from CSV
+ * @param {Array<object>} existingTools - Array of existing tools in the database
+ * @returns {object|null} Matched existing tool object or null
+ */
+export function findMatchingExistingTool(toolName, existingTools = []) {
+    if (!toolName || !existingTools || !Array.isArray(existingTools) || existingTools.length === 0) {
+        return null;
+    }
+    const cleanTarget = String(toolName).toLowerCase().replace(/[\s\-_:]+/g, ' ').trim();
+    
+    for (const ext of existingTools) {
+        if (!ext || !ext.name) continue;
+        const cleanExt = String(ext.name).toLowerCase().replace(/[\s\-_:]+/g, ' ').trim();
+        
+        // 1. Direct name equality
+        if (cleanTarget === cleanExt) return ext;
+
+        // 2. High-confidence model / brand identifiers
+        const signatureKeys = [
+            'raith e line',
+            'femtolab',
+            'quanta 200',
+            'apex slr',
+            'cubivap',
+            'lh a700',
+            'renishaw invia',
+            'dektak'
+        ];
+        for (const key of signatureKeys) {
+            if (cleanTarget.includes(key) && cleanExt.includes(key)) {
+                return ext;
+            }
+        }
+
+        // Special case: FemtoLAB in DB vs "Universal optical spectroscopy and laser microfabrication system" in export
+        if (cleanExt.includes('femtolab') && (cleanTarget.includes('femto') || cleanTarget.includes('laser microfabrication') || cleanTarget.includes('lazerinio mikroapdirbimo'))) {
+            return ext;
+        }
+        
+        // 3. Substring match for substantial names (>= 10 chars)
+        if (cleanExt.length >= 10 && cleanTarget.includes(cleanExt)) return ext;
+        if (cleanTarget.length >= 10 && cleanExt.includes(cleanTarget)) return ext;
+    }
+    return null;
 }

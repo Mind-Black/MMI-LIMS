@@ -33,3 +33,7 @@ supabase/.temp/
 
 # Infrastructure import data
 infrastructure_mmi/
+
+# Local machine development runtimes
+TOOL_RUNTIMES.*
+scripts/setup-runtimes.ps1

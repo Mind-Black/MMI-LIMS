@@ -4,7 +4,8 @@ import {
     escapeCsvField,
     generateInfrastructureCsvTemplate,
     parseRawCsv,
-    parseInfrastructureCsv
+    parseInfrastructureCsv,
+    findMatchingExistingTool
 } from '../src/utils/csvHelper.js';
 
 test('escapeCsvField: correctly handles strings with commas, quotes, and newlines', () => {
@@ -80,4 +81,54 @@ Invalid Image Tool,Deposition,up,true,ftp://bad-url.com
     assert.ok(result.invalidRows[2].errors.some(e => e.includes('Invalid status')));
     assert.ok(result.invalidRows[3].errors.some(e => e.includes('Invalid license_req')));
     assert.ok(result.invalidRows[4].errors.some(e => e.includes('Image URL must start with')));
+});
+
+test('findMatchingExistingTool: identifies tools already present in the database', () => {
+    const existingTools = [
+        { id: 1, name: 'EBL: Raith e-Line Plus' },
+        { id: 2, name: 'Laser: FemtoLAB' },
+        { id: 3, name: 'SEM: FEI Quanta 200 FEG' },
+        { id: 5, name: 'ICPRIE: PlasmaTherm Apex SLR' },
+        { id: 6, name: 'Thermal Evaporation: CUBIVAP' },
+        { id: 7, name: 'Sputter: LH A700' },
+        { id: 8, name: 'Raman: Renishaw InVia' }
+    ];
+
+    // Matches with variations / full names from KTU export
+    assert.ok(findMatchingExistingTool('EBL: E-beam lithography tool - Raith e-Line Plus', existingTools));
+    assert.ok(findMatchingExistingTool('SEM: Scanning electron microscope - FEI Quanta 200 FEG', existingTools));
+    assert.ok(findMatchingExistingTool('Thermal evaporator - CUBIVAP', existingTools));
+    assert.ok(findMatchingExistingTool('Magnetron sputtering tool - LH A700', existingTools));
+    assert.ok(findMatchingExistingTool('Raman scattering spectrometer - Renishaw inVia', existingTools));
+    assert.ok(findMatchingExistingTool('ICP RIE: Inductively coupled plasma reactive ion etching system - PlasmaTherm Apex SLR', existingTools));
+    assert.ok(findMatchingExistingTool('Laser: FemtoLAB', existingTools));
+    assert.ok(findMatchingExistingTool('Universal optical spectroscopy and laser microfabrication system', existingTools));
+
+    // Brand new tool that does NOT exist in the database
+    assert.equal(findMatchingExistingTool('XRD: X-ray diffractometer - Bruker D8 Discover', existingTools), null);
+    assert.equal(findMatchingExistingTool('Ophir Nova II', existingTools), null);
+});
+
+test('parseInfrastructureCsv: partitions new and existing tools to protect database tools from overwrite', () => {
+    const existingTools = [
+        { id: 1, name: 'EBL: Raith e-Line Plus' },
+        { id: 3, name: 'SEM: FEI Quanta 200 FEG' }
+    ];
+
+    const csvContent = `name,category,status,location,license_req,description,image_url
+EBL: Raith e-Line Plus,Lithography,up,Cleanroom D,true,Existing Raith,
+XRD: Bruker D8 Discover,Characterization,up,Room A119,true,Brand new XRD,
+SEM: FEI Quanta 200 FEG,Microscopy,up,Room A115,true,Existing SEM,
+`;
+
+    const result = parseInfrastructureCsv(csvContent, existingTools);
+
+    assert.equal(result.totalRows, 3);
+    assert.equal(result.hasErrors, false);
+    assert.equal(result.newRows.length, 1);
+    assert.equal(result.newRows[0].name, 'XRD: Bruker D8 Discover');
+
+    assert.equal(result.existingRows.length, 2);
+    assert.ok(result.existingRows.some(r => r.name === 'EBL: Raith e-Line Plus'));
+    assert.ok(result.existingRows.some(r => r.name === 'SEM: FEI Quanta 200 FEG'));
 });

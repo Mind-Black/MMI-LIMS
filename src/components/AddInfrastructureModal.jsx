@@ -204,7 +204,7 @@ const AddInfrastructureModal = ({
         reader.onload = (event) => {
             const text = event.target?.result;
             if (typeof text === 'string') {
-                const parsed = parseInfrastructureCsv(text);
+                const parsed = parseInfrastructureCsv(text, existingTools);
                 setCsvParsed(parsed);
                 if (parsed.error) {
                     setCsvFileError(parsed.error);
@@ -229,13 +229,26 @@ const AddInfrastructureModal = ({
 
     // Submit bulk CSV import
     const handleBulkSubmit = async () => {
-        if (!csvParsed || !csvParsed.validRows || csvParsed.validRows.length === 0) {
-            showToast('No valid equipment rows to import.', 'warning');
+        if (!csvParsed) {
+            showToast('Please select a CSV file first.', 'warning');
+            return;
+        }
+
+        const rowsToInsert = csvParsed.newRows && csvParsed.newRows.length !== undefined
+            ? csvParsed.newRows
+            : (csvParsed.validRows || []);
+
+        if (rowsToInsert.length === 0) {
+            if (csvParsed.existingRows && csvParsed.existingRows.length > 0) {
+                showToast(`All ${csvParsed.existingRows.length} tool(s) in this file already exist in the database. Nothing was imported to prevent duplicates.`, 'info');
+            } else {
+                showToast('No valid equipment rows to import.', 'warning');
+            }
             return;
         }
 
         setIsSubmitting(true);
-        const validRows = csvParsed.validRows;
+        const validRows = rowsToInsert;
 
         try {
             let { data, error } = await supabase
@@ -260,7 +273,11 @@ const AddInfrastructureModal = ({
 
             if (error) throw error;
 
-            showToast(`Successfully imported ${data.length} equipment item(s)!`, 'success');
+            const protectedCount = csvParsed.existingRows?.length || 0;
+            const successMsg = protectedCount > 0
+                ? `Successfully imported ${data.length} new equipment item(s)! (${protectedCount} existing tool(s) were protected and skipped)`
+                : `Successfully imported ${data.length} equipment item(s)!`;
+            showToast(successMsg, 'success');
             if (onSuccess) {
                 onSuccess(data);
             }
@@ -603,10 +620,15 @@ const AddInfrastructureModal = ({
                                     <span className="text-gray-600 dark:text-gray-400">
                                         Total Rows Detected: <strong>{csvParsed.totalRows}</strong>
                                     </span>
-                                    <div className="flex gap-2">
+                                    <div className="flex flex-wrap gap-2">
                                         <span className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 rounded">
-                                            Valid: {csvParsed.validRows.length}
+                                            New: {csvParsed.newRows?.length ?? csvParsed.validRows.length}
                                         </span>
+                                        {csvParsed.existingRows?.length > 0 && (
+                                            <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded flex items-center gap-1">
+                                                <Icon className="fas fa-shield-alt text-[10px]" /> Already in DB (Skipped): {csvParsed.existingRows.length}
+                                            </span>
+                                        )}
                                         {csvParsed.invalidRows.length > 0 && (
                                             <span className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-2 py-0.5 rounded">
                                                 Invalid: {csvParsed.invalidRows.length}
@@ -625,11 +647,11 @@ const AddInfrastructureModal = ({
                                                 <th className="p-2">Location</th>
                                                 <th className="p-2">Status</th>
                                                 <th className="p-2">License</th>
-                                                <th className="p-2">Validation</th>
+                                                <th className="p-2">Status / Action</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y dark:divide-gray-700">
-                                            {csvParsed.validRows.map((row, idx) => (
+                                            {(csvParsed.newRows || csvParsed.validRows).map((row, idx) => (
                                                 <tr key={`valid-${idx}`} className="hover:bg-blue-50/20">
                                                     <td className="p-2 font-medium text-gray-800 dark:text-gray-200">{row.name}</td>
                                                     <td className="p-2 text-gray-600 dark:text-gray-400">{row.category}</td>
@@ -637,7 +659,22 @@ const AddInfrastructureModal = ({
                                                     <td className="p-2"><StatusBadge status={row.status} /></td>
                                                     <td className="p-2 text-gray-600 dark:text-gray-400">{row.license_req ? 'Required' : 'None'}</td>
                                                     <td className="p-2 text-green-600 font-semibold flex items-center gap-1">
-                                                        <Icon className="fas fa-check-circle" /> Ready
+                                                        <Icon className="fas fa-check-circle" /> Ready to Add
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {csvParsed.existingRows?.map((row, idx) => (
+                                                <tr key={`existing-${idx}`} className="bg-blue-50/40 dark:bg-blue-900/10 opacity-75">
+                                                    <td className="p-2 font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                                                        <Icon className="fas fa-database text-blue-500 text-[10px]" />
+                                                        {row.name}
+                                                    </td>
+                                                    <td className="p-2 text-gray-500 dark:text-gray-400">{row.category}</td>
+                                                    <td className="p-2 text-gray-500 dark:text-gray-400">{row.location || '—'}</td>
+                                                    <td className="p-2"><StatusBadge status={row.status} /></td>
+                                                    <td className="p-2 text-gray-500 dark:text-gray-400">{row.license_req ? 'Required' : 'None'}</td>
+                                                    <td className="p-2 text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1">
+                                                        <Icon className="fas fa-shield-alt" /> In DB (Protected)
                                                     </td>
                                                 </tr>
                                             ))}
@@ -672,11 +709,11 @@ const AddInfrastructureModal = ({
                             <button
                                 type="button"
                                 onClick={handleBulkSubmit}
-                                disabled={isSubmitting || !csvParsed || csvParsed.validRows.length === 0}
+                                disabled={isSubmitting || !csvParsed || (csvParsed.newRows ? csvParsed.newRows.length === 0 : csvParsed.validRows.length === 0)}
                                 className="btn btn-primary text-sm flex items-center gap-2"
                             >
                                 {isSubmitting && <Icon className="fas fa-spinner fa-spin" />}
-                                Import {csvParsed?.validRows?.length ? `${csvParsed.validRows.length} Tool(s)` : ''}
+                                Import {(csvParsed?.newRows?.length ?? csvParsed?.validRows?.length) ? `${csvParsed?.newRows?.length ?? csvParsed.validRows.length} New Tool(s)` : ''}
                             </button>
                         </div>
                     </div>
