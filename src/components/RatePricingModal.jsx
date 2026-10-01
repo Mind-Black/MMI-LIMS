@@ -1,6 +1,7 @@
 import React from 'react';
 import Icon from './Icon';
-import RateCategoryBadge, { RATE_TIER_DETAILS } from './RateCategoryBadge';
+import RateCategoryBadge from './RateCategoryBadge';
+import { RATE_TIER_DETAILS } from '../utils/rateConstants';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 
 /**
