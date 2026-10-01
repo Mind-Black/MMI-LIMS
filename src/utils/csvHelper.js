@@ -7,6 +7,7 @@
 export const CSV_TEMPLATE_HEADERS = [
     'name',
     'category',
+    'rate_category',
     'status',
     'location',
     'license_req',
@@ -18,6 +19,7 @@ export const CSV_SAMPLE_DATA = [
     {
         name: 'Raith EBPG 5200',
         category: 'Lithography',
+        rate_category: 'D',
         status: 'up',
         location: 'Cleanroom D',
         license_req: 'true',
@@ -27,6 +29,7 @@ export const CSV_SAMPLE_DATA = [
     {
         name: 'Heidelberg DWL 2000',
         category: 'Lithography',
+        rate_category: 'C',
         status: 'up',
         location: 'Cleanroom D',
         license_req: 'true',
@@ -36,6 +39,7 @@ export const CSV_SAMPLE_DATA = [
     {
         name: 'JEOL 7800F Prime',
         category: 'Metrology',
+        rate_category: 'C',
         status: 'up',
         location: 'Analysis Lab',
         license_req: 'true',
@@ -45,6 +49,7 @@ export const CSV_SAMPLE_DATA = [
     {
         name: 'Dektak XT',
         category: 'Metrology',
+        rate_category: 'B',
         status: 'up',
         location: 'Cleanroom E',
         license_req: 'false',
@@ -54,6 +59,7 @@ export const CSV_SAMPLE_DATA = [
     {
         name: 'Oxford PlasmaPro 100',
         category: 'Etching',
+        rate_category: 'D',
         status: 'down',
         location: 'Cleanroom A',
         license_req: 'true',
@@ -193,6 +199,7 @@ function normalizeHeader(header) {
     const clean = header.toLowerCase().replace(/[\s_-]+/g, '');
     if (['name', 'toolname', 'equipmentname', 'title'].includes(clean)) return 'name';
     if (['category', 'cat', 'type', 'group'].includes(clean)) return 'category';
+    if (['ratecategory', 'rate_category', 'rate', 'rateclass', 'tier', 'ratetier', 'pricingtier', 'kainoskategorija', 'kaina'].includes(clean)) return 'rate_category';
     if (['status', 'state', 'operationalstatus'].includes(clean)) return 'status';
     if (['location', 'room', 'cleanroom', 'lab', 'bay'].includes(clean)) return 'location';
     if (['licensereq', 'licenserequired', 'license', 'needslicense', 'authorizationrequired'].includes(clean)) return 'license_req';
@@ -268,7 +275,18 @@ export function parseInfrastructureCsv(csvText, existingTools = []) {
             errors.push('Category cannot exceed 100 characters.');
         }
 
-        // 3. Status normalization & validation
+        // 3. Rate category validation (defaults to 'A' if omitted)
+        let rate_category = 'A';
+        if (rowObj.rate_category !== undefined && rowObj.rate_category !== '') {
+            const rc = String(rowObj.rate_category).toUpperCase().trim();
+            if (['A', 'B', 'C', 'D'].includes(rc)) {
+                rate_category = rc;
+            } else {
+                errors.push(`Invalid rate category "${rowObj.rate_category}". Expected A, B, C, or D.`);
+            }
+        }
+
+        // 4. Status normalization & validation
         let status = (rowObj.status || 'up').toLowerCase();
         if (status === 'available' || status === 'active' || status === 'ready') status = 'up';
         if (status === 'unavailable' || status === 'offline' || status === 'broken') status = 'down';
@@ -278,7 +296,7 @@ export function parseInfrastructureCsv(csvText, existingTools = []) {
             errors.push(`Invalid status "${rowObj.status}". Must be 'up', 'down', or 'service'.`);
         }
 
-        // 4. License requirement normalization
+        // 5. License requirement normalization
         let license_req = true;
         if (rowObj.license_req !== undefined && rowObj.license_req !== '') {
             const lStr = String(rowObj.license_req).toLowerCase().trim();
@@ -291,7 +309,7 @@ export function parseInfrastructureCsv(csvText, existingTools = []) {
             }
         }
 
-        // 5. Image URL validation
+        // 6. Image URL validation
         let image_url = rowObj.image_url ? rowObj.image_url.trim() : null;
         if (image_url && !image_url.startsWith('http://') && !image_url.startsWith('https://') && !image_url.startsWith('/')) {
             errors.push('Image URL must start with http://, https://, or /');
@@ -303,6 +321,7 @@ export function parseInfrastructureCsv(csvText, existingTools = []) {
         const cleanedRecord = {
             name,
             category,
+            rate_category,
             status,
             location,
             license_req,

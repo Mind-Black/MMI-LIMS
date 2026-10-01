@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Icon from './Icon';
 import StatusBadge from './StatusBadge';
+import RateCategoryBadge from './RateCategoryBadge';
 import { supabase } from '../supabaseClient';
 import { useToast } from '../context/useToast';
 import { downloadInfrastructureCsvTemplate } from '../utils/csvHelper';
@@ -17,6 +18,7 @@ const InfrastructureManagement = ({
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [filterCategory, setFilterCategory] = useState('All');
+    const [filterRateCategory, setFilterRateCategory] = useState('All');
     const [filterStatus, setFilterStatus] = useState('All');
     const [editingTool, setEditingTool] = useState(null);
     const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -63,14 +65,15 @@ const InfrastructureManagement = ({
         return tools.filter(tool => {
             const matchesCat = filterCategory === 'All' || tool.category === filterCategory;
             const matchesStatus = filterStatus === 'All' || tool.status === filterStatus;
+            const matchesRate = filterRateCategory === 'All' || (tool.rate_category || 'A') === filterRateCategory;
             const matchesQuery = !searchQuery.trim() ||
                 tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 String(tool.id).includes(searchQuery) ||
                 (tool.location && tool.location.toLowerCase().includes(searchQuery.toLowerCase())) ||
                 (tool.description && tool.description.toLowerCase().includes(searchQuery.toLowerCase()));
-            return matchesCat && matchesStatus && matchesQuery;
+            return matchesCat && matchesStatus && matchesRate && matchesQuery;
         });
-    }, [tools, filterCategory, filterStatus, searchQuery]);
+    }, [tools, filterCategory, filterRateCategory, filterStatus, searchQuery]);
 
     // Save edited metadata
     const handleSaveEdit = async (e) => {
@@ -81,6 +84,7 @@ const InfrastructureManagement = ({
         const updates = {
             name: editingTool.name.trim(),
             category: editingTool.category.trim(),
+            rate_category: editingTool.rate_category || 'A',
             location: editingTool.location?.trim() || null,
             license_req: Boolean(editingTool.license_req),
             description: editingTool.description?.trim() || null,
@@ -94,7 +98,7 @@ const InfrastructureManagement = ({
                 .from('tools')
                 .update(updates)
                 .eq('id', editingTool.id)
-                .select('id, name, category, status, location, license_req, description, image_url, primary_responsible_id, secondary_responsible_id')
+                .select('id, name, category, rate_category, status, location, license_req, description, image_url, primary_responsible_id, secondary_responsible_id')
                 .single();
 
             // Fallback if newly added columns not yet applied on DB
@@ -103,6 +107,7 @@ const InfrastructureManagement = ({
                 delete legacyUpdates.primary_responsible_id;
                 delete legacyUpdates.secondary_responsible_id;
                 delete legacyUpdates.image_url;
+                delete legacyUpdates.rate_category;
                 const retry = await supabase
                     .from('tools')
                     .update(legacyUpdates)
@@ -258,6 +263,18 @@ const InfrastructureManagement = ({
                         ))}
                     </select>
                     <select
+                        value={filterRateCategory}
+                        onChange={(e) => setFilterRateCategory(e.target.value)}
+                        className="select-input text-sm"
+                        aria-label="Filter by rate category"
+                    >
+                        <option value="All">All Rates (A-D)</option>
+                        <option value="A">Rate A</option>
+                        <option value="B">Rate B</option>
+                        <option value="C">Rate C</option>
+                        <option value="D">Rate D</option>
+                    </select>
+                    <select
                         value={filterStatus}
                         onChange={(e) => setFilterStatus(e.target.value)}
                         className="select-input text-sm"
@@ -279,7 +296,7 @@ const InfrastructureManagement = ({
                             <tr>
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-gray-300">ID</th>
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-gray-300">Equipment</th>
-                                <th className="p-3 text-xs font-semibold text-gray-600 dark:text-gray-300">Category</th>
+                                <th className="p-3 text-xs font-semibold text-gray-600 dark:text-gray-300">Category & Rate</th>
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-gray-300">Tool Responsible</th>
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-gray-300">Location</th>
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-gray-300">Operational Status</th>
@@ -321,9 +338,12 @@ const InfrastructureManagement = ({
                                             </div>
                                         </td>
                                         <td className="p-3">
-                                            <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded text-xs font-semibold">
-                                                {tool.category}
-                                            </span>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded text-xs font-semibold">
+                                                    {tool.category}
+                                                </span>
+                                                <RateCategoryBadge rate={tool.rate_category} />
+                                            </div>
                                         </td>
                                         <td className="p-3 text-xs">
                                             <div className="font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-1">
@@ -429,7 +449,7 @@ const InfrastructureManagement = ({
                                     className="input-field text-sm"
                                 />
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div>
                                     <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase mb-1">
                                         Category
@@ -441,6 +461,22 @@ const InfrastructureManagement = ({
                                         onChange={(e) => setEditingTool({ ...editingTool, category: e.target.value })}
                                         className="input-field text-sm"
                                     />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase mb-1 flex items-center justify-between">
+                                        <span>Rate</span>
+                                        <RateCategoryBadge rate={editingTool.rate_category || 'A'} size="xs" />
+                                    </label>
+                                    <select
+                                        value={editingTool.rate_category || 'A'}
+                                        onChange={(e) => setEditingTool({ ...editingTool, rate_category: e.target.value })}
+                                        className="select-input text-sm"
+                                    >
+                                        <option value="A">Category A</option>
+                                        <option value="B">Category B</option>
+                                        <option value="C">Category C</option>
+                                        <option value="D">Category D</option>
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase mb-1">

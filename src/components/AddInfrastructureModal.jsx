@@ -5,6 +5,7 @@ import { useToast } from '../context/useToast';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 import { downloadInfrastructureCsvTemplate, parseInfrastructureCsv } from '../utils/csvHelper';
 import StatusBadge from './StatusBadge';
+import RateCategoryBadge from './RateCategoryBadge';
 
 const AddInfrastructureModal = ({
     isOpen,
@@ -37,6 +38,7 @@ const AddInfrastructureModal = ({
         name: '',
         category: '',
         customCategory: '',
+        rate_category: 'A',
         location: '',
         status: 'up',
         license_req: true,
@@ -133,6 +135,7 @@ const AddInfrastructureModal = ({
         const payload = {
             name: formData.name.trim(),
             category: resolvedCategory,
+            rate_category: formData.rate_category || 'A',
             location: formData.location.trim() || null,
             status: formData.status,
             license_req: Boolean(formData.license_req),
@@ -143,19 +146,20 @@ const AddInfrastructureModal = ({
         };
 
         try {
-            // Attempt insertion with responsible IDs and image_url
+            // Attempt insertion with responsible IDs, rate_category, and image_url
             let { data, error } = await supabase
                 .from('tools')
                 .insert([payload])
-                .select('id, name, category, status, location, license_req, description, image_url, primary_responsible_id, secondary_responsible_id')
+                .select('id, name, category, rate_category, status, location, license_req, description, image_url, primary_responsible_id, secondary_responsible_id')
                 .single();
 
-            // Backward compatibility fallback: if responsible columns or image_url don't exist yet on DB
+            // Backward compatibility fallback: if new columns don't exist yet on DB
             if (error && error.message) {
                 const legacyPayload = { ...payload };
                 delete legacyPayload.primary_responsible_id;
                 delete legacyPayload.secondary_responsible_id;
                 delete legacyPayload.image_url;
+                delete legacyPayload.rate_category;
                 const retry = await supabase
                     .from('tools')
                     .insert([legacyPayload])
@@ -254,13 +258,14 @@ const AddInfrastructureModal = ({
             let { data, error } = await supabase
                 .from('tools')
                 .insert(validRows)
-                .select('id, name, category, status, location, license_req, description, image_url');
+                .select('id, name, category, rate_category, status, location, license_req, description, image_url');
 
-            // Fallback if image_url column not yet applied on target DB
-            if (error && error.message && error.message.includes('image_url')) {
+            // Fallback if rate_category or image_url column not yet applied on target DB
+            if (error && error.message && (error.message.includes('image_url') || error.message.includes('rate_category'))) {
                 const legacyRows = validRows.map(r => {
                     const rowCopy = { ...r };
                     delete rowCopy.image_url;
+                    delete rowCopy.rate_category;
                     return rowCopy;
                 });
                 const retry = await supabase
@@ -435,6 +440,25 @@ const AddInfrastructureModal = ({
                                     <option value="up">Available (Up)</option>
                                     <option value="service">Under Maintenance (Service)</option>
                                     <option value="down">Unavailable (Down)</option>
+                                </select>
+                            </div>
+
+                            {/* Rate Category */}
+                            <div>
+                                <label htmlFor="infra-rate-category" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center justify-between">
+                                    <span>Rate Category</span>
+                                    <RateCategoryBadge rate={formData.rate_category} size="xs" />
+                                </label>
+                                <select
+                                    id="infra-rate-category"
+                                    value={formData.rate_category}
+                                    onChange={(e) => handleInputChange('rate_category', e.target.value)}
+                                    className="select-input"
+                                >
+                                    <option value="A">Category A (Cheapest / Basic)</option>
+                                    <option value="B">Category B (Standard)</option>
+                                    <option value="C">Category C (Advanced)</option>
+                                    <option value="D">Category D (Highest / Complex)</option>
                                 </select>
                             </div>
 
@@ -644,6 +668,7 @@ const AddInfrastructureModal = ({
                                             <tr>
                                                 <th className="p-2">Name</th>
                                                 <th className="p-2">Category</th>
+                                                <th className="p-2">Rate</th>
                                                 <th className="p-2">Location</th>
                                                 <th className="p-2">Status</th>
                                                 <th className="p-2">License</th>
@@ -655,6 +680,7 @@ const AddInfrastructureModal = ({
                                                 <tr key={`valid-${idx}`} className="hover:bg-blue-50/20">
                                                     <td className="p-2 font-medium text-gray-800 dark:text-gray-200">{row.name}</td>
                                                     <td className="p-2 text-gray-600 dark:text-gray-400">{row.category}</td>
+                                                    <td className="p-2"><RateCategoryBadge rate={row.rate_category} /></td>
                                                     <td className="p-2 text-gray-500 dark:text-gray-400">{row.location || '—'}</td>
                                                     <td className="p-2"><StatusBadge status={row.status} /></td>
                                                     <td className="p-2 text-gray-600 dark:text-gray-400">{row.license_req ? 'Required' : 'None'}</td>
@@ -670,6 +696,7 @@ const AddInfrastructureModal = ({
                                                         {row.name}
                                                     </td>
                                                     <td className="p-2 text-gray-500 dark:text-gray-400">{row.category}</td>
+                                                    <td className="p-2"><RateCategoryBadge rate={row.rate_category} /></td>
                                                     <td className="p-2 text-gray-500 dark:text-gray-400">{row.location || '—'}</td>
                                                     <td className="p-2"><StatusBadge status={row.status} /></td>
                                                     <td className="p-2 text-gray-500 dark:text-gray-400">{row.license_req ? 'Required' : 'None'}</td>
@@ -682,6 +709,7 @@ const AddInfrastructureModal = ({
                                                 <tr key={`invalid-${idx}`} className="bg-red-50/50 dark:bg-red-900/10">
                                                     <td className="p-2 font-medium text-red-900 dark:text-red-200">{inv.data.name || '(Empty name)'}</td>
                                                     <td className="p-2 text-gray-600 dark:text-gray-400">{inv.data.category || '(Empty)'}</td>
+                                                    <td className="p-2"><RateCategoryBadge rate={inv.data.rate_category} /></td>
                                                     <td className="p-2 text-gray-500 dark:text-gray-400">{inv.data.location || '—'}</td>
                                                     <td className="p-2">{inv.data.status}</td>
                                                     <td className="p-2">{String(inv.data.license_req)}</td>

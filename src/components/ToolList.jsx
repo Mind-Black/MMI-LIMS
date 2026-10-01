@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import Icon from './Icon';
 import StatusBadge from './StatusBadge';
+import RateCategoryBadge from './RateCategoryBadge';
 import {
     getToolAccessLevel,
     isToolResponsibleUser,
@@ -241,10 +242,11 @@ const ToolGridCard = ({
             {/* Card Media Header */}
             <div className="relative">
                 <ToolImage tool={tool} className="w-full h-44" rounded="rounded-t-lg" />
-                <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 flex-wrap">
                     <span className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xs text-blue-700 dark:text-blue-300 font-semibold px-2 py-0.5 rounded text-xs shadow-xs">
                         {tool.category}
                     </span>
+                    <RateCategoryBadge rate={tool.rate_category} />
                     <span className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xs text-gray-600 dark:text-gray-300 font-mono text-xs px-1.5 py-0.5 rounded shadow-xs">
                         #{tool.id}
                     </span>
@@ -422,7 +424,11 @@ const ToolTable = ({
                                             </span>
                                         )}
                                     </div>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400">{tool.category} · ID {tool.id} {tool.location ? `· ${tool.location}` : ''}</p>
+                                    <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1.5 flex-wrap mt-0.5">
+                                        <span>{tool.category}</span>
+                                        <RateCategoryBadge rate={tool.rate_category} size="xs" />
+                                        <span>· ID {tool.id} {tool.location ? `· ${tool.location}` : ''}</span>
+                                    </div>
                                 </div>
                                 <StatusBadge status={tool.status} />
                             </div>
@@ -572,7 +578,7 @@ const ToolTable = ({
                         <tr>
                             <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">ID</th>
                             <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">Equipment</th>
-                            <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">Category</th>
+                            <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">Category & Rate</th>
                             <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">Tool Responsible</th>
                             <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">Status</th>
                             <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">Access Level</th>
@@ -615,9 +621,12 @@ const ToolTable = ({
                                             </div>
                                         </td>
                                         <td className="p-3">
-                                            <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-1 rounded text-xs font-semibold">
-                                                {tool.category}
-                                            </span>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-1 rounded text-xs font-semibold">
+                                                    {tool.category}
+                                                </span>
+                                                <RateCategoryBadge rate={tool.rate_category} />
+                                            </div>
                                         </td>
                                         <td className="p-3">
                                             <ToolResponsibleBadge responsible={tool.primary_responsible} />
@@ -692,10 +701,16 @@ const ToolTable = ({
                                                             </p>
                                                         </div>
 
-                                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                                                             <div>
                                                                 <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Category</div>
                                                                 <div className="text-sm text-gray-800 dark:text-gray-200 font-medium">{tool.category}</div>
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Rate Category</div>
+                                                                <div className="text-sm text-gray-800 dark:text-gray-200 font-medium flex items-center gap-1.5">
+                                                                    <RateCategoryBadge rate={tool.rate_category} />
+                                                                </div>
                                                             </div>
                                                             <div>
                                                                 <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Location</div>
@@ -774,6 +789,7 @@ const ToolList = ({
     onRejectBooking
 }) => {
     const [filterCategory, setFilterCategory] = useState('All');
+    const [filterRateCategory, setFilterRateCategory] = useState('All');
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedToolId, setExpandedToolId] = useState(null);
     const [viewMode, setViewMode] = useState(() => {
@@ -823,10 +839,11 @@ const ToolList = ({
 
     const filteredTools = tools.filter(t => {
         const matchesCategory = filterCategory === 'All' || t.category === filterCategory;
+        const matchesRate = filterRateCategory === 'All' || (t.rate_category || 'A') === filterRateCategory;
         const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             t.id.toString().includes(searchQuery) ||
             (t.description && t.description.toLowerCase().includes(searchQuery.toLowerCase()));
-        return matchesCategory && matchesSearch;
+        return matchesCategory && matchesRate && matchesSearch;
     });
 
     const isAuthorized = (t) => {
@@ -936,6 +953,36 @@ const ToolList = ({
                             >
                                 <span>{c}</span>
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
+                                    {count}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {/* Horizontal Rate Category Filter Chips */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin border-t dark:border-gray-700/60 pt-2.5">
+                    <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 mr-1 shrink-0">Rate:</span>
+                    {['All', 'A', 'B', 'C', 'D'].map(rate => {
+                        const count = rate === 'All'
+                            ? (filterCategory === 'All' ? tools.length : tools.filter(t => t.category === filterCategory).length)
+                            : (filterCategory === 'All'
+                                ? tools.filter(t => (t.rate_category || 'A') === rate).length
+                                : tools.filter(t => t.category === filterCategory && (t.rate_category || 'A') === rate).length);
+                        const isSelected = filterRateCategory === rate;
+                        return (
+                            <button
+                                key={rate}
+                                type="button"
+                                onClick={() => setFilterRateCategory(rate)}
+                                className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                    isSelected
+                                        ? 'bg-blue-600 text-white shadow-xs'
+                                        : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                                }`}
+                            >
+                                <span>{rate === 'All' ? 'All Rates' : `Rate ${rate}`}</span>
+                                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
                                     {count}
                                 </span>
                             </button>

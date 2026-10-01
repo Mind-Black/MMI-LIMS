@@ -21,7 +21,7 @@ test('generateInfrastructureCsvTemplate: contains standard headers and sample da
     const template = generateInfrastructureCsvTemplate();
     const lines = template.split('\r\n');
     assert.ok(lines.length >= 6);
-    assert.equal(lines[0], 'name,category,status,location,license_req,description,image_url');
+    assert.equal(lines[0], 'name,category,rate_category,status,location,license_req,description,image_url');
     assert.ok(lines.some(l => l.includes('Raith EBPG 5200')));
     assert.ok(lines.some(l => l.includes('Dektak XT')));
 });
@@ -46,12 +46,14 @@ test('parseInfrastructureCsv: parses valid template CSV accurately', () => {
     const raith = result.validRows.find(r => r.name === 'Raith EBPG 5200');
     assert.ok(raith);
     assert.equal(raith.category, 'Lithography');
+    assert.equal(raith.rate_category, 'D');
     assert.equal(raith.status, 'up');
     assert.equal(raith.location, 'Cleanroom D');
     assert.equal(raith.license_req, true);
 
     const dektak = result.validRows.find(r => r.name === 'Dektak XT');
     assert.ok(dektak);
+    assert.equal(dektak.rate_category, 'B');
     assert.equal(dektak.license_req, false);
 });
 
@@ -131,4 +133,36 @@ SEM: FEI Quanta 200 FEG,Microscopy,up,Room A115,true,Existing SEM,
     assert.equal(result.existingRows.length, 2);
     assert.ok(result.existingRows.some(r => r.name === 'EBL: Raith e-Line Plus'));
     assert.ok(result.existingRows.some(r => r.name === 'SEM: FEI Quanta 200 FEG'));
+});
+
+test('parseInfrastructureCsv: handles rate_category defaults, case normalization, and invalid validation', () => {
+    const csvContent = `name,category,rate_category,status
+Tool Alpha,Deposition,A,up
+Tool Beta,Deposition,b,up
+Tool Gamma,Deposition,c,up
+Tool Delta,Deposition,D,up
+Tool Default,Deposition,,up
+Tool BadRate,Deposition,Z,up
+`;
+    const result = parseInfrastructureCsv(csvContent);
+
+    assert.equal(result.totalRows, 6);
+    assert.equal(result.validRows.length, 5);
+    assert.equal(result.invalidRows.length, 1);
+
+    const alpha = result.validRows.find(r => r.name === 'Tool Alpha');
+    const beta = result.validRows.find(r => r.name === 'Tool Beta');
+    const gamma = result.validRows.find(r => r.name === 'Tool Gamma');
+    const delta = result.validRows.find(r => r.name === 'Tool Delta');
+    const def = result.validRows.find(r => r.name === 'Tool Default');
+
+    assert.equal(alpha.rate_category, 'A');
+    assert.equal(beta.rate_category, 'B'); // normalized from 'b'
+    assert.equal(gamma.rate_category, 'C'); // normalized from 'c'
+    assert.equal(delta.rate_category, 'D');
+    assert.equal(def.rate_category, 'A'); // defaulted to 'A' when omitted/empty
+
+    const bad = result.invalidRows[0];
+    assert.equal(bad.data.name, 'Tool BadRate');
+    assert.ok(bad.errors.some(e => e.includes('Invalid rate category')));
 });

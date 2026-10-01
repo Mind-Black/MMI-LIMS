@@ -158,6 +158,29 @@ def clean_equipment_name(inv, name_en, name_lt):
         name = name[:97] + '...'
     return name
 
+def assign_rate_category(raw_rates):
+    """
+    Assigns rate category from A to D based on the tool hourly rates:
+    - Tier A (Cheapest): External <= 10 €/h (e.g. 7.44 €/h)
+    - Tier B (Moderate): External 12 - 25 €/h (e.g. 12.50 - 19.01 €/h)
+    - Tier C (High): External 26 - 40 €/h (e.g. 35.12 €/h)
+    - Tier D (Premium): External > 40 €/h (e.g. 48.76 €/h)
+    Defaults to 'A' if unspecified.
+    """
+    if not raw_rates:
+        return 'A'
+    m_iso = re.search(r'Isores:\s*([\d\.]+)', raw_rates)
+    if m_iso:
+        iso = float(m_iso.group(1))
+        if iso >= 45.0:
+            return 'D'
+        if iso >= 30.0:
+            return 'C'
+        if iso >= 12.0:
+            return 'B'
+        return 'A'
+    return 'A'
+
 # Short, curated description notes for every MMI equipment item based on web search and technical specs.
 # Excludes all personal names; focuses on instrument model capabilities, principles, and applications.
 TOOL_DESCRIPTION_NOTES = {
@@ -316,9 +339,11 @@ def main():
         raw_desc_en = clean_text(r[8]) if len(r) > 8 else ''
         raw_lab = clean_text(r[16]) if len(r) > 16 else ''
         raw_patalpa = clean_text(r[18]) if len(r) > 18 else ''
+        raw_rates = clean_text(r[19]) if len(r) > 19 else ''
 
         name = clean_equipment_name(inv, raw_name_en, raw_name_lt)
         category = assign_category(inv, raw_name_en, raw_name_lt, raw_desc_en)
+        rate_category = assign_rate_category(raw_rates)
         status = 'up'  # All active research tools
         location = parse_room(raw_patalpa, raw_lab)
         
@@ -331,6 +356,7 @@ def main():
         # Quality assertions
         assert 2 <= len(name) <= 100, f'Row {idx}: Name length {len(name)} invalid: {name}'
         assert len(category) > 0, f'Row {idx}: Missing category'
+        assert rate_category in ('A', 'B', 'C', 'D'), f'Row {idx}: Invalid rate_category {rate_category}'
         assert status in ('up', 'down', 'service'), f'Row {idx}: Invalid status {status}'
         assert license_req in ('true', 'false'), f'Row {idx}: Invalid license_req {license_req}'
         assert len(description) > 0, f'Row {idx}: Missing description'
@@ -340,6 +366,7 @@ def main():
         record = {
             'name': name,
             'category': category,
+            'rate_category': rate_category,
             'status': status,
             'location': location,
             'license_req': license_req,
@@ -348,11 +375,11 @@ def main():
         }
 
         if is_already_in_database(inv, raw_name_en, raw_name_lt):
-            existing_preserved.append((inv, name, category))
+            existing_preserved.append((inv, name, category, rate_category))
         else:
             new_records.append(record)
 
-    fieldnames = ['name', 'category', 'status', 'location', 'license_req', 'description', 'image_url']
+    fieldnames = ['name', 'category', 'rate_category', 'status', 'location', 'license_req', 'description', 'image_url']
     
     # 1. Primary Import File (New tools only - will not duplicate or overwrite existing database tools)
     with open(OUTPUT_FILE, 'w', encoding='utf-8', newline='') as f:
@@ -370,9 +397,11 @@ def main():
     for r in mmi_rows:
         inv = clean_text(r[11])
         name = clean_equipment_name(inv, clean_text(r[6]), clean_text(r[0]))
+        r_rates = clean_text(r[19]) if len(r) > 19 else ''
         all_records.append({
             'name': name,
             'category': assign_category(inv, clean_text(r[6]), clean_text(r[0]), clean_text(r[8])),
+            'rate_category': assign_rate_category(r_rates),
             'status': 'up',
             'location': parse_room(clean_text(r[18]), clean_text(r[16])),
             'license_req': 'false' if is_passive_tool(inv, clean_text(r[6]), clean_text(r[0])) else 'true',
@@ -392,8 +421,8 @@ def main():
     
     print(f'\n--- DATABASE OVERWRITE PROTECTION ---')
     print(f'Preserved existing tools in database ({len(existing_preserved)}):')
-    for inv, name, cat in existing_preserved:
-        print(f'  [PROTECTED / EXCLUDED] Inv: {inv} | \"{name}\" [{cat}]')
+    for inv, name, cat, rc in existing_preserved:
+        print(f'  [PROTECTED / EXCLUDED] Inv: {inv} | \"{name}\" [{cat}] (Rate: {rc})')
 
     print(f'\nSuccessfully generated primary import CSV (new tools only): {OUTPUT_FILE}')
     print(f'Total new tools to be imported: {len(new_records)}')

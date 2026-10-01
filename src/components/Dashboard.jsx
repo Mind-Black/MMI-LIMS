@@ -172,7 +172,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
 
             const fetchToolsQuery = async () => {
                 let res = await supabase.from('tools').select(`
-                    id, name, category, status, location, license_req, description, image_url,
+                    id, name, category, rate_category, status, location, license_req, description, image_url,
                     primary_responsible_id, secondary_responsible_id,
                     primary_responsible:primary_responsible_id(id, first_name, last_name, email, phone, job_title),
                     secondary_responsible:secondary_responsible_id(id, first_name, last_name, email, phone, job_title)
@@ -180,11 +180,11 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
 
                 if (res.error) {
                     let fallback = await supabase.from('tools')
-                        .select('id, name, category, status, location, license_req, description, image_url, primary_responsible_id, secondary_responsible_id')
+                        .select('id, name, category, rate_category, status, location, license_req, description, image_url, primary_responsible_id, secondary_responsible_id')
                         .order('id');
                     if (fallback.error) {
                         fallback = await supabase.from('tools')
-                            .select('id, name, category, status, location, license_req, description, image_url')
+                            .select('id, name, category, rate_category, status, location, license_req, description, image_url')
                             .order('id');
                     }
                     if (fallback.error) {
