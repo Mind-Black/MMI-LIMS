@@ -977,7 +977,7 @@ const BookingModal = ({
 
                     {/* Selected Summary Card */}
                     {selectedSlots.length > 0 && !editingBooking && (
-                        <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800/50 rounded-lg p-2.5 flex items-center justify-between text-xs text-blue-900 dark:text-blue-200 animate-fadeIn">
+                        <div className="bg-blue-50 dark:bg-blue-950/60 border border-blue-300 dark:border-blue-700/80 rounded-lg p-2.5 flex items-center justify-between text-xs text-blue-950 dark:text-blue-100 shadow-2xs animate-fadeIn">
                             <div className="flex items-center gap-2">
                                 <Icon className="fas fa-check-circle text-blue-600 dark:text-blue-400 text-sm" />
                                 <div>
@@ -992,7 +992,7 @@ const BookingModal = ({
                             <button
                                 type="button"
                                 onClick={() => setSelectedSlots([])}
-                                className="text-blue-600 dark:text-blue-400 hover:underline font-semibold text-xs ml-2 cursor-pointer"
+                                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 hover:underline font-semibold text-xs ml-2 cursor-pointer"
                             >
                                 Clear
                             </button>
@@ -1013,7 +1013,7 @@ const BookingModal = ({
                             </div>
                             <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400">
                                 <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Free</span>
-                                <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-600"></span> Selected</span>
+                                <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400"></span> Selected</span>
                                 <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-400"></span> Busy</span>
                             </div>
                         </div>
@@ -1035,7 +1035,7 @@ const BookingModal = ({
 
                                 let chipStyle = "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/40 hover:bg-emerald-100 cursor-pointer";
                                 if (isSelected) {
-                                    chipStyle = "bg-blue-600 text-white border-blue-700 font-bold shadow-xs cursor-pointer";
+                                    chipStyle = "bg-blue-600 dark:bg-blue-500 text-white border-blue-700 dark:border-blue-300 font-bold shadow-xs cursor-pointer ring-2 ring-blue-500/40 dark:ring-blue-400/60";
                                 } else if (isBooked) {
                                     chipStyle = isOwnBooking
                                         ? "bg-blue-100 dark:bg-blue-900/40 text-blue-900 dark:text-blue-200 border-blue-300 dark:border-blue-700 opacity-80 cursor-not-allowed"
@@ -1072,7 +1072,7 @@ const BookingModal = ({
                 <div ref={scrollContainerRef} className="hidden md:flex flex-1 overflow-y-auto relative select-none flex-col bg-white dark:bg-gray-800 transition-colors" aria-label="Visual week calendar; use the form above for keyboard booking">
                     {/* Live Drag/Selection Duration Tooltip Badge */}
                     {selectedSlots.length > 0 && (
-                        <div className="sticky top-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none self-center bg-blue-600 text-white text-xs font-semibold px-3.5 py-1.5 rounded-full shadow-lg backdrop-blur-xs flex items-center gap-2 animate-fadeIn">
+                        <div className="sticky top-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none self-center bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold px-3.5 py-1.5 rounded-full shadow-lg border border-blue-400/30 dark:border-blue-300/40 backdrop-blur-xs flex items-center gap-2 animate-fadeIn">
                             <Icon className="fas fa-clock text-[11px]" />
                             <span>
                                 {selectedSlots[0].time} – {getNextSlotTime(selectedSlots[selectedSlots.length - 1].time)}
@@ -1140,6 +1140,8 @@ const BookingModal = ({
                                                 const isBooked = isSlotBooked(dateStr, time);
                                                 const isPast = pastSlots.has(`${dateStr}:${time}`);
                                                 const isSelected = selectedSlotKeys.has(`${dateStr}:${time}`);
+                                                const isPrevSelected = isSelected && timeIdx > 0 && selectedSlotKeys.has(`${dateStr}:${timeSlots[timeIdx - 1]}`);
+                                                const isNextSelected = isSelected && timeIdx < timeSlots.length - 1 && selectedSlotKeys.has(`${dateStr}:${timeSlots[timeIdx + 1]}`);
 
                                                 return (
                                                     <div
@@ -1150,13 +1152,54 @@ const BookingModal = ({
                                                         onMouseEnter={() => handleMouseEnter(dateStr, timeIdx)}
                                                         onTouchStart={(e) => handleGridTouchStart(e, dateStr, timeIdx)}
                                                         onTouchEnd={handleGridTouchEnd}
-                                                        className={`h-12 border-b dark:border-gray-700/50 transition-colors cursor-pointer
-                                                            ${time.endsWith(':00') ? 'border-b-gray-200 dark:border-b-gray-700' : 'border-b-gray-100 dark:border-b-gray-800/40'}
-                                                            ${isBooked ? 'bg-stripes-gray cursor-not-allowed opacity-40' : ''}
-                                                            ${isPast && !isAdminOverride ? 'bg-gray-50/80 dark:bg-gray-800/40 cursor-not-allowed text-gray-300' : 'hover:bg-blue-50/30 dark:hover:bg-blue-900/10'}
-                                                            ${isSelected ? 'bg-blue-200 dark:bg-blue-800/80 !opacity-100' : ''}
+                                                        className={`h-12 transition-colors cursor-pointer relative
+                                                            ${isSelected
+                                                                ? `z-[5] bg-blue-500/20 dark:bg-blue-500/35 border-l-4 border-l-blue-600 dark:border-l-blue-400 border-r-2 border-r-blue-600 dark:border-r-blue-400 hover:bg-blue-500/30 dark:hover:bg-blue-500/45 !opacity-100 ${
+                                                                    !isPrevSelected ? 'border-t-2 border-t-blue-600 dark:border-t-blue-400 rounded-t-md' : ''
+                                                                } ${
+                                                                    !isNextSelected ? 'border-b-2 border-b-blue-600 dark:border-b-blue-400 rounded-b-md shadow-xs' : 'border-b border-b-blue-300/80 dark:border-b-blue-500/50 border-dashed'
+                                                                }`
+                                                                : `border-b dark:border-gray-700/50 ${
+                                                                    time.endsWith(':00') ? 'border-b-gray-200 dark:border-b-gray-700' : 'border-b-gray-100 dark:border-b-gray-800/40'
+                                                                } ${
+                                                                    isBooked ? 'bg-stripes-gray cursor-not-allowed opacity-40' : ''
+                                                                } ${
+                                                                    isPast && !isAdminOverride ? 'bg-gray-50/80 dark:bg-gray-800/40 cursor-not-allowed text-gray-300 dark:text-gray-600' : 'hover:bg-blue-50/30 dark:hover:bg-blue-900/10'
+                                                                }`
+                                                            }
                                                         `}
-                                                    ></div>
+                                                    >
+                                                        {isSelected && (
+                                                            <div className="h-full w-full flex flex-col justify-center px-2 pointer-events-none select-none overflow-hidden">
+                                                                {!isPrevSelected ? (
+                                                                    <div className="flex items-center justify-between gap-1">
+                                                                        <span className="text-[11px] font-bold text-blue-950 dark:text-blue-100 flex items-center gap-1.5 truncate">
+                                                                            <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400 shrink-0"></span>
+                                                                            <span className="truncate">{time}</span>
+                                                                        </span>
+                                                                        {!isNextSelected && (
+                                                                            <span className="text-[10px] font-bold text-blue-800 dark:text-blue-200 shrink-0">
+                                                                                {getNextSlotTime(time)}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                ) : !isNextSelected ? (
+                                                                    <div className="flex items-center justify-between gap-1">
+                                                                        <span className="text-[10px] font-medium text-blue-900 dark:text-blue-200 truncate">
+                                                                            {time}
+                                                                        </span>
+                                                                        <span className="text-[10px] font-bold text-blue-950 dark:text-blue-100 shrink-0">
+                                                                            Until {getNextSlotTime(time)}
+                                                                        </span>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="text-[10px] font-medium text-blue-800/80 dark:text-blue-200/80 truncate">
+                                                                        {time}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 );
                                             })}
 
@@ -1242,10 +1285,10 @@ const BookingModal = ({
                                             {/* Interaction Ghost */}
                                             {isTargetDay && (
                                                 <div
-                                                    className={`absolute border border-dashed rounded p-1 text-xs overflow-hidden z-50 opacity-80 pointer-events-none
+                                                    className={`absolute border border-dashed rounded p-1 text-xs overflow-hidden z-50 opacity-90 pointer-events-none shadow-md
                                                         ${interaction.isValid
-                                                            ? 'bg-blue-200 border-blue-500'
-                                                            : 'bg-red-200 border-red-500'
+                                                            ? 'bg-blue-100 dark:bg-blue-900/80 border-blue-500 dark:border-blue-400 text-blue-900 dark:text-blue-100'
+                                                            : 'bg-red-100 dark:bg-red-900/80 border-red-500 dark:border-red-400 text-red-900 dark:text-red-100'
                                                         }`}
                                                     style={{
                                                         top: `${interaction.currentTop}px`,
@@ -1254,10 +1297,10 @@ const BookingModal = ({
                                                         right: '2px'
                                                     }}
                                                 >
-                                                    <div className={`font-bold truncate ${interaction.isValid ? 'text-blue-900' : 'text-red-900'}`}>
+                                                    <div className={`font-bold truncate ${interaction.isValid ? 'text-blue-900 dark:text-blue-100' : 'text-red-900 dark:text-red-100'}`}>
                                                         {interactingBooking.user_name}
                                                     </div>
-                                                    <div className={`truncate text-[10px] ${interaction.isValid ? 'text-blue-700' : 'text-red-700'}`}>
+                                                    <div className={`truncate text-[10px] ${interaction.isValid ? 'text-blue-700 dark:text-blue-300' : 'text-red-700 dark:text-red-300'}`}>
                                                         {interactingBooking.project}
                                                     </div>
                                                 </div>
@@ -1273,10 +1316,10 @@ const BookingModal = ({
                 {/* Footer */}
                 <div className="p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col-reverse sm:flex-row justify-end gap-3 shrink-0 z-30 transition-colors">
                     <div className="mr-auto hidden md:flex flex-wrap items-center gap-4 text-sm mb-2 sm:mb-0 text-gray-600 dark:text-gray-400">
-                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-white dark:bg-gray-800 border dark:border-gray-600"></div> Available</div>
-                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-blue-200 dark:bg-blue-800 rounded"></div> Selected</div>
-                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-blue-100 dark:bg-blue-900/60 border border-blue-300 dark:border-blue-700 rounded"></div> My Booking</div>
-                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"></div> Other's Booking</div>
+                        <div className="flex items-center gap-1.5"><div className="w-4 h-4 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded"></div> Available</div>
+                        <div className="flex items-center gap-1.5"><div className="w-4 h-4 bg-blue-500/25 dark:bg-blue-500/35 border-2 border-l-4 border-blue-600 dark:border-blue-400 rounded"></div> Selected</div>
+                        <div className="flex items-center gap-1.5"><div className="w-4 h-4 bg-blue-100 dark:bg-blue-900/60 border border-blue-300 dark:border-blue-700 rounded"></div> My Booking</div>
+                        <div className="flex items-center gap-1.5"><div className="w-4 h-4 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"></div> Other's Booking</div>
                     </div>
 
                     <button onClick={onClose} className="btn btn-secondary">Cancel</button>

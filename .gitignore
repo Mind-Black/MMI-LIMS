@@ -30,3 +30,6 @@ sql_archive
 
 # Supabase CLI temp files
 supabase/.temp/
+
+# Infrastructure import data
+infrastructure_mmi/
