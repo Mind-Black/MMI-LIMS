@@ -28,7 +28,7 @@ export const RateCategoryBadge = ({ rate, className = "", size = "sm" }) => {
     return (
         <span
             className={`inline-flex items-center justify-center font-bold rounded border shadow-xs select-none ${sizeClass} ${colorClasses} ${className}`}
-            title={`Rate ${r}: External ${details.external} | KTU ${details.ktu} | Dept ${details.dept}`}
+            title={`Rate ${r}: External ${details.external} | KTU ${details.ktu} | Dept ${details.dept} (hourly, excl. VAT)`}
         >
             {r}
         </span>

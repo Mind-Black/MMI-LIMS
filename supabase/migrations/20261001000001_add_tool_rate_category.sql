@@ -30,21 +30,21 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_tools_rate_category ON public.tools(rate_category);
 
 -- 4. Backfill existing 7 database tools with their respective rate categories
--- Tier B (Moderate: ~19.01 €/h external, 10.50 €/h KTU, 0.05 €/h dept):
+-- Tier B (Standard: 38.02 €/h external, 21.00 €/h KTU, 0.10 €/h dept, hourly excl. VAT):
 UPDATE public.tools
 SET rate_category = 'B'
 WHERE lower(name) LIKE '%sputter%lh a700%'
    OR lower(name) LIKE '%cubivap%'
    OR lower(name) LIKE '%renishaw%invia%';
 
--- Tier C (High: ~35.12 €/h external, 21.00 €/h KTU, 0.11 €/h dept):
+-- Tier C (Advanced: 70.24 €/h external, 42.00 €/h KTU, 0.22 €/h dept, hourly excl. VAT):
 UPDATE public.tools
 SET rate_category = 'C'
 WHERE lower(name) LIKE '%femtolab%'
    OR lower(name) LIKE '%quanta 200%'
    OR lower(name) LIKE '%universal optical spectroscopy%';
 
--- Tier D (Premium: ~48.76 €/h external, 28.50 €/h KTU, 0.14 €/h dept):
+-- Tier D (Premium: 97.52 €/h external, 57.00 €/h KTU, 0.28 €/h dept, hourly excl. VAT):
 UPDATE public.tools
 SET rate_category = 'D'
 WHERE lower(name) LIKE '%raith%e-line%'

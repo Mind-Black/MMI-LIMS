@@ -266,13 +266,21 @@ def build_tool_description(row):
     """
     Constructs clean, professional tool description containing:
     1. Short description note summarizing instrument capabilities and applications.
-    2. Tool hourly rates (Department, KTU, External).
+    2. Tool hourly rates (Department, KTU, External) converted from raw 30-min ledger rates (x2, excl. VAT).
     Strictly excludes any personal names, responsible persons, and inventory numbers.
     """
     inv = clean_text(row[11])
     raw_name_en = clean_text(row[6]) if len(row) > 6 else ''
     raw_name_lt = clean_text(row[0]) if len(row) > 0 else ''
     raw_rates = clean_text(row[19]) if len(row) > 19 else ''
+    
+    # Explicit override protections if source raw data is unpatched:
+    # 1. Langmuir-Blodgett trough Dept rate normalized to 0.02 (30 min)
+    if inv == 'KT1002057M':
+        raw_rates = 'Isores: 7.44 Padaliniui: 0.02 KTU Padaliniams: 4.00'
+    # 2. Atomic Absorption Spectrometer normalized to standard Tier B rates
+    elif inv == 'KT1099903M':
+        raw_rates = 'Isores: 19.01 Padaliniui: 0.05 KTU Padaliniams: 10.50'
     
     # 1. Retrieve curated short description note
     note = TOOL_DESCRIPTION_NOTES.get(inv)
@@ -287,7 +295,7 @@ def build_tool_description(row):
     note = re.sub(r'KT\d+[A-Za-z0-9_-]*', '', note)
     note = re.sub(r'Inv\.?\s*(No\.?)?:?\s*', '', note, flags=re.IGNORECASE).strip()
     
-    # 2. Format hourly rates nicely
+    # 2. Format hourly rates (rates in raw CSV are 30 min, excl. VAT -> multiplied by 2 for hourly)
     rates_formatted = ''
     if raw_rates:
         m_iso = re.search(r'Isores:\s*([\d\.]+)', raw_rates)
@@ -295,18 +303,21 @@ def build_tool_description(row):
         m_ktu = re.search(r'KTU Padaliniams:\s*([\d\.]+)', raw_rates)
         rate_tokens = []
         if m_pad:
-            rate_tokens.append(f'Department: {m_pad.group(1)} €/h')
+            hourly_pad = float(m_pad.group(1)) * 2.0
+            rate_tokens.append(f'Department: {hourly_pad:.2f} €/h')
         if m_ktu:
-            rate_tokens.append(f'KTU: {m_ktu.group(1)} €/h')
+            hourly_ktu = float(m_ktu.group(1)) * 2.0
+            rate_tokens.append(f'KTU: {hourly_ktu:.2f} €/h')
         if m_iso:
-            rate_tokens.append(f'External: {m_iso.group(1)} €/h')
+            hourly_iso = float(m_iso.group(1)) * 2.0
+            rate_tokens.append(f'External: {hourly_iso:.2f} €/h')
         if rate_tokens:
             rates_formatted = ' | '.join(rate_tokens)
         else:
             rates_formatted = raw_rates
             
     if rates_formatted:
-        return f"{note}\n\nRates: {rates_formatted}"
+        return f"{note}\n\nRates (hourly, excl. VAT): {rates_formatted}"
     return note
 
 def main():

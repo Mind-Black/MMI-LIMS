@@ -22,9 +22,9 @@ export const RatePricingModal = ({ isOpen, onClose }) => {
             category: 'A',
             title: 'Basic & General Equipment',
             badgeClass: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-            external: '7.44 €/h',
-            ktu: '4.00 €/h',
-            dept: '0.02 – 0.20 €/h',
+            external: '14.88 €/h',
+            ktu: '8.00 €/h',
+            dept: '0.04 €/h',
             equipmentSummary: 'Optical tables, spin coaters, drying ovens, mixers, light sources, basic characterization & sample preparation tools.',
             examples: [
                 'Laser power meter - Ophir Nova II',
@@ -38,9 +38,9 @@ export const RatePricingModal = ({ isOpen, onClose }) => {
             category: 'B',
             title: 'Standard Analysis & Deposition',
             badgeClass: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-            external: '12.50 – 19.01 €/h',
-            ktu: '7.50 – 10.50 €/h',
-            dept: '0.05 €/h',
+            external: '38.02 €/h',
+            ktu: '21.00 €/h',
+            dept: '0.10 €/h',
             equipmentSummary: 'Surface profilometry, optical spectroscopy, thermal evaporation, magnetron sputtering, and mass spectrometry.',
             examples: [
                 'Stylus surface profilometer - Bruker Dektak Pro',
@@ -54,9 +54,9 @@ export const RatePricingModal = ({ isOpen, onClose }) => {
             category: 'C',
             title: 'Advanced Analytical & High-Energy Systems',
             badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border-amber-200 dark:border-amber-800',
-            external: '35.12 €/h',
-            ktu: '21.00 €/h',
-            dept: '0.11 €/h',
+            external: '70.24 €/h',
+            ktu: '42.00 €/h',
+            dept: '0.22 €/h',
             equipmentSummary: 'High-resolution electron microscopy, femtosecond laser micromachining, surface analysis, and reactive plasma etching.',
             examples: [
                 'Scanning electron microscope - FEI Quanta 200 FEG',
@@ -69,9 +69,9 @@ export const RatePricingModal = ({ isOpen, onClose }) => {
             category: 'D',
             title: 'Premium Nano-Fabrication & Deep Etch',
             badgeClass: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border-purple-200 dark:border-purple-800',
-            external: '48.76 €/h',
-            ktu: '28.50 €/h',
-            dept: '0.14 €/h',
+            external: '97.52 €/h',
+            ktu: '57.00 €/h',
+            dept: '0.28 €/h',
             equipmentSummary: 'High-end electron beam lithography, high-density inductively coupled plasma etching, and specialized ion-beam synthesizers.',
             examples: [
                 'Electron beam lithography (EBL) - Raith e-Line Plus',
@@ -157,13 +157,13 @@ export const RatePricingModal = ({ isOpen, onClose }) => {
 
                 {/* Primary Pricing Matrix Table */}
                 <div className="space-y-2">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                         <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
                             <Icon className="fas fa-table text-blue-600 dark:text-blue-400" />
-                            Hourly Service Rates Matrix
+                            Hourly Service Rates Matrix (Excl. VAT)
                         </h4>
-                        <span className="text-[11px] text-gray-500 dark:text-gray-400">
-                            Rates quoted in EUR per hour of autonomous machine usage (€/h)
+                        <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+                            Rates in EUR per hour of machine usage (€/h, excl. VAT)
                         </span>
                     </div>
 
@@ -174,13 +174,13 @@ export const RatePricingModal = ({ isOpen, onClose }) => {
                                     <th className="p-3 font-semibold">Tier</th>
                                     <th className="p-3 font-semibold">Scope & Description</th>
                                     <th className="p-3 font-semibold text-center whitespace-nowrap bg-emerald-50/50 dark:bg-emerald-950/10">
-                                        External Rate
+                                        External (excl. VAT)
                                     </th>
                                     <th className="p-3 font-semibold text-center whitespace-nowrap bg-blue-50/50 dark:bg-blue-950/10">
-                                        KTU Depts
+                                        KTU Depts (excl. VAT)
                                     </th>
                                     <th className="p-3 font-semibold text-center whitespace-nowrap bg-purple-50/50 dark:bg-purple-950/10">
-                                        MMI Dept
+                                        MMI Dept (excl. VAT)
                                     </th>
                                 </tr>
                             </thead>
@@ -249,7 +249,10 @@ export const RatePricingModal = ({ isOpen, onClose }) => {
                         <Icon className="fas fa-info-circle text-blue-500" />
                         Usage, Licensing & Billing Guidelines
                     </h5>
-                    <ul className="list-disc list-inside space-y-1 leading-relaxed">
+                    <ul className="list-disc list-inside space-y-1.5 leading-relaxed">
+                        <li>
+                            <strong>Hourly Rate Basis & VAT:</strong> All displayed equipment rates are quoted on an <strong>hourly basis (€/h)</strong> and are <strong>exclusive of Value Added Tax (excl. VAT / PVM neįskaičiuotas)</strong>. Original university asset ledger records quote 30-minute rates; these are doubled to reflect standardized 1-hour service rates.
+                        </li>
                         <li>
                             <strong>Autonomous Tool Usage:</strong> Rates apply to scheduled equipment runtime. Operators must hold valid Level II (Supervised) or Level III (Independent) license authorization for licensed equipment.
                         </li>
