@@ -12,6 +12,7 @@ import {
     getVilniusNow
 } from '../utils/bookingUtils';
 import ConfirmModal from './ConfirmModal';
+import RatePricingModal from './RatePricingModal';
 import ToolList from './ToolList';
 import BookingList from './BookingList';
 import UserBookingsCalendar from './UserBookingsCalendar';
@@ -131,6 +132,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const [bookingIdToCancel, setBookingIdToCancel] = useState(null);
     const [sendCancellationMessage, setSendCancellationMessage] = useState(false);
     const [isCancelling, setIsCancelling] = useState(false);
+    const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
 
     // Filters for "All Bookings" (Admin)
     const [filterStartDate, setFilterStartDate] = useState(() => new URLSearchParams(window.location.search).get('from') || '');
@@ -946,6 +948,14 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                         <Icon className="fas fa-microscope text-base text-center shrink-0" />
                         {!isSidebarCollapsed && <span>Equipment List</span>}
                     </button>
+                    <button
+                        onClick={() => setIsPricingModalOpen(true)}
+                        title="Equipment Rates & Access Modes"
+                        className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-3 rounded-lg text-sm font-medium transition text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/60 cursor-pointer`}
+                    >
+                        <Icon className="fas fa-tags text-base text-center shrink-0 text-emerald-600 dark:text-emerald-400" />
+                        {!isSidebarCollapsed && <span>Rates & Pricing</span>}
+                    </button>
 
                     {profile?.access_level === 'admin' && (
                         <>
@@ -1485,6 +1495,12 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 isCheckboxChecked={sendCancellationMessage}
                 onCheckboxChange={setSendCancellationMessage}
                 isLoading={isCancelling}
+            />
+
+            {/* Rate & Pricing Guide Modal */}
+            <RatePricingModal
+                isOpen={isPricingModalOpen}
+                onClose={() => setIsPricingModalOpen(false)}
             />
 
             {/* Calendar Subscription Feed Modal (Fixes R12) */}

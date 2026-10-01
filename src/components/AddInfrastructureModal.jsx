@@ -6,6 +6,7 @@ import { useDialogFocus } from '../hooks/useDialogFocus';
 import { downloadInfrastructureCsvTemplate, parseInfrastructureCsv } from '../utils/csvHelper';
 import StatusBadge from './StatusBadge';
 import RateCategoryBadge from './RateCategoryBadge';
+import RatePricingModal from './RatePricingModal';
 
 const AddInfrastructureModal = ({
     isOpen,
@@ -16,6 +17,7 @@ const AddInfrastructureModal = ({
 }) => {
     const [mode, setMode] = useState(defaultMode); // 'single' | 'bulk'
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
     const { showToast } = useToast();
     const [availableUsers, setAvailableUsers] = useState([]);
 
@@ -446,7 +448,16 @@ const AddInfrastructureModal = ({
                             {/* Rate Category */}
                             <div>
                                 <label htmlFor="infra-rate-category" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center justify-between">
-                                    <span>Rate Category</span>
+                                    <span className="flex items-center gap-1.5">
+                                        <span>Rate Category</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsPricingModalOpen(true)}
+                                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-normal normal-case"
+                                        >
+                                            (view rates & modes)
+                                        </button>
+                                    </span>
                                     <RateCategoryBadge rate={formData.rate_category} size="xs" />
                                 </label>
                                 <select
@@ -590,14 +601,25 @@ const AddInfrastructureModal = ({
                                     Use our pre-configured template with proper column headers and sample equipment.
                                 </p>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => downloadInfrastructureCsvTemplate()}
-                                className="btn btn-secondary btn-sm flex items-center gap-2 text-xs shrink-0"
-                            >
-                                <Icon className="fas fa-download" />
-                                Download CSV Template
-                            </button>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsPricingModalOpen(true)}
+                                    className="btn btn-secondary btn-sm flex items-center gap-2 text-xs"
+                                    title="View official equipment rate categories and access modes"
+                                >
+                                    <Icon className="fas fa-tags text-emerald-600 dark:text-emerald-400" />
+                                    Rate Guide
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => downloadInfrastructureCsvTemplate()}
+                                    className="btn btn-secondary btn-sm flex items-center gap-2 text-xs"
+                                >
+                                    <Icon className="fas fa-download" />
+                                    Download CSV Template
+                                </button>
+                            </div>
                         </div>
 
                         {/* Upload Dropzone */}
@@ -747,6 +769,12 @@ const AddInfrastructureModal = ({
                     </div>
                 )}
             </div>
+
+            {/* Rate & Pricing Guide Modal */}
+            <RatePricingModal
+                isOpen={isPricingModalOpen}
+                onClose={() => setIsPricingModalOpen(false)}
+            />
         </div>
     );
 };

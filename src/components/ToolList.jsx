@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import Icon from './Icon';
 import StatusBadge from './StatusBadge';
 import RateCategoryBadge from './RateCategoryBadge';
+import RatePricingModal from './RatePricingModal';
 import {
     getToolAccessLevel,
     isToolResponsibleUser,
@@ -391,7 +392,8 @@ const ToolTable = ({
     onApproveRequest,
     onRejectRequest,
     onConfirmBooking,
-    onRejectBooking
+    onRejectBooking,
+    onOpenPricingModal
 }) => {
     const isAdmin = profile?.access_level === 'admin';
 
@@ -707,7 +709,18 @@ const ToolTable = ({
                                                                 <div className="text-sm text-gray-800 dark:text-gray-200 font-medium">{tool.category}</div>
                                                             </div>
                                                             <div>
-                                                                <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Rate Category</div>
+                                                                <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                                                    <span>Rate Category</span>
+                                                                    {onOpenPricingModal && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={onOpenPricingModal}
+                                                                            className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-normal normal-case flex items-center gap-0.5"
+                                                                        >
+                                                                            <Icon className="fas fa-info-circle text-[9px]" /> rates
+                                                                        </button>
+                                                                    )}
+                                                                </div>
                                                                 <div className="text-sm text-gray-800 dark:text-gray-200 font-medium flex items-center gap-1.5">
                                                                     <RateCategoryBadge rate={tool.rate_category} />
                                                                 </div>
@@ -790,6 +803,7 @@ const ToolList = ({
 }) => {
     const [filterCategory, setFilterCategory] = useState('All');
     const [filterRateCategory, setFilterRateCategory] = useState('All');
+    const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedToolId, setExpandedToolId] = useState(null);
     const [viewMode, setViewMode] = useState(() => {
@@ -960,34 +974,46 @@ const ToolList = ({
                     })}
                 </div>
 
-                {/* Horizontal Rate Category Filter Chips */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin border-t dark:border-gray-700/60 pt-2.5">
-                    <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 mr-1 shrink-0">Rate:</span>
-                    {['All', 'A', 'B', 'C', 'D'].map(rate => {
-                        const count = rate === 'All'
-                            ? (filterCategory === 'All' ? tools.length : tools.filter(t => t.category === filterCategory).length)
-                            : (filterCategory === 'All'
-                                ? tools.filter(t => (t.rate_category || 'A') === rate).length
-                                : tools.filter(t => t.category === filterCategory && (t.rate_category || 'A') === rate).length);
-                        const isSelected = filterRateCategory === rate;
-                        return (
-                            <button
-                                key={rate}
-                                type="button"
-                                onClick={() => setFilterRateCategory(rate)}
-                                className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                                    isSelected
-                                        ? 'bg-blue-600 text-white shadow-xs'
-                                        : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                                }`}
-                            >
-                                <span>{rate === 'All' ? 'All Rates' : `Rate ${rate}`}</span>
-                                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
-                                    {count}
-                                </span>
-                            </button>
-                        );
-                    })}
+                {/* Horizontal Rate Category Filter Chips & Guide Button */}
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t dark:border-gray-700/60 pt-2.5">
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 mr-1 shrink-0">Rate:</span>
+                        {['All', 'A', 'B', 'C', 'D'].map(rate => {
+                            const count = rate === 'All'
+                                ? (filterCategory === 'All' ? tools.length : tools.filter(t => t.category === filterCategory).length)
+                                : (filterCategory === 'All'
+                                    ? tools.filter(t => (t.rate_category || 'A') === rate).length
+                                    : tools.filter(t => t.category === filterCategory && (t.rate_category || 'A') === rate).length);
+                            const isSelected = filterRateCategory === rate;
+                            return (
+                                <button
+                                    key={rate}
+                                    type="button"
+                                    onClick={() => setFilterRateCategory(rate)}
+                                    className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                        isSelected
+                                            ? 'bg-blue-600 text-white shadow-xs'
+                                            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                                    }`}
+                                >
+                                    <span>{rate === 'All' ? 'All Rates' : `Rate ${rate}`}</span>
+                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
+                                        {count}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => setIsPricingModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition shrink-0 cursor-pointer shadow-xs"
+                        title="View official equipment hourly rate table for External, KTU, and MMI Department users"
+                    >
+                        <Icon className="fas fa-table text-blue-600 dark:text-blue-400" />
+                        <span>Rates & Access Modes</span>
+                    </button>
                 </div>
             </div>
 
@@ -1007,6 +1033,7 @@ const ToolList = ({
                 onRejectRequest={onRejectRequest}
                 onConfirmBooking={onConfirmBooking}
                 onRejectBooking={onRejectBooking}
+                onOpenPricingModal={() => setIsPricingModalOpen(true)}
             />
 
             {trainingTools.length > 0 && (
@@ -1026,6 +1053,7 @@ const ToolList = ({
                     onRejectRequest={onRejectRequest}
                     onConfirmBooking={onConfirmBooking}
                     onRejectBooking={onRejectBooking}
+                    onOpenPricingModal={() => setIsPricingModalOpen(true)}
                 />
             )}
 
@@ -1046,8 +1074,15 @@ const ToolList = ({
                     onRejectRequest={onRejectRequest}
                     onConfirmBooking={onConfirmBooking}
                     onRejectBooking={onRejectBooking}
+                    onOpenPricingModal={() => setIsPricingModalOpen(true)}
                 />
             )}
+
+            {/* Rate & Pricing Guide Modal */}
+            <RatePricingModal
+                isOpen={isPricingModalOpen}
+                onClose={() => setIsPricingModalOpen(false)}
+            />
         </div>
     );
 };

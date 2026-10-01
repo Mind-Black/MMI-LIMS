@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import Icon from './Icon';
 import StatusBadge from './StatusBadge';
 import RateCategoryBadge from './RateCategoryBadge';
+import RatePricingModal from './RatePricingModal';
 import { supabase } from '../supabaseClient';
 import { useToast } from '../context/useToast';
 import { downloadInfrastructureCsvTemplate } from '../utils/csvHelper';
@@ -20,6 +21,7 @@ const InfrastructureManagement = ({
     const [filterCategory, setFilterCategory] = useState('All');
     const [filterRateCategory, setFilterRateCategory] = useState('All');
     const [filterStatus, setFilterStatus] = useState('All');
+    const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
     const [editingTool, setEditingTool] = useState(null);
     const [isSavingEdit, setIsSavingEdit] = useState(false);
     const [deletingToolId, setDeletingToolId] = useState(null);
@@ -183,6 +185,15 @@ const InfrastructureManagement = ({
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setIsPricingModalOpen(true)}
+                        className="btn btn-secondary btn-sm flex items-center gap-1.5"
+                        title="View official equipment rate categories and access modes"
+                    >
+                        <Icon className="fas fa-tags text-emerald-600 dark:text-emerald-400" />
+                        Rate Guide
+                    </button>
                     <button
                         type="button"
                         onClick={() => downloadInfrastructureCsvTemplate()}
@@ -464,7 +475,16 @@ const InfrastructureManagement = ({
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase mb-1 flex items-center justify-between">
-                                        <span>Rate</span>
+                                        <span className="flex items-center gap-1.5">
+                                            <span>Rate</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsPricingModalOpen(true)}
+                                                className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer normal-case"
+                                            >
+                                                (guide)
+                                            </button>
+                                        </span>
                                         <RateCategoryBadge rate={editingTool.rate_category || 'A'} size="xs" />
                                     </label>
                                     <select
@@ -588,6 +608,11 @@ const InfrastructureManagement = ({
                     </div>
                 </div>
             )}
+            {/* Rate & Pricing Guide Modal */}
+            <RatePricingModal
+                isOpen={isPricingModalOpen}
+                onClose={() => setIsPricingModalOpen(false)}
+            />
         </div>
     );
 };
