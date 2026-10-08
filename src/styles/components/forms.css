@@ -1,0 +1,17 @@
+/* 
+ * Form Components
+ * Contains reusable input, label, and select classes.
+ */
+@layer components {
+    .input-field {
+        @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:placeholder-gray-400;
+    }
+
+    .label {
+        @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1;
+    }
+
+    .select-input {
+        @apply border dark:border-gray-600 p-2 rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-white transition-colors focus:ring-2 focus:ring-blue-500 outline-none;
+    }
+}

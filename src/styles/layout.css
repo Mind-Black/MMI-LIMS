@@ -1,0 +1,13 @@
+/* 
+ * Layout Styles
+ * Global layout elements like headers and main containers.
+ */
+
+.lims-header {
+    background: linear-gradient(90deg, #00205b 0%, #003366 100%);
+    color: white;
+}
+
+.dark .lims-header {
+    background: linear-gradient(90deg, #0f172a 0%, #1e293b 100%);
+}

@@ -1,0 +1,22 @@
+# Supabase local and deployment configuration
+project_id = "mmi-lims"
+
+[api]
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+
+[functions.serve-ics]
+# Calendar feeds are fetched by external calendar clients (Apple Calendar, Google Calendar)
+# which do not carry a Supabase user JWT; authentication is handled via bearer token hash in query string.
+verify_jwt = false
+
+[functions.send-email]
+verify_jwt = true
+
+[functions.notify-cancellation]
+verify_jwt = true

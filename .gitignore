@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build Outputs & Bundles
+dist/
+dist-ssr/
+*.local
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Editor & OS Files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local Developer Runtimes & Machine Paths
+TOOL_RUNTIMES.*
+scripts/setup-runtimes.ps1
+.git-legacy-backup/
+
+# Internal Infrastructure Data & Legacy Scripts
+infrastructure_mmi/
+sql_archive/
+prototype/
+scripts/prepare_mmi_infrastructure.py
+test_booking_logic.js
+
+# Internal Audit Notes & Security Reports
+WEBSITE_AUDIT_*.md
+*AUDIT_REPORT*.md
+*.audit.md
+
+# Supabase Temporary Cache
+supabase/.temp/
