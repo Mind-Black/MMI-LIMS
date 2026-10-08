@@ -32,10 +32,14 @@ Thumbs.db
 *.sln
 *.sw?
 
+# Legacy Archive (Permanently Ignored)
+legacy/
+_legacy/
+.git-legacy-backup/
+
 # Local Developer Runtimes & Machine Paths
 TOOL_RUNTIMES.*
 scripts/setup-runtimes.ps1
-.git-legacy-backup/
 
 # Internal Infrastructure Data & Legacy Scripts
 infrastructure_mmi/
