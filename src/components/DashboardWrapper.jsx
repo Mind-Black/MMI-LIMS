@@ -77,12 +77,9 @@ const DashboardWrapper = ({ session, onLogout }) => {
         document.addEventListener('visibilitychange', handleVisibilityChange);
 
         // Auto-poll when pending approval to seamlessly activate account once approved
-        let pollTimer;
-        if (status === 'pending') {
-            pollTimer = setInterval(() => {
-                setRefreshIndex(prev => prev + 1);
-            }, 10000);
-        }
+        const pollTimer = setInterval(() => {
+            if (!document.hidden) setRefreshIndex(prev => prev + 1);
+        }, status === 'pending' ? 10000 : 60000);
 
         return () => {
             document.removeEventListener('visibilitychange', handleVisibilityChange);

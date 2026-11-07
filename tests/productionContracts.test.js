@@ -1,0 +1,98 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {setup} from './support/database.js';
+const A='11111111-1111-1111-1111-111111111111', B='22222222-2222-2222-2222-222222222222';
+async function actor(db,id,role='authenticated') {await db.exec('RESET ROLE');await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[id||'']);await db.exec('SET ROLE '+role);}
+test('Production contracts: signup, authorization, booking, cancellation and delivery recovery',async t=>{
+ const db=await setup();t.after(()=>db.close());
+ await db.query(`INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,'a@example.com','{"access_level":"admin","is_approved":true,"job_title":"Scientist"}'),($2,'b@example.com','{}')`,[A,B]);
+ let p=(await db.query('SELECT * FROM profiles WHERE id=$1',[A])).rows[0];
+ assert.equal(p.job_title,'Scientist');assert.equal(p.access_level,'user');assert.equal(p.is_approved,false);
+ await actor(db,null,'anon');await assert.rejects(db.query('SELECT * FROM profiles'),/permission denied/);
+ await actor(db,null);assert.equal((await db.query('SELECT * FROM profiles')).rows.length,0);
+ await assert.rejects(db.query("SELECT public.create_bookings('[]')"),/Not authenticated/);
+ await actor(db,A);assert.equal((await db.query('SELECT * FROM profiles')).rows.length,1);
+ await assert.rejects(db.query("UPDATE profiles SET access_level='admin' WHERE id=$1",[A]),/Unauthorized/);
+ await actor(db,null,'none');await db.query("UPDATE profiles SET is_approved=true,licenses=jsonb_build_object('1','level_3') WHERE id IN ($1,$2)",[A,B]);
+ await actor(db,A);
+ const date='2035-01-15';
+ const ranges=[{tool_id:1,project:'General',date,time:'10:00',end_time:'11:00'},{tool_id:1,project:'General',date,time:'12:00',end_time:'13:00'}];
+ const rows=(await db.query('SELECT * FROM create_bookings($1)',[JSON.stringify(ranges)])).rows;
+ assert.equal(rows.length,2);assert.equal(new Date(rows[0].ends_at)-new Date(rows[0].starts_at),3600000);
+ const updated=(await db.query("SELECT update_booking_group($1,$2,'10:00','11:30','General') AS b",[[rows[0].id],date])).rows[0].b;
+ assert.equal(updated.id,rows[0].id);assert.equal(new Date(updated.created_at).getTime(),new Date(rows[0].created_at).getTime());
+ await assert.rejects(db.query('SELECT * FROM create_bookings($1)',[JSON.stringify(ranges)]),/conflict|overlap/);
+ await assert.rejects(db.query('SELECT cancel_booking_group($1,true)',[[rows[0].id,999999]]),/unavailable/);
+ assert.equal((await db.query('SELECT * FROM bookings')).rows.length,2);
+ const result=(await db.query('SELECT cancel_booking_group($1,true) AS r',[[rows[0].id,rows[1].id]])).rows[0].r;
+ assert.equal(result.cancelled_ids.length,2);assert.equal(result.event_ids.length,2);
+ await assert.rejects(db.query('SELECT * FROM claim_notifications()'),/permission denied/);
+ await actor(db,null,'none');
+ let jobs=(await db.query('SELECT * FROM claim_notifications()')).rows;assert.equal(jobs.length,2);
+ assert.equal((await db.query('SELECT * FROM claim_notifications()')).rows.length,0);
+ await db.query('SELECT finish_notification($1,$2,$3)',[jobs[0].id,jobs[0].lease,'provider failure']);
+ assert.equal((await db.query('SELECT notified FROM cancellation_events WHERE id=$1',[jobs[0].event_id])).rows[0].notified,false);
+ await db.query('SELECT finish_notification($1,$2,NULL)',[jobs[1].id,jobs[1].lease]);
+ assert.equal((await db.query('SELECT notified FROM cancellation_events WHERE id=$1',[jobs[1].event_id])).rows[0].notified,true);
+ await assert.rejects(db.query("SELECT lab_instant('2026-03-29','03:30')"),/Nonexistent/);
+ await assert.rejects(db.query("SELECT lab_instant('2026-10-25','03:30')"),/ambiguous/);
+ // An ongoing booking may change its end, but not its start or be cancelled.
+ await db.query("INSERT INTO bookings(tool_id,user_id,tool_name,user_name,project,date,time,end_time) VALUES(1,$1,'','','General',(now() AT TIME ZONE 'Europe/Vilnius')::date,((now() AT TIME ZONE 'Europe/Vilnius')-interval '30 minutes')::time,((now() AT TIME ZONE 'Europe/Vilnius')+interval '30 minutes')::time)",[A]);
+ await actor(db,A);
+ const ongoing=(await db.query('SELECT * FROM bookings')).rows[0];
+ await assert.rejects(db.query('SELECT cancel_booking_group($1,false)',[[ongoing.id]]),/start/);
+ await db.query("UPDATE bookings SET end_time=(end_time+interval '10 minutes')::time WHERE id=$1",[ongoing.id]);
+ await assert.rejects(db.query("UPDATE bookings SET time=(time+interval '1 minute')::time WHERE id=$1",[ongoing.id]),/start time/);
+});
+
+test('Forward upgrade preserves legacy data and backfills profiles; graded licenses retain their access level',async t=>{
+ const db=await setup(true);t.after(()=>db.close());
+ await db.query('INSERT INTO auth.users(id,email) VALUES($1,$2)',[A,'legacy@example.com']);
+ await db.query("INSERT INTO profiles(id,licenses,is_approved) VALUES($1,'[1,1]',true)",[A]);
+ await db.query('INSERT INTO auth.users(id,email) VALUES($1,$2)',[B,'missing@example.com']);
+ const repair=fs.readFileSync('supabase/migrations/20261107000001_production_contracts.sql','utf8');
+ await db.exec(repair);
+ assert.deepEqual((await db.query('SELECT licenses FROM profiles WHERE id=$1',[A])).rows[0].licenses,{'1':'level_3'});
+ assert.equal((await db.query('SELECT is_approved FROM profiles WHERE id=$1',[B])).rows[0].is_approved,false);
+ const other=await setup(true);t.after(()=>other.close());
+ await other.query('INSERT INTO auth.users(id) VALUES($1)',[A]);
+ await other.query(`INSERT INTO profiles(id,licenses) VALUES($1,jsonb_build_object('1','level_2'))`,[A]);
+ await other.exec(repair);
+ assert.deepEqual((await other.query('SELECT licenses FROM profiles')).rows[0].licenses,{'1':'level_2'});
+});
+test('Quota reservations fail closed; approval revocation removes private feed tokens',async t=>{
+ const db=await setup();t.after(()=>db.close());
+ await db.query('INSERT INTO auth.users(id,email) VALUES($1,$2)',[A,'quota@example.com']);
+ await db.query('UPDATE profiles SET is_approved=true WHERE id=$1',[A]);await actor(db,A);
+ for(let i=0;i<20;i++) await db.query('SELECT reserve_email_quota(1)');
+ await assert.rejects(db.query('SELECT reserve_email_quota(1)'),/quota exceeded/);
+ await db.query('SELECT rotate_calendar_token($1)',['a'.repeat(64)]);
+ await actor(db,null,'none');await db.query('UPDATE profiles SET is_approved=false WHERE id=$1',[A]);
+ assert.equal((await db.query('SELECT * FROM user_calendar_tokens')).rows.length,0);
+});
+
+test('Graded access, confirmation and training remain secure for owners and tool managers',async t=>{
+ const db=await setup();t.after(()=>db.close());
+ await db.query("INSERT INTO auth.users(id,email) VALUES($1,'trainee@example.com'),($2,'manager@example.com')",[A,B]);
+ await db.query("UPDATE profiles SET is_approved=true,licenses=jsonb_build_object('1','level_2') WHERE id=$1",[A]);
+ await db.query('UPDATE profiles SET is_approved=true WHERE id=$1',[B]);
+ await db.query('UPDATE tools SET primary_responsible_id=$1 WHERE id=1',[B]);
+ await actor(db,A);
+ const ranges=[{tool_id:1,project:'General',date:'2035-02-01',time:'10:00',end_time:'11:00'}];
+ const b=(await db.query('SELECT * FROM create_bookings($1)',[JSON.stringify(ranges)])).rows[0];assert.equal(b.status,'pending_approval');
+ await assert.rejects(db.query('SELECT confirm_booking($1)',[b.id]),/manager/);
+ await assert.rejects(db.query("UPDATE bookings SET status='confirmed' WHERE id=$1",[b.id]),/managers/);
+ await actor(db,B);await db.query('SELECT confirm_booking($1)',[b.id]);
+ assert.equal((await db.query('SELECT status FROM bookings WHERE id=$1',[b.id])).rows[0].status,'confirmed');
+ await db.query("SELECT set_user_tool_license($1,1,'level_3')",[A]);
+ assert.equal((await db.query('SELECT licenses FROM profiles WHERE id=$1',[A])).rows[0].licenses['1'],'level_3');
+ await assert.rejects(db.query("SELECT set_user_tool_license($1,2,'level_3')",[A]),/manager/);
+ await actor(db,A);
+ await assert.rejects(db.query("INSERT INTO training_requests(tool_id,tool_name,user_id,user_name,description,preferred_date) VALUES(1,'Tool',$1,'Other','Training','2035-01-01')",[B]),/row-level|owner/);
+ const r=(await db.query("INSERT INTO training_requests(tool_id,tool_name,user_id,user_name,description,preferred_date,status) VALUES(1,'Spoofed',$1,'Spoofed','Training','2035-01-01','approved') RETURNING *",[A])).rows[0];
+ assert.equal(r.status,'pending');assert.notEqual(r.tool_name,'Spoofed');
+ await actor(db,B);await db.query('SELECT approve_training_request($1)',[r.id]);
+ assert.equal((await db.query('SELECT licenses FROM profiles WHERE id=$1',[A])).rows[0].licenses['1'],'level_3','Existing higher access must not be downgraded');
+ await assert.rejects(db.query('SELECT approve_training_request($1)',[r.id]),/already reviewed/);
+});

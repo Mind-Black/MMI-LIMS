@@ -1,3 +1,4 @@
+import ErrorBoundary from './components/ErrorBoundary';
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { supabase } from './supabaseClient';
 import { ToastProvider } from './context/ToastContext';
@@ -37,7 +38,7 @@ function App() {
   }
 
   return (
-    <ThemeProvider>
+    <ErrorBoundary><ThemeProvider>
       <ToastProvider>
         {!session || isPasswordRecovery ? (
           <LoginScreen isPasswordRecovery={isPasswordRecovery} onRecoveryComplete={() => setIsPasswordRecovery(false)} />
@@ -47,7 +48,7 @@ function App() {
           </Suspense>
         )}
       </ToastProvider>
-    </ThemeProvider>
+    </ThemeProvider></ErrorBoundary>
   );
 }
 

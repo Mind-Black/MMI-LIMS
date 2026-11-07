@@ -1,3 +1,5 @@
+import {fetchBookingWindow} from '../services/availability';
+import { createBookings, updateBookingGroup, cancelBookingGroup } from '../services/bookings';
 import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy } from 'react';
 import Icon from './Icon';
 import { supabase } from '../supabaseClient';
@@ -31,27 +33,15 @@ const BOOKING_FIELDS = 'id, tool_id, tool_name, user_id, user_name, project, dat
 const LEGACY_BOOKING_FIELDS = 'id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at';
 const PAGE_SIZE = 500;
 
-async function fetchAllPages(makeQuery, fallbackQuery = null) {
+async function fetchAllPages(makeQuery, maxRows = Infinity) {
     const rows = [];
-    let useFallback = false;
-    for (let offset = 0; ;) {
-        const currentQuery = (useFallback && fallbackQuery) ? fallbackQuery : makeQuery;
-        let { data, error } = await currentQuery().range(offset, offset + PAGE_SIZE - 1);
-        if (error && fallbackQuery && !useFallback && (error.message?.includes('status') || error.message?.includes('does not exist') || error.message?.includes('column'))) {
-            useFallback = true;
-            const fallbackRes = await fallbackQuery().range(offset, offset + PAGE_SIZE - 1);
-            data = fallbackRes.data ? fallbackRes.data.map(b => ({ ...b, status: 'confirmed' })) : null;
-            error = fallbackRes.error;
-        }
-        if (error) throw error;
-        if (!data?.length) return rows;
-        if (useFallback) {
-            data = data.map(b => (b.status ? b : { ...b, status: 'confirmed' }));
-        }
-        rows.push(...data);
-        if (data.length < PAGE_SIZE) return rows;
-        offset += data.length;
+    for (let offset = 0; rows.length < maxRows;) {
+        const {data,error} = await makeQuery().range(offset, offset + Math.min(PAGE_SIZE,maxRows-rows.length)-1);
+        if(error) throw error;
+        if(!data?.length) return rows;
+        rows.push(...data); offset += data.length;
     }
+    return rows;
 }
 
 /**
@@ -142,6 +132,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const [debouncedUserName, setDebouncedUserName] = useState(filterUserName);
     const [adminPage, setAdminPage] = useState(0);
     const [adminTotal, setAdminTotal] = useState(0);
+    const [historyLimit,setHistoryLimit] = useState(200);
     const [historyStart, setHistoryStart] = useState(() => formatLocalDate(addDays(getVilniusNow().dateStr, -60)));
 
     // Week State (Monday as start of week without timezone distortion - Fixes R6)
@@ -152,7 +143,6 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const querySeqRef = useRef(0);
     const adminQuerySeqRef = useRef(0);
     const catalogLoadedRef = useRef(false);
-    const historyLoadedRef = useRef('');
     const activeTabRef = useRef(activeTab);
     activeTabRef.current = activeTab;
     const cancelCallbackRef = useRef(null);
@@ -170,82 +160,20 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
 
             // User history cutoff: last 60 days
             const needCatalog = !catalogLoadedRef.current || refreshCatalog;
-            const needHistory = historyLoadedRef.current !== historyStart || refreshCatalog;
 
-            const fetchToolsQuery = async () => {
-                let res = await supabase.from('tools').select(`
+            const fetchToolsQuery = () => supabase.from('tools').select(`
                     id, name, category, rate_category, status, location, license_req, description, image_url,
                     primary_responsible_id, secondary_responsible_id,
                     primary_responsible:primary_responsible_id(id, first_name, last_name, email, phone, job_title),
                     secondary_responsible:secondary_responsible_id(id, first_name, last_name, email, phone, job_title)
                 `).order('id');
-
-                if (res.error) {
-                    let fallback = await supabase.from('tools')
-                        .select('id, name, category, rate_category, status, location, license_req, description, image_url, primary_responsible_id, secondary_responsible_id')
-                        .order('id');
-                    if (fallback.error) {
-                        fallback = await supabase.from('tools')
-                            .select('id, name, category, rate_category, status, location, license_req, description, image_url')
-                            .order('id');
-                    }
-                    if (fallback.error) {
-                        fallback = await supabase.from('tools')
-                            .select('id, name, category, status, location, license_req, description')
-                            .order('id');
-                    }
-                    if (!fallback.error) {
-                        res = fallback;
-                    }
-                }
-                return res;
-            };
-
-            const fetchPendingRequests = async () => {
-                try {
-                    const res = await supabase.from('training_requests')
-                        .select('id, tool_id, tool_name, user_id, user_name, user_email, description, preferred_date, status, created_at')
-                        .eq('status', 'pending')
-                        .order('created_at', { ascending: false });
-                    if (res?.error) return { data: [] };
-                    return res?.data ? res : { data: [] };
-                } catch {
-                    return { data: [] };
-                }
-            };
-
-            const fetchPendingBookings = async () => {
-                try {
-                    const res = await supabase.from('bookings')
-                        .select(BOOKING_FIELDS)
-                        .eq('status', 'pending_approval')
-                        .order('date')
-                        .order('time');
-                    if (res?.error) return { data: [] };
-                    return res?.data ? res : { data: [] };
-                } catch {
-                    return { data: [] };
-                }
-            };
+            const fetchPendingRequests = async () => ({data:await fetchAllPages(() => supabase.from('training_requests').select('id, tool_id, tool_name, user_id, user_name, user_email, description, preferred_date, status, created_at').eq('status','pending').order('id'))});
+            const fetchPendingBookings = async () => ({data:await fetchAllPages(() => supabase.from('bookings').select(BOOKING_FIELDS).eq('status','pending_approval').order('id'))});
 
             const [toolsRes, calendarRows, userRows, tokenRes, pendingReqsRes, pendingBookingsRes] = await Promise.all([
                 needCatalog ? fetchToolsQuery() : null,
-                fetchAllPages(
-                    () => supabase.from('bookings').select(BOOKING_FIELDS)
-                        .gte('date', startStr).lte('date', endStr)
-                        .order('date').order('time').order('id'),
-                    () => supabase.from('bookings').select(LEGACY_BOOKING_FIELDS)
-                        .gte('date', startStr).lte('date', endStr)
-                        .order('date').order('time').order('id')
-                ),
-                !needHistory ? null : fetchAllPages(
-                    () => supabase.from('bookings').select(BOOKING_FIELDS)
-                        .eq('user_id', user.id).gte('date', historyStart)
-                        .order('date', { ascending: false }).order('time', { ascending: false }).order('id', { ascending: false }),
-                    () => supabase.from('bookings').select(LEGACY_BOOKING_FIELDS)
-                        .eq('user_id', user.id).gte('date', historyStart)
-                        .order('date', { ascending: false }).order('time', { ascending: false }).order('id', { ascending: false })
-                ),
+                fetchBookingWindow(startStr,endStr),
+                fetchAllPages(() => supabase.from('bookings').select(BOOKING_FIELDS).eq('user_id',user.id).gte('date',historyStart).order('date',{ascending:false}).order('time',{ascending:false}).order('id',{ascending:false}),historyLimit),
                 needCatalog ? supabase.rpc('has_calendar_token') : null,
                 fetchPendingRequests(),
                 fetchPendingBookings()
@@ -263,7 +191,6 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             setBookings(calendarRows);
             if (userRows) {
                 setUserBookings(userRows);
-                historyLoadedRef.current = historyStart;
             }
             if (tokenRes && !tokenRes.error && tokenRes.data !== undefined) {
                 setHasCalendarToken(Boolean(tokenRes.data));
@@ -290,7 +217,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 setLoading(false);
             }
         }
-    }, [currentWeekStart, user.id, historyStart, showToast]);
+    }, [currentWeekStart, user.id, historyStart, historyLimit, showToast]);
 
     // Initial fetch and hidden-tab aware polling (P1)
     useEffect(() => {
@@ -483,28 +410,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
 
         try {
             querySeqRef.current++; // Invalidate in-flight reads
-            let { data, error } = await supabase
-                .from('bookings')
-                .insert(newBookings)
-                .select();
-
-            if (error && (error.message?.includes('status') || error.message?.includes('does not exist') || error.message?.includes('column'))) {
-                const sanitized = newBookings.map(b => {
-                    const copy = { ...b };
-                    delete copy.status;
-                    delete copy.confirmed_by;
-                    delete copy.confirmed_at;
-                    return copy;
-                });
-                const retry = await supabase
-                    .from('bookings')
-                    .insert(sanitized)
-                    .select();
-                data = retry.data ? retry.data.map(b => ({ ...b, status: 'confirmed' })) : null;
-                error = retry.error;
-            }
-
-            if (error) throw error;
+            const data = await createBookings(newBookings);
             if (!data || data.length === 0) {
                 throw new Error('No booking record was created');
             }
@@ -521,7 +427,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             return { success: true, data };
         } catch (error) {
             console.error('Error creating booking:', error);
-            const msg = error.message?.includes('no_double_booking')
+            const msg = error.code === '23P01'
                 ? 'Collision detected: Another reservation was made for this time slot.'
                 : ('Failed to create booking: ' + (error.message || 'Unknown error'));
             showToast(msg, 'error');
@@ -551,17 +457,13 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             querySeqRef.current++; // Invalidate in-flight reads
 
             // Attempt atomic RPC update first (guarantees transactional rollback if collision)
-            const { data: rpcData, error: rpcError } = await supabase.rpc('update_booking_group', {
+            const rpcData = await updateBookingGroup( {
                 p_old_ids: oldIds,
                 p_date: newBooking.date,
                 p_start_time: startTime,
                 p_end_time: endTime,
                 p_project: project
             });
-
-            if (rpcError) {
-                throw rpcError;
-            }
 
             // Successfully updated via RPC
             const updatedRow = rpcData || {
@@ -582,11 +484,12 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             setUserBookings(updater);
             setAdminBookings(updater);
 
+            await fetchData(true,true);
             showToast("Booking updated successfully.", 'success');
             return { success: true };
         } catch (error) {
             console.error('Error updating booking:', error);
-            const msg = error.message?.includes('no_double_booking')
+            const msg = error.code === '23P01'
                 ? 'Time slot is already reserved by another booking.'
                 : ('Failed to update booking: ' + (error.message || 'Unknown error'));
             showToast(msg, 'error');
@@ -627,43 +530,9 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
 
         try {
             querySeqRef.current++; // Invalidate in-flight background reads
-            let cancelledIds = [];
-            let eventIdToNotify = null;
-
-            for (let i = 0; i < idsToCancel.length; i++) {
-                const id = idsToCancel[i];
-                const shouldNotify = (i === 0 && sendCancellationMessage);
-
-                // Use atomic cancel_booking RPC (creates cancellation_events row atomically and verifies authority)
-                const { data: cancelResult, error: rpcError } = await supabase.rpc('cancel_booking', {
-                    p_booking_id: id,
-                    p_notify_users: shouldNotify
-                });
-
-                if (rpcError) {
-                    // Fallback to direct DELETE with affected row check if RPC not installed
-                    if (rpcError.message?.includes('function') && rpcError.message?.includes('does not exist')) {
-                        const { data: delData, error: delError } = await supabase
-                            .from('bookings')
-                            .delete()
-                            .eq('id', id)
-                            .select('id');
-                        if (delError) throw delError;
-                        if (!delData || delData.length === 0) {
-                            throw new Error('Cancellation failed or permission denied (0 rows affected)');
-                        }
-                        cancelledIds.push(id);
-                    } else {
-                        throw rpcError;
-                    }
-                } else {
-                    cancelledIds.push(id);
-                    if (cancelResult?.cancellation_event_id) {
-                        eventIdToNotify = cancelResult.cancellation_event_id;
-                    }
-                }
-            }
-
+            const result = await cancelBookingGroup(idsToCancel, sendCancellationMessage);
+            const cancelledIds = result.cancelled_ids;
+            const eventIds = result.event_ids || [];
             if (cancelledIds.length === 0) {
                 throw new Error('No bookings were cancelled.');
             }
@@ -679,23 +548,11 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 cancelCallbackRef.current = null;
             }
 
-            // Send cancellation notification if requested and authorized event ID exists (Fixes R4)
-            if (eventIdToNotify) {
-                const { data, error: notifyError } = await supabase.functions.invoke('notify-cancellation', {
-                    body: {
-                        cancellationEventId: eventIdToNotify
-                    }
-                });
-
-                if (notifyError) {
-                    console.error('Error invoking notify-cancellation:', notifyError);
-                    showToast('Booking cancelled, but failed to send notifications.', 'warning');
-                } else if (data?.count > 0) {
-                    showToast(`Cancellation notification sent to ${data.count} licensed user(s).`, 'success');
-                } else {
-                    showToast('Booking cancelled. No other licensed users were eligible to notify.');
-                }
+            if (eventIds.length) {
+                const {error} = await supabase.functions.invoke('notify-cancellation',{body:{cancellationEventId:eventIds[0]}});
+                showToast(error ? 'Booking cancelled. Notifications queued for retry.' : 'Booking cancelled. Notifications queued.');
             }
+            await fetchData(true,true);
 
         } catch (error) {
             console.error('Error cancelling booking:', error);
@@ -1284,7 +1141,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                                     showSort={true}
                                                 />
                                                 <div className="text-center pt-2">
-                                                    <button onClick={() => setHistoryStart(formatLocalDate(addDays(historyStart, -90)))} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
+                                                    <button onClick={() => {setHistoryStart(formatLocalDate(addDays(historyStart,-90)));setHistoryLimit(n=>n+200);}} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
                                                         Load older history
                                                     </button>
                                                 </div>

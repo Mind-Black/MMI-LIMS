@@ -101,3 +101,7 @@ Put original photos in `src/assets/tool_images/` using the equipment ID as the f
 │   └── migrations/    # Versioned database migrations
 └── tests/             # Unit and integration test suites
 ```
+
+## Production release operations
+
+See [deployment, authorization contracts, encrypted restore verification and notification recovery](docs/OPERATIONS.md). Run `npm run typecheck` for database contract checks and `npm run test:browser` for interface regression tests. Forward migrations preserve the live graded-access workflows and historical booking identities.

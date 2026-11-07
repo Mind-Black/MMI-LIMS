@@ -1,3 +1,4 @@
+import { fetchBookingWindow } from '../services/availability';
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import Icon from './Icon';
 import StatusBadge from './StatusBadge';
@@ -152,37 +153,7 @@ const BookingModal = ({
         const key = `${tool.id}:${weekStartStr}`;
         setAvailability({ key, state: 'loading', message: '' });
         try {
-            const all = [];
-            let useFallback = false;
-            for (let offset = 0; ;) {
-                const selectFields = useFallback
-                    ? 'id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at'
-                    : 'id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at, status, confirmed_by, confirmed_at';
-
-                let { data, error } = await supabase.from('bookings')
-                    .select(selectFields)
-                    .eq('tool_id', tool.id).gte('date', weekStartStr).lte('date', weekEndStr)
-                    .order('date', { ascending: true }).order('time', { ascending: true }).order('id', { ascending: true })
-                    .range(offset, offset + 499);
-
-                if (error && !useFallback && (error.message?.includes('status') || error.message?.includes('does not exist') || error.message?.includes('column'))) {
-                    useFallback = true;
-                    const fallbackRes = await supabase.from('bookings')
-                        .select('id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at')
-                        .eq('tool_id', tool.id).gte('date', weekStartStr).lte('date', weekEndStr)
-                        .order('date', { ascending: true }).order('time', { ascending: true }).order('id', { ascending: true })
-                        .range(offset, offset + 499);
-                    data = fallbackRes.data ? fallbackRes.data.map(b => ({ ...b, status: 'confirmed' })) : null;
-                    error = fallbackRes.error;
-                }
-
-                if (error) throw error;
-                if (!data?.length) break;
-                const formatted = useFallback ? data.map(b => (b.status ? b : { ...b, status: 'confirmed' })) : data;
-                all.push(...formatted);
-                if (data.length < 500) break;
-                offset += data.length;
-            }
+            const all = await fetchBookingWindow(weekStartStr,weekEndStr,tool.id);
             if (request === requestRef.current) {
                 setToolWeekBookings(all);
                 setAvailability({ key, state: 'ready', message: '' });
@@ -958,7 +929,7 @@ const BookingModal = ({
                                         <input
                                             type="date"
                                             className="input-field flex-1 text-xs py-1 min-h-[32px]"
-                                            value={formDate}
+                                            aria-label="Date" value={formDate}
                                             onChange={e => handleFormDateChange(e.target.value)}
                                         />
                                         <button
@@ -978,7 +949,7 @@ const BookingModal = ({
                                         <label className="text-[11px] font-semibold text-gray-600 dark:text-gray-400 block mb-1">Start</label>
                                         <select
                                             className="select-input w-full text-xs min-h-[32px] py-1"
-                                            value={formStart}
+                                            aria-label="Start" value={formStart}
                                             onChange={e => { setFormStart(e.target.value); setFormError(''); setFormNeedsCheck(true); setSelectedSlots([]); }}
                                         >
                                             {timeSlots.map(time => <option key={time} value={time}>{time}</option>)}
@@ -988,7 +959,7 @@ const BookingModal = ({
                                         <label className="text-[11px] font-semibold text-gray-600 dark:text-gray-400 block mb-1">End</label>
                                         <select
                                             className="select-input w-full text-xs min-h-[32px] py-1"
-                                            value={formEnd}
+                                            aria-label="End" value={formEnd}
                                             onChange={e => { setFormEnd(e.target.value); setFormError(''); setFormNeedsCheck(true); setSelectedSlots([]); }}
                                         >
                                             {[...timeSlots.slice(1), '24:00'].map(time => <option key={time} value={time}>{time}</option>)}
@@ -1026,7 +997,7 @@ const BookingModal = ({
                                 <div>
                                     <label className="text-[11px] font-semibold text-gray-600 dark:text-gray-400 block mb-1">Project</label>
                                     <select
-                                        value={selectedProject}
+                                        aria-label="Project" value={selectedProject}
                                         onChange={e => setSelectedProject(e.target.value)}
                                         className="select-input w-full text-xs min-h-[32px] py-1"
                                     >
