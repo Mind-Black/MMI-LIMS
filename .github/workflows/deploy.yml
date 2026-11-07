@@ -1,6 +1,7 @@
 name: Deploy to GitHub Pages
 
 on:
+  pull_request:
   push:
     branches:
       - main
@@ -12,14 +13,14 @@ permissions:
   id-token: write
 
 concurrency:
-  group: 'pages'
+  group: pages-${{ github.event.pull_request.number || 'production' }}
   cancel-in-progress: true
 
 jobs:
+  backend-checks:
+    uses: ./.github/workflows/backend.yml
   build-and-deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    needs: backend-checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -46,14 +47,33 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
+      - name: Type-check database contracts
+        run: npm run typecheck
+
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser workflows
+        run: npm run test:browser
+
       - name: Setup Pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

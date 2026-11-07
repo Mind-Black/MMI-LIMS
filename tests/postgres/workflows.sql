@@ -1,0 +1,11 @@
+BEGIN;
+INSERT INTO auth.users(id,email) VALUES('11111111-1111-1111-1111-111111111111','smoke@example.com');
+DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM profiles WHERE id='11111111-1111-1111-1111-111111111111' AND NOT is_approved AND access_level='user') THEN RAISE EXCEPTION 'Signup contract failed'; END IF; END $$;
+UPDATE profiles SET is_approved=true,licenses='{"1":"level_3"}' WHERE id='11111111-1111-1111-1111-111111111111';
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',true);
+SELECT * FROM create_bookings(jsonb_build_array(jsonb_build_object('tool_id',1,'project','General','date',current_date+1,'time','10:00','end_time','11:00')));
+SELECT update_booking_group(ARRAY[(SELECT id FROM bookings LIMIT 1)],current_date+1,'10:00','11:30','General');
+SELECT cancel_booking_group(ARRAY(SELECT id FROM bookings),true);
+DO $$ BEGIN IF EXISTS(SELECT 1 FROM bookings) THEN RAISE EXCEPTION 'Cancel failed'; END IF; END $$;
+ROLLBACK;

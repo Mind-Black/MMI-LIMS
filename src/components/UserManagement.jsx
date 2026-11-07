@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Icon from './Icon';
 import { supabase } from '../supabaseClient';
 import { useToast } from '../context/useToast';
@@ -43,33 +43,37 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
     const [search, setSearch] = useState('');
     const [approvalFilter, setApprovalFilter] = useState('all');
     const [updatingToolId, setUpdatingToolId] = useState(null);
+    const [page,setPage]=useState(0);
+    const [hasMore,setHasMore]=useState(false);
+    const requestRef=useRef(0);
     const { showToast } = useToast();
 
     // Fetch All Users (Directory query selects non-sensitive columns)
     const fetchUsers = useCallback(async () => {
         try {
             setLoading(true);
-            const users = [];
-            for (let offset = 0; ;) {
-                const { data, error } = await supabase.from('profiles')
-                    .select('id, first_name, last_name, email, phone, job_title, access_level, is_approved, licenses, projects')
-                    .order('last_name').order('id').range(offset, offset + 499);
-                if (error) throw error;
-                if (!data?.length) break;
-                users.push(...data);
-                offset += data.length;
-            }
-            setAllUsers(users);
+            const request=++requestRef.current;
+            let query=supabase.from('profiles').select('id, first_name, last_name, email, phone, job_title, access_level, is_approved, licenses, projects').order('last_name').order('id');
+            const term=search.trim().replace(/[^\p{L}\p{N} @._-]/gu,'').slice(0,100);
+            if(term) query=query.or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,email.ilike.%${term}%,job_title.ilike.%${term}%`);
+            if(approvalFilter!=='all') query=query.eq('is_approved',approvalFilter==='approved');
+            const {data:users,error}=await query.range(page*100,page*100+100);
+            if(error) throw error;
+            if(request!==requestRef.current)return;
+            setHasMore(users.length>100);
+            setAllUsers(users.slice(0,100));
         } catch (error) {
             console.error('Error fetching users:', error);
             showToast('Failed to fetch users: ' + error.message, 'error');
         } finally {
             setLoading(false);
         }
-    }, [showToast]);
+    }, [showToast,page,search,approvalFilter]);
 
     useEffect(() => {
-        fetchUsers();
+        const requests=requestRef;
+        const timer=setTimeout(fetchUsers,250);
+        return ()=>{clearTimeout(timer);requests.current++;};
     }, [fetchUsers]);
 
     // Update access level for a tool (Level I, Level II, Level III, or None)
@@ -79,49 +83,9 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
 
         setUpdatingToolId(toolId);
         try {
-            // Normalize existing licenses to object format
-            let baseLicenses = {};
-            if (userToUpdate.licenses && typeof userToUpdate.licenses === 'object' && !Array.isArray(userToUpdate.licenses)) {
-                baseLicenses = { ...userToUpdate.licenses };
-            } else if (Array.isArray(userToUpdate.licenses)) {
-                for (const id of userToUpdate.licenses) {
-                    baseLicenses[id] = TOOL_ACCESS_LEVELS.LEVEL_3;
-                }
-            }
-
-            if (newLevel === TOOL_ACCESS_LEVELS.NONE) {
-                delete baseLicenses[toolId];
-                delete baseLicenses[String(toolId)];
-            } else {
-                baseLicenses[toolId] = newLevel;
-            }
-
-            // Try RPC first for authorization check (Admin or Tool Responsible)
-            const { data: rpcData, error: rpcError } = await supabase.rpc('set_user_tool_license', {
-                p_user_id: userId,
-                p_tool_id: toolId,
-                p_level: newLevel
-            });
-
-            let finalLicenses = baseLicenses;
-
-            if (rpcError) {
-                // Fallback to direct profiles table update if RPC not applied yet
-                const { data: updateData, error: updateError } = await supabase
-                    .from('profiles')
-                    .update({ licenses: baseLicenses })
-                    .eq('id', userId)
-                    .select('id, licenses');
-
-                if (updateError) throw updateError;
-                if (!updateData || updateData.length === 0) {
-                    throw new Error('Update failed or permission denied (0 rows affected)');
-                }
-                finalLicenses = updateData[0].licenses;
-            } else if (rpcData?.licenses) {
-                finalLicenses = rpcData.licenses;
-            }
-
+            const {data,error} = await supabase.rpc('set_user_tool_license',{p_user_id:userId,p_tool_id:toolId,p_level:newLevel});
+            if(error) throw error;
+            const finalLicenses = data.licenses;
             setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, licenses: finalLicenses } : u));
             if (selectedUser?.id === userId) {
                 setSelectedUser(prev => prev ? { ...prev, licenses: finalLicenses } : null);
@@ -171,23 +135,19 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
             return;
         }
 
-        const newProjects = [...currentProjects, projectName];
 
         try {
             const { data, error } = await supabase
-                .from('profiles')
-                .update({ projects: newProjects })
-                .eq('id', userId)
-                .select('id, projects');
+                .rpc('edit_profile_assignment',{p_user_id:userId,p_kind:'project',p_value:projectName,p_add:true});
 
             if (error) throw error;
             if (!data || data.length === 0) {
                 throw new Error('Failed to add project');
             }
 
-            setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, projects: newProjects } : u));
+            setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, projects: data.projects } : u));
             if (selectedUser?.id === userId) {
-                setSelectedUser(prev => prev ? { ...prev, projects: newProjects } : null);
+                setSelectedUser(prev => prev ? { ...prev, projects: data.projects } : null);
             }
             if (currentUser && currentUser.id === userId && onProfileUpdate) {
                 onProfileUpdate();
@@ -203,23 +163,19 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
         const userToUpdate = allUsers.find(u => u.id === userId);
         if (!userToUpdate) return;
 
-        const newProjects = (Array.isArray(userToUpdate.projects) ? userToUpdate.projects : []).filter(p => p !== projectName);
 
         try {
             const { data, error } = await supabase
-                .from('profiles')
-                .update({ projects: newProjects })
-                .eq('id', userId)
-                .select('id, projects');
+                .rpc('edit_profile_assignment',{p_user_id:userId,p_kind:'project',p_value:projectName,p_add:false});
 
             if (error) throw error;
             if (!data || data.length === 0) {
                 throw new Error('Failed to remove project');
             }
 
-            setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, projects: newProjects } : u));
+            setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, projects: data.projects } : u));
             if (selectedUser?.id === userId) {
-                setSelectedUser(prev => prev ? { ...prev, projects: newProjects } : null);
+                setSelectedUser(prev => prev ? { ...prev, projects: data.projects } : null);
             }
             if (currentUser && currentUser.id === userId && onProfileUpdate) {
                 onProfileUpdate();
@@ -231,10 +187,8 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
         }
     };
 
-    const filteredUsers = allUsers.filter(user => {
-        const terms = `${user.first_name || ''} ${user.last_name || ''} ${user.job_title || ''} ${user.email || ''}`.toLowerCase();
-        return terms.includes(search.toLowerCase()) && (approvalFilter === 'all' || (approvalFilter === 'approved') === Boolean(user.is_approved));
-    });
+    const filteredUsers=allUsers;
+    useEffect(()=>{setPage(0);},[search,approvalFilter]);
 
     return (
         <div className="space-y-6">
@@ -350,6 +304,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
             </div>
 
             {/* Selected User Management Drawer */}
+            <div className="flex gap-3"><button disabled={!page||loading} onClick={()=>setPage(p=>p-1)}>Previous users</button><span>Page {page+1}</span><button disabled={!hasMore||loading} onClick={()=>setPage(p=>p+1)}>Next users</button></div>
             {selectedUser && (
                 <div className="card p-6 animate-fade-in space-y-6">
                     <div className="flex justify-between items-center border-b dark:border-gray-700 pb-3">

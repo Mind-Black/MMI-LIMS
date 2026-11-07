@@ -1,6 +1,6 @@
+import {platformKey} from '../_shared/config.ts';
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { Resend } from "npm:resend@2.0.0";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.86.0";
 
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -24,7 +24,7 @@ serve(async (req) => {
     try {
         const resendKey = Deno.env.get("RESEND_API_KEY");
         const supabaseUrl = Deno.env.get("SUPABASE_URL");
-        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        const supabaseServiceKey = platformKey('secret');
 
         if (!resendKey || !supabaseUrl || !supabaseServiceKey) {
             return new Response(
@@ -44,7 +44,7 @@ serve(async (req) => {
 
         const supabaseClient = createClient(
             supabaseUrl,
-            Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+            platformKey('publishable'),
             { global: { headers: { Authorization: authHeader } } }
         );
 
@@ -101,23 +101,6 @@ serve(async (req) => {
             );
         }
 
-        // 4. Enforce sender quota: max 20 emails per hour (Fixes R4)
-        if (senderProfile.access_level !== 'admin') {
-            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-            const { count: recentCount, error: countErr } = await supabaseAdmin
-                .from('email_logs')
-                .select('*', { count: 'exact', head: true })
-                .eq('sender_id', user.id)
-                .gte('created_at', oneHourAgo);
-
-            if (!countErr && (recentCount ?? 0) >= 20) {
-                return new Response(
-                    JSON.stringify({ error: "Email rate limit exceeded (maximum 20 per hour). Please try again later." }),
-                    { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-                );
-            }
-        }
-
         // 5. Derive recipient and booking details authoritatively from database
         const { data: booking, error: bookingError } = await supabaseAdmin
             .from('bookings')
@@ -153,8 +136,9 @@ serve(async (req) => {
         }
 
         const recipientEmail = recipientAuth.user.email;
-        const senderName = `${senderProfile.first_name || ''} ${senderProfile.last_name || ''}`.trim() || user.email;
-        const toolName = booking.tools?.name || 'Lab Equipment';
+        const senderName = `${senderProfile.first_name || ''} ${senderProfile.last_name || ''}`.trim() || user.email || 'Lab member';
+        const tool = Array.isArray(booking.tools) ? booking.tools[0] : booking.tools;
+        const toolName = tool?.name || 'Lab Equipment';
 
         // 6. Construct safe email contents with escaping (no arbitrary raw HTML accepted)
         const escapedSubject = `[MMI-LIMS] ${cleanSubject}`;
@@ -180,22 +164,24 @@ serve(async (req) => {
                 </div>
                 <p style="color: #6b7280; font-size: 13px; margin-bottom: 0;">
                     Sent by: <strong>${escapeHtml(senderName)}</strong> (${escapeHtml(senderProfile.job_title || 'Researcher')})<br>
-                    Materials Research Facility
+                    KTU Materials Metrology Institute
                 </p>
             </div>
         `;
 
+        const {error: quotaError} = await supabaseClient.rpc('reserve_email_quota', {p_booking_id: booking.id});
+        if (quotaError) return new Response(JSON.stringify({error:'Email quota unavailable or exceeded'}), {status:429,headers:{...corsHeaders,'Content-Type':'application/json'}});
         // 7. Send email via Resend and handle provider outcome
-        const resend = new Resend(resendKey);
-        const senderEmail = Deno.env.get("SENDER_EMAIL") || "MMI-LIMS <no-reply@example.com>";
-        const { data: resendData, error: resendError } = await resend.emails.send({
-            from: senderEmail,
+        const response = await fetch("https://api.resend.com/emails", {method:"POST", headers:{Authorization:`Bearer ${resendKey}`,"Content-Type":"application/json"},body:JSON.stringify({
+            from: Deno.env.get("EMAIL_FROM") || "MMI-LIMS <no-reply@lims.gradientfab.com>",
             to: recipientEmail,
             reply_to: user.email,
             subject: escapedSubject,
             text: plainText,
             html: htmlBody,
-        });
+        }),signal:AbortSignal.timeout(15000)});
+        const resendData = await response.json();
+        const resendError = response.ok ? null : {message:"Provider rejected email"};
 
         if (resendError) {
             console.error("Resend provider error:", resendError);
@@ -204,13 +190,6 @@ serve(async (req) => {
                 { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
         }
-
-        // Record successful send for rate limiting
-        await supabaseAdmin.from('email_logs').insert({
-            sender_id: user.id,
-            recipient_email: recipientEmail,
-            booking_id: booking.id,
-        });
 
         return new Response(
             JSON.stringify({ success: true, messageId: resendData?.id }),

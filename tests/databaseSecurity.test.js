@@ -66,7 +66,6 @@ async function setActor(db, userId, role = 'authenticated') {
   if (role) {
     await db.query(`GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated`);
     await db.query(`GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated`);
-    await db.query(`GRANT ALL ON ALL ROUTINES IN SCHEMA public TO authenticated`);
     await db.query(`SET ROLE ${role}`);
   } else {
     await db.query(`RESET ROLE`);
@@ -248,7 +247,7 @@ test('R3: First-admin provisioning works without authenticated context', async (
   `);
 
   // Direct SQL update (auth.uid() is null in SQL editor)
-  await setActor(db, null);
+  await setActor(db, null, null);
   await db.query(`UPDATE public.profiles SET access_level = 'admin', is_approved = true WHERE id = '${adminId}'`);
 
   const res = await db.query(`SELECT access_level, is_approved, updated_at FROM public.profiles WHERE id = '${adminId}'`);

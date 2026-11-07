@@ -55,3 +55,8 @@ WEBSITE_AUDIT_*.md
 
 # Supabase Temporary Cache
 supabase/.temp/
+
+playwright-report/
+test-results/
+.env.release
+.release-secrets/
