@@ -29,6 +29,8 @@ const BookingModal = lazy(() => import('./BookingModal'));
 const InfrastructureManagement = lazy(() => import('./InfrastructureManagement'));
 const AddInfrastructureModal = lazy(() => import('./AddInfrastructureModal'));
 const ApplyTrainingModal = lazy(() => import('./ApplyTrainingModal'));
+const TutorialModal = lazy(() => import('./TutorialModal'));
+const TUTORIAL_SEEN_KEY = 'mmi_tutorial_seen';
 const BOOKING_FIELDS = 'id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at, status, confirmed_by, confirmed_at';
 const PAGE_SIZE = 500;
 
@@ -122,6 +124,16 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     const [sendCancellationMessage, setSendCancellationMessage] = useState(false);
     const [isCancelling, setIsCancelling] = useState(false);
     const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
+    const [isTutorialOpen, setIsTutorialOpen] = useState(false);
+
+    const closeTutorial = useCallback(() => {
+        setIsTutorialOpen(false);
+        try {
+            localStorage.setItem(TUTORIAL_SEEN_KEY, 'true');
+        } catch {
+            // Ignore storage errors
+        }
+    }, []);
 
     // Filters for "All Bookings" (Admin)
     const [filterStartDate, setFilterStartDate] = useState(() => new URLSearchParams(window.location.search).get('from') || '');
@@ -241,6 +253,19 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
     }, [fetchData]);
+
+    // Show the quick-start tutorial once per browser, after the first data load
+    const initialLoadDone = !loading || Boolean(lastUpdated);
+    useEffect(() => {
+        if (!initialLoadDone || !profile) return;
+        let seen = false;
+        try {
+            seen = localStorage.getItem(TUTORIAL_SEEN_KEY) === 'true';
+        } catch {
+            seen = true; // Storage unavailable: don't nag on every visit
+        }
+        if (!seen) setIsTutorialOpen(true);
+    }, [initialLoadDone, profile]);
 
     useEffect(() => {
         const timer = setTimeout(() => setDebouncedUserName(filterUserName), 300);
@@ -801,6 +826,14 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                         <Icon className="fas fa-tags text-base text-center shrink-0 text-emerald-600 dark:text-emerald-400" />
                         {!isSidebarCollapsed && <span>Rates & Pricing</span>}
                     </button>
+                    <button
+                        onClick={() => { setIsTutorialOpen(true); setIsSidebarOpen(false); }}
+                        title="Quick-start tutorial"
+                        className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-3 rounded-lg text-sm font-medium transition text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/60 cursor-pointer`}
+                    >
+                        <Icon className="fas fa-graduation-cap text-base text-center shrink-0 text-blue-600 dark:text-blue-400" />
+                        {!isSidebarCollapsed && <span>Tutorial</span>}
+                    </button>
 
                     {profile?.access_level === 'admin' && (
                         <>
@@ -1347,6 +1380,20 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 isOpen={isPricingModalOpen}
                 onClose={() => setIsPricingModalOpen(false)}
             />
+
+            {/* Quick-start Tutorial */}
+            {isTutorialOpen && (
+                <Suspense fallback={null}>
+                    <TutorialModal
+                        isOpen={isTutorialOpen}
+                        onClose={closeTutorial}
+                        isAdmin={profile?.access_level === 'admin'}
+                        onNavigate={handleNavigation}
+                        onOpenPricing={() => setIsPricingModalOpen(true)}
+                        onOpenCalendarSync={handleOpenCalendarModal}
+                    />
+                </Suspense>
+            )}
 
             {/* Calendar Subscription Feed Modal (Fixes R12) */}
             {calendarModalOpen && (
