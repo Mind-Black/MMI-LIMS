@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Icon from './Icon';
+import InviteUserModal from './InviteUserModal';
 import { supabase } from '../supabaseClient';
 import { useToast } from '../context/useToast';
 import {
@@ -55,9 +56,33 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
     const [savingLicense, setSavingLicense] = useState(false);
     const [page,setPage]=useState(0);
     const [hasMore,setHasMore]=useState(false);
+    const [inviteModalOpen, setInviteModalOpen] = useState(false);
+    const [pendingInvitations, setPendingInvitations] = useState([]);
+    const [loadingInvitations, setLoadingInvitations] = useState(true);
+    const [busyInvitationId, setBusyInvitationId] = useState(null);
     const requestRef=useRef(0);
     const { showToast } = useToast();
 
+    const fetchInvitations = useCallback(async () => {
+        try {
+            setLoadingInvitations(true);
+            const { data, error } = await supabase
+                .from('user_invitations')
+                .select('id, email, first_name, last_name, job_title, projects, status, expires_at, last_sent_at, created_at')
+                .eq('status', 'pending')
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            setPendingInvitations(Array.isArray(data) ? data : []);
+        } catch (error) {
+            console.error('Error fetching invitations:', error);
+        } finally {
+            setLoadingInvitations(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchInvitations();
+    }, [fetchInvitations]);
     const visibleEquipment = useMemo(() => {
         if (!selectedUser) return [];
 
@@ -226,12 +251,57 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
         }
     };
 
+    const handleResendInvitation = async (invitationId, email) => {
+        setBusyInvitationId(invitationId);
+        try {
+            const { data, error } = await supabase.functions.invoke('invite-user', {
+                body: { action: 'resend', invitationId },
+            });
+            if (error) throw new Error(error.message || 'Failed to resend invitation');
+            if (data?.error) throw new Error(data.error);
+            if (data?.invitation) {
+                setPendingInvitations(prev => prev.map(inv => inv.id === invitationId ? data.invitation : inv));
+            }
+            showToast(`Invitation resent to ${email}.`, 'success');
+        } catch (error) {
+            console.error('Error resending invitation:', error);
+            showToast('Failed to resend invitation: ' + error.message, 'error');
+        } finally {
+            setBusyInvitationId(null);
+        }
+    };
+
+    const handleRevokeInvitation = async (invitationId, email) => {
+        setBusyInvitationId(invitationId);
+        try {
+            const { error } = await supabase.rpc('revoke_user_invitation', { p_invitation_id: invitationId });
+            if (error) throw error;
+            setPendingInvitations(prev => prev.filter(inv => inv.id !== invitationId));
+            showToast(`Invitation for ${email} revoked.`, 'success');
+        } catch (error) {
+            console.error('Error revoking invitation:', error);
+            showToast('Failed to revoke invitation: ' + error.message, 'error');
+        } finally {
+            setBusyInvitationId(null);
+        }
+    };
+
     const filteredUsers=allUsers;
     useEffect(()=>{setPage(0);},[search,approvalFilter]);
 
     return (
         <div className="space-y-6">
-            <h3 className="font-bold text-gray-800 dark:text-gray-200 transition-colors">User Management</h3>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <h3 className="font-bold text-gray-800 dark:text-gray-200 transition-colors">User Management</h3>
+                <button
+                    type="button"
+                    onClick={() => setInviteModalOpen(true)}
+                    className="btn btn-primary btn-sm flex items-center gap-2 self-start sm:self-auto"
+                >
+                    <Icon className="fas fa-envelope-open-text" />
+                    Invite User
+                </button>
+            </div>
             <div className="card p-4 flex flex-col sm:flex-row gap-3">
                 <label className="flex-1 text-sm text-gray-700 dark:text-gray-200">Search users
                     <input
@@ -565,6 +635,86 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                     </div>
                 </div>
             )}
+
+            {/* Pending Invitations Section */}
+            {(loadingInvitations || pendingInvitations.length > 0) && (
+                <div className="card overflow-hidden">
+                    <div className="px-4 py-3 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex items-center justify-between">
+                        <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                            <Icon className="fas fa-paper-plane text-blue-600 dark:text-blue-400" />
+                            Pending Invitations ({pendingInvitations.length})
+                        </h4>
+                    </div>
+                    {loadingInvitations ? (
+                        <div className="p-4 text-sm text-gray-500 dark:text-gray-400">Loading invitations...</div>
+                    ) : (
+                        <div className="divide-y dark:divide-gray-700">
+                            {pendingInvitations.map(inv => {
+                                const isExpired = inv.expires_at && new Date(inv.expires_at).getTime() <= Date.now();
+                                const isBusy = busyInvitationId === inv.id;
+                                const displayName = [inv.first_name, inv.last_name].filter(Boolean).join(' ');
+                                return (
+                                    <div key={inv.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
+                                        <div className="space-y-1">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="font-semibold text-gray-800 dark:text-gray-200">{inv.email}</span>
+                                                {isExpired ? (
+                                                    <span className="px-2 py-0.5 rounded text-[11px] font-bold uppercase bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
+                                                        Expired
+                                                    </span>
+                                                ) : (
+                                                    <span className="px-2 py-0.5 rounded text-[11px] font-bold uppercase bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                                                        Pending
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-3 gap-y-1">
+                                                {displayName && <span>Name: {displayName}</span>}
+                                                {inv.job_title && <span>Title: {inv.job_title}</span>}
+                                                {inv.last_sent_at && <span>Sent: {new Date(inv.last_sent_at).toLocaleDateString()}</span>}
+                                                {inv.expires_at && <span>Expires: {new Date(inv.expires_at).toLocaleDateString()}</span>}
+                                            </div>
+                                            {Array.isArray(inv.projects) && inv.projects.length > 0 && (
+                                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                                    {inv.projects.map((proj, idx) => (
+                                                        <span key={idx} className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded text-xs">
+                                                            {proj}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <button
+                                                type="button"
+                                                disabled={isBusy}
+                                                onClick={() => handleResendInvitation(inv.id, inv.email)}
+                                                className="btn btn-secondary btn-sm"
+                                            >
+                                                {isBusy ? 'Working...' : 'Resend'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={isBusy}
+                                                onClick={() => handleRevokeInvitation(inv.id, inv.email)}
+                                                className="btn btn-ghost btn-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                            >
+                                                Revoke
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            <InviteUserModal
+                isOpen={inviteModalOpen}
+                onClose={() => setInviteModalOpen(false)}
+                onInvited={(newInvite) => setPendingInvitations(prev => [newInvite, ...prev.filter(i => i.id !== newInvite.id)])}
+            />
         </div>
     );
 };

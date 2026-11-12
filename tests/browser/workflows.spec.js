@@ -104,3 +104,80 @@ test('sidebar tutorial entry opens the tour and jumps to a page',async({page})=>
  await dialog.getByRole('button',{name:'Go to Equipment List'}).click();
  await expect(dialog).toHaveCount(0);await expect(page).toHaveURL(/view=tools/);
 });
+test('admin can send and revoke user invitations in User Management',async({page})=>{
+ const pendingInvites=[];
+ await page.addInitScript(()=>localStorage.setItem('mmi_tutorial_seen','true'));
+ await page.addInitScript(({id})=>localStorage.setItem('sb-localhost-auth-token',JSON.stringify({access_token:'test-token',refresh_token:'refresh',expires_at:4102444800,expires_in:3600,token_type:'bearer',user:{id,email:'admin@example.com',aud:'authenticated'}})),{id});
+ await page.route('http://localhost:54321/**',async route=>{
+  const url=new URL(route.request().url());
+  const path=url.pathname;
+  let body=[];
+  if(path.includes('profiles') && url.searchParams.get('id')?.includes('eq.')) {
+   body={id,first_name:'Admin',last_name:'User',job_title:'Chief Researcher',access_level:'admin',is_approved:true,licenses:{},projects:[]};
+  } else if(path.includes('profiles')) {
+   body=[{id,first_name:'Admin',last_name:'User',email:'admin@example.com',job_title:'Chief Researcher',access_level:'admin',is_approved:true,licenses:{},projects:[]}];
+  } else if(path.includes('tools')) {
+   body=[{id:1,name:'Test equipment',category:'Metrology',status:'up',license_req:true}];
+  } else if(path.includes('user_invitations')) {
+   body=[...pendingInvites];
+  } else if(path.includes('functions/v1/invite-user')) {
+   const payload=route.request().postDataJSON();
+   if(payload.action==='send') {
+    const inv={id:'inv-1',email:payload.email,first_name:payload.first_name,last_name:payload.last_name,job_title:payload.job_title,projects:payload.projects||[],status:'pending',expires_at:'2035-01-20T00:00:00Z',last_sent_at:'2035-01-13T00:00:00Z',created_at:'2035-01-13T00:00:00Z'};
+    pendingInvites.unshift(inv);
+    body={success:true,invitation:inv};
+   }
+  } else if(path.includes('revoke_user_invitation')) {
+   pendingInvites.length=0;
+   body={id:'inv-1',status:'revoked'};
+  } else if(path.includes('has_calendar_token')) {
+   body=false;
+  } else if(path.includes('auth/v1/user')) {
+   body={id,email:'admin@example.com'};
+  }
+  await route.fulfill({json:body,headers:{'Access-Control-Allow-Origin':'*'}});
+ });
+ await page.goto('./?view=users');
+ await page.getByRole('button',{name:'Invite User'}).click();
+ await page.getByLabel(/Email Address/).fill('new.researcher@example.com');
+ await page.getByLabel(/First Name/).fill('Marie');
+ await page.getByLabel(/Last Name/).fill('Curie');
+ await page.getByLabel(/Job Title/).selectOption('Researcher');
+ await page.getByRole('button',{name:'Send Invitation'}).click();
+ await expect(page.getByText('Invitation sent to new.researcher@example.com.')).toBeVisible();
+ await expect(page.getByText('Pending Invitations (1)')).toBeVisible();
+ await page.getByRole('button',{name:'Revoke'}).click();
+ await expect(page.getByText('Invitation for new.researcher@example.com revoked.')).toBeVisible();
+});
+test('invited user can complete setup via invitation link',async({page})=>{
+ const token='c'.repeat(64);
+ await page.addInitScript(()=>localStorage.setItem('mmi_tutorial_seen','true'));
+ await page.route('http://localhost:54321/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  let body={};
+  if(path.includes('get_invitation_by_token')) {
+   body={id:'inv-2',email:'invited@example.com',first_name:'Grace',last_name:'Hopper',job_title:'Senior Researcher',projects:['Compilers'],expires_at:'2035-01-20T00:00:00Z'};
+  } else if(path.includes('functions/v1/invite-user')) {
+   const payload=route.request().postDataJSON();
+   expect(payload.action).toBe('accept');
+   expect(payload.token).toBe(token);
+   body={success:true,email:'invited@example.com',userId:id};
+  } else if(path.includes('auth/v1/token')) {
+   body={access_token:'test-token',refresh_token:'refresh',expires_in:3600,token_type:'bearer',user:{id,email:'invited@example.com',aud:'authenticated'}};
+  } else if(path.includes('profiles')) {
+   body={id,first_name:'Grace',last_name:'Hopper',job_title:'Senior Researcher',access_level:'user',is_approved:true,licenses:{},projects:['Compilers']};
+  } else if(path.includes('tools')) {
+   body=[];
+  } else if(path.includes('has_calendar_token')) {
+   body=false;
+  }
+  await route.fulfill({json:body,headers:{'Access-Control-Allow-Origin':'*'}});
+ });
+ await page.goto(`./?invite=${token}`);
+ await expect(page.getByRole('heading',{name:'Accept Invitation'})).toBeVisible();
+ await expect(page.getByLabel('Email Address')).toHaveValue('invited@example.com');
+ await expect(page.getByLabel('First Name')).toHaveValue('Grace');
+ await page.getByLabel('Password').fill('SecurePass123!');
+ await page.getByRole('button',{name:'Complete Setup & Sign In'}).click();
+ await expect(page.getByText('Welcome to MMI-LIMS! Your account is active.')).toBeVisible();
+});
