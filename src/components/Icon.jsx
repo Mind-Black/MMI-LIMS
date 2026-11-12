@@ -4,7 +4,7 @@ import {
     Plus, RefreshCw, Copy, CircleCheck, TriangleAlert, CircleAlert,
     Link, X, LoaderCircle, ChevronLeft, ChevronRight, Mail, Camera,
     CircleX, Circle, Clock, FileSpreadsheet, Upload, Download, Server,
-    Pencil, Trash2
+    Pencil, Trash2, GraduationCap, Tag, ArrowRight, ArrowLeft
 } from 'lucide-react';
 
 const icons = {
@@ -37,7 +37,12 @@ const icons = {
     'fa-download': Download,
     'fa-server': Server,
     'fa-edit': Pencil,
-    'fa-trash': Trash2
+    'fa-trash': Trash2,
+    'fa-graduation-cap': GraduationCap,
+    'fa-user-graduate': GraduationCap,
+    'fa-tags': Tag,
+    'fa-arrow-right': ArrowRight,
+    'fa-arrow-left': ArrowLeft
 };
 
 const Icon = ({ className = '', ...props }) => {
