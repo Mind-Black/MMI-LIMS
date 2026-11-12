@@ -1,13 +1,16 @@
 import {test,expect} from '@playwright/test';
 const id='11111111-1111-1111-1111-111111111111';
-async function session(page,approved,{tutorialSeen=true}={}) {
+async function session(page,approved,{tutorialSeen=true,role='user',users=[],tools=[{id:1,name:'Test equipment',category:'Metrology',status:'up',license_req:true}]}={}) {
  if(tutorialSeen) await page.addInitScript(()=>localStorage.setItem('mmi_tutorial_seen','true'));
  await page.addInitScript(({id})=>localStorage.setItem('sb-localhost-auth-token',JSON.stringify({access_token:'test-token',refresh_token:'refresh',expires_at:4102444800,expires_in:3600,token_type:'bearer',user:{id,email:'a@example.com',aud:'authenticated'}})),{id});
  await page.route('http://localhost:54321/**',async route=>{
  const path=new URL(route.request().url()).pathname;
  let body=[];
- if(path.includes('profiles')) body={id,first_name:'Test',last_name:'Member',job_title:'Scientist',access_level:'user',is_approved:approved,licenses:{'1':'level_3'},projects:[]};
- if(path.includes('tools')) body=[{id:1,name:'Test equipment',category:'Metrology',status:'up',license_req:true}];
+ if(path.includes('profiles')) {
+ const single=route.request().headers().accept?.includes('vnd.pgrst.object');
+ body=single ? {id,first_name:'Test',last_name:'Member',job_title:'Scientist',access_level:role,is_approved:approved,licenses:{'1':'level_3'},projects:[]} : users;
+ }
+ if(path.includes('tools')) body=tools;
  if(path.includes('has_calendar_token')) body=false;
  if(path.includes('auth/v1/user')) body={id,email:'a@example.com'};
  if(path.includes('create_bookings')) {
@@ -18,6 +21,58 @@ async function session(page,approved,{tutorialSeen=true}={}) {
  await route.fulfill({json:body,headers:{'Access-Control-Allow-Origin':'*'}});
  });
 }
+
+test('admin searches and sorts equipment and saves the license for the matching row', async ({ page }) => {
+    const member = {
+        id: '22222222-2222-2222-2222-222222222222', first_name: 'Lab', last_name: 'Member',
+        access_level: 'user', is_approved: true, licenses: ['12'], projects: [],
+    };
+    const tools = [
+        { id: 12, name: 'Zeiss', category: 'Imaging' },
+        { id: 4, name: 'Alpha', category: 'Metrology' },
+        { id: 7, name: 'Beta', category: 'Imaging' },
+    ].map(tool => ({ ...tool, status: 'up', license_req: true }));
+    await session(page, true, { role: 'admin', users: [member], tools });
+    let savedLicense;
+    await page.route('**/rpc/set_user_tool_license', async route => {
+        savedLicense = route.request().postDataJSON();
+        await route.fulfill({ json: { licenses: { 12: 'level_3', 7: 'level_3' } } });
+    });
+    await page.goto('./?view=users');
+    await page.getByRole('button', { name: 'Manage Access' }).click();
+
+    const search = page.getByRole('searchbox', { name: 'Search equipment' });
+    const sort = page.getByLabel('Sort equipment');
+    const rows = page.getByRole('list', { name: 'Equipment licenses' }).getByRole('listitem');
+    await expect(rows).toHaveText([/Alpha/, /Beta/, /Zeiss/]);
+    await sort.selectOption('name-desc');
+    await expect(rows).toHaveText([/Zeiss/, /Beta/, /Alpha/]);
+    await sort.selectOption('category');
+    await expect(rows).toHaveText([/Beta/, /Zeiss/, /Alpha/]);
+    await sort.selectOption('license');
+    await expect(rows).toHaveText([/Zeiss/, /Alpha/, /Beta/]);
+
+    await search.fill('  IMAGING ');
+    await expect(rows).toHaveText([/Zeiss/, /Beta/]);
+    await rows.filter({ hasText: 'Beta' }).getByRole('button', { name: 'Level III', exact: true }).click();
+    await expect(rows).toHaveText([/Beta/, /Zeiss/]);
+    expect(savedLicense).toEqual({ p_user_id: member.id, p_tool_id: 7, p_level: 'level_3' });
+    await expect(search).toHaveValue('  IMAGING ');
+    await expect(sort).toHaveValue('license');
+
+    await search.fill('12');
+    await expect(rows).toHaveText([/Zeiss/]);
+    await search.fill('unknown');
+    await expect(page.getByText('No equipment matches your search.')).toBeVisible();
+    await page.getByRole('button', { name: 'Clear equipment search' }).click();
+    await expect(rows).toHaveCount(3);
+    await search.fill('beta');
+    await expect(rows).toHaveText([/Beta/]);
+    await page.getByRole('button', { name: 'Close user details' }).click();
+    await page.getByRole('button', { name: 'Manage Access' }).click();
+    await expect(search).toHaveValue('');
+    await expect(sort).toHaveValue('name-asc');
+});
 test('pending account stays outside the booking interface',async({page})=>{
  await session(page,false);await page.goto('./');await expect(page.getByRole('heading',{name:'Account Pending Approval'})).toBeVisible();await expect(page.getByRole('button',{name:'Confirm',exact:true})).toHaveCount(0);
 });
