@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
 const id='11111111-1111-1111-1111-111111111111';
-async function session(page,approved) {
+async function session(page,approved,{tutorialSeen=true}={}) {
+ if(tutorialSeen) await page.addInitScript(()=>localStorage.setItem('mmi_tutorial_seen','true'));
  await page.addInitScript(({id})=>localStorage.setItem('sb-localhost-auth-token',JSON.stringify({access_token:'test-token',refresh_token:'refresh',expires_at:4102444800,expires_in:3600,token_type:'bearer',user:{id,email:'a@example.com',aud:'authenticated'}})),{id});
  await page.route('http://localhost:54321/**',async route=>{
  const path=new URL(route.request().url()).pathname;
@@ -104,4 +105,23 @@ test('invited user can complete setup via invitation link',async({page})=>{
  await page.getByLabel('Password').fill('SecurePass123!');
  await page.getByRole('button',{name:'Complete Setup & Sign In'}).click();
  await expect(page.getByText('Welcome to MMI-LIMS! Your account is active.')).toBeVisible();
+test('quick-start tutorial opens once on first visit and can be completed',async({page})=>{
+ await session(page,true,{tutorialSeen:false});await page.goto('./');
+ const dialog=page.getByRole('dialog',{name:'Quick-start tutorial'});
+ await expect(dialog).toBeVisible();await expect(dialog.getByText('Step 1 of',{exact:false})).toBeVisible();
+ await expect(dialog.getByRole('heading',{name:'Administration'})).toHaveCount(0);
+ while(await dialog.getByRole('button',{name:'Next'}).count()) await dialog.getByRole('button',{name:'Next'}).click();
+ await expect(dialog.getByRole('heading',{name:"You're all set"})).toBeVisible();
+ await dialog.getByRole('button',{name:'Finish'}).click();await expect(dialog).toHaveCount(0);
+ await page.reload();await expect(page.getByRole('button',{name:'Tutorial',exact:true})).toBeVisible();
+ await expect(page.getByRole('dialog',{name:'Quick-start tutorial'})).toHaveCount(0);
+});
+test('sidebar tutorial entry opens the tour and jumps to a page',async({page})=>{
+ await session(page,true);await page.goto('./');
+ await expect(page.getByRole('dialog',{name:'Quick-start tutorial'})).toHaveCount(0);
+ await page.getByRole('button',{name:'Tutorial',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'Quick-start tutorial'});await expect(dialog).toBeVisible();
+ await dialog.getByRole('button',{name:/Step 3:/}).click();
+ await dialog.getByRole('button',{name:'Go to Equipment List'}).click();
+ await expect(dialog).toHaveCount(0);await expect(page).toHaveURL(/view=tools/);
 });
