@@ -178,6 +178,15 @@ test('checkCollision implements half-open intervals correctly (S5)', () => {
     assert.strictEqual(checkCollision({ tool_id: 2, date: '2026-10-05', startTime: '10:00', endTime: '12:00' }, existing), false);
 });
 
+test('checkCollision ignores rejected and cancelled bookings like the DB constraint', () => {
+    const slot = { tool_id: 1, date: '2026-10-05', startTime: '10:00', endTime: '11:00' };
+    const at = status => [{ id: 1, tool_id: 1, date: '2026-10-05', startTime: '10:00', endTime: '11:00', status }];
+    assert.strictEqual(checkCollision(slot, at('rejected')), false);
+    assert.strictEqual(checkCollision(slot, at('cancelled')), false);
+    assert.strictEqual(checkCollision(slot, at('confirmed')), true);
+    assert.strictEqual(checkCollision(slot, at('pending_approval')), true);
+});
+
 test('calculateEventLayout clusters overlaps and leaves inputs pure (L7)', () => {
     const originalEvents = [
         { id: 1, startTime: '09:00', endTime: '10:00' },

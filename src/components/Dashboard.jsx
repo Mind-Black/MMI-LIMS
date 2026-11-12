@@ -30,7 +30,6 @@ const InfrastructureManagement = lazy(() => import('./InfrastructureManagement')
 const AddInfrastructureModal = lazy(() => import('./AddInfrastructureModal'));
 const ApplyTrainingModal = lazy(() => import('./ApplyTrainingModal'));
 const BOOKING_FIELDS = 'id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at, status, confirmed_by, confirmed_at';
-const LEGACY_BOOKING_FIELDS = 'id, tool_id, tool_name, user_id, user_name, project, date, time, end_time, starts_at, ends_at, created_at';
 const PAGE_SIZE = 500;
 
 async function fetchAllPages(makeQuery, maxRows = Infinity) {
@@ -341,33 +340,18 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             const rows = [];
             let total = 0;
             let offset = adminPage * 200;
-            let useFallback = false;
             while (rows.length < 200) {
-                let query = supabase.from('bookings').select(useFallback ? LEGACY_BOOKING_FIELDS : BOOKING_FIELDS, { count: 'exact' })
+                let query = supabase.from('bookings').select(BOOKING_FIELDS, { count: 'exact' })
                     .order('date', { ascending: false }).order('time', { ascending: false }).order('id', { ascending: false });
                 if (filterStartDate) query = query.gte('date', filterStartDate);
                 if (filterEndDate) query = query.lte('date', filterEndDate);
                 if (debouncedUserName.trim()) query = query.ilike('user_name', `%${debouncedUserName.trim()}%`);
                 if (filterToolId) query = query.eq('tool_id', filterToolId);
-                let { data, error, count } = await query.range(offset, offset + 199 - rows.length);
-                if (error && !useFallback && (error.message?.includes('status') || error.message?.includes('does not exist') || error.message?.includes('column'))) {
-                    useFallback = true;
-                    let legacyQuery = supabase.from('bookings').select(LEGACY_BOOKING_FIELDS, { count: 'exact' })
-                        .order('date', { ascending: false }).order('time', { ascending: false }).order('id', { ascending: false });
-                    if (filterStartDate) legacyQuery = legacyQuery.gte('date', filterStartDate);
-                    if (filterEndDate) legacyQuery = legacyQuery.lte('date', filterEndDate);
-                    if (debouncedUserName.trim()) legacyQuery = legacyQuery.ilike('user_name', `%${debouncedUserName.trim()}%`);
-                    if (filterToolId) legacyQuery = legacyQuery.eq('tool_id', filterToolId);
-                    const legacyRes = await legacyQuery.range(offset, offset + 199 - rows.length);
-                    data = legacyRes.data ? legacyRes.data.map(b => ({ ...b, status: 'confirmed' })) : null;
-                    error = legacyRes.error;
-                    count = legacyRes.count;
-                }
+                const { data, error, count } = await query.range(offset, offset + 199 - rows.length);
                 if (error) throw error;
                 total = count || 0;
                 if (!data?.length) break;
-                const formattedData = useFallback ? data.map(b => (b.status ? b : { ...b, status: 'confirmed' })) : data;
-                rows.push(...formattedData);
+                rows.push(...data);
                 if (data.length < (200 - (rows.length - data.length))) {
                     offset += data.length;
                     break;
@@ -541,7 +525,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             setUserBookings(prev => prev.filter(b => !cancelledIds.includes(b.id)));
             setAdminBookings(prev => prev.filter(b => !cancelledIds.includes(b.id)));
             setPendingBookings(prev => prev.filter(b => !cancelledIds.includes(b.id)));
-            showToast("Booking has been cancelled.", 'success');
+            if (!eventIds.length) showToast("Booking has been cancelled.", 'success');
 
             if (cancelCallbackRef.current) {
                 cancelCallbackRef.current(cancelledIds);
@@ -572,6 +556,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 p_booking_id: booking.id
             });
             if (error) throw error;
+            void fetchData(true); // Supersede reads that predate this change (also clears a pending spinner)
             showToast(`Confirmed reservation for ${booking.user_name} on ${booking.tool_name}.`, 'success');
             const updater = prev => prev.map(b => b.id === booking.id ? { ...b, status: 'confirmed' } : b);
             setBookings(updater);
@@ -592,6 +577,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 p_reason: reason
             });
             if (error) throw error;
+            void fetchData(true); // Supersede reads that predate this change (also clears a pending spinner)
             showToast(`Reservation rejected. Time slot released.`, 'info');
             const remover = prev => prev.filter(b => b.id !== booking.id);
             setBookings(remover);
@@ -611,6 +597,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 p_request_id: request.id
             });
             if (error) throw error;
+            void fetchData(true); // Supersede reads that predate this change (also clears a pending spinner)
             showToast(`Approved training application for ${request.user_name} on ${request.tool_name} (Level I assigned).`, 'success');
             setPendingRequests(prev => prev.filter(r => r.id !== request.id));
             if (request.user_id === user.id && onProfileRefresh) {
@@ -630,6 +617,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                 p_notes: notes
             });
             if (error) throw error;
+            void fetchData(true); // Supersede reads that predate this change (also clears a pending spinner)
             showToast(`Rejected training application for ${request.user_name}.`, 'info');
             setPendingRequests(prev => prev.filter(r => r.id !== request.id));
         } catch (err) {

@@ -520,6 +520,8 @@ export const checkCollision = (newBooking, existingBookings, ignoredIds = []) =>
 
     return existingBookings.some(b => {
         if (!b) return false;
+        // Mirror the DB exclusion constraint: rejected/cancelled rows never block a slot.
+        if (b.status === 'rejected' || b.status === 'cancelled') return false;
         if (b.id != null && ignoreSet.has(b.id)) return false;
         if (Array.isArray(b.ids) && b.ids.some(id => ignoreSet.has(id))) return false;
         if (b.date !== newBooking.date) return false;

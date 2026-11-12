@@ -38,7 +38,7 @@ test('Production contracts: signup, authorization, booking, cancellation and del
  await assert.rejects(db.query("SELECT lab_instant('2026-03-29','03:30')"),/Nonexistent/);
  await assert.rejects(db.query("SELECT lab_instant('2026-10-25','03:30')"),/ambiguous/);
  // An ongoing booking may change its end, but not its start or be cancelled.
- await db.query("INSERT INTO bookings(tool_id,user_id,tool_name,user_name,project,date,time,end_time) VALUES(1,$1,'','','General',(now() AT TIME ZONE 'Europe/Vilnius')::date,((now() AT TIME ZONE 'Europe/Vilnius')-interval '30 minutes')::time,((now() AT TIME ZONE 'Europe/Vilnius')+interval '30 minutes')::time)",[A]);
+ await db.query("INSERT INTO bookings(tool_id,user_id,tool_name,user_name,project,date,time,end_time) VALUES(1,$1,'','','General',((now() AT TIME ZONE 'Europe/Vilnius')-interval '30 minutes')::date,((now() AT TIME ZONE 'Europe/Vilnius')-interval '30 minutes')::time,((now() AT TIME ZONE 'Europe/Vilnius')+interval '30 minutes')::time)",[A]);
  await actor(db,A);
  const ongoing=(await db.query('SELECT * FROM bookings')).rows[0];
  await assert.rejects(db.query('SELECT cancel_booking_group($1,false)',[[ongoing.id]]),/start/);
@@ -70,6 +70,31 @@ test('Quota reservations fail closed; approval revocation removes private feed t
  await db.query('SELECT rotate_calendar_token($1)',['a'.repeat(64)]);
  await actor(db,null,'none');await db.query('UPDATE profiles SET is_approved=false WHERE id=$1',[A]);
  assert.equal((await db.query('SELECT * FROM user_calendar_tokens')).rows.length,0);
+});
+
+test('Only admins can write tools; callers without an identity cannot',async t=>{
+ const db=await setup();t.after(()=>db.close());
+ await db.query("INSERT INTO auth.users(id,email) VALUES($1,'admin@example.com'),($2,'user@example.com')",[A,B]);
+ await db.query("UPDATE profiles SET is_approved=true WHERE id IN ($1,$2)",[A,B]);
+ await db.query("UPDATE profiles SET access_level='admin' WHERE id=$1",[A]);
+ const insert="INSERT INTO tools(name,category) VALUES('New tool','Test')";
+ await actor(db,null);await assert.rejects(db.query(insert),/row-level/);
+ assert.equal((await db.query("UPDATE tools SET status='down' WHERE id=1")).affectedRows,0);
+ await actor(db,B);await assert.rejects(db.query(insert),/row-level/);
+ assert.equal((await db.query("UPDATE tools SET status='down' WHERE id=1")).affectedRows,0);
+ await actor(db,A);await db.query(insert);
+ assert.equal((await db.query("UPDATE tools SET status='down' WHERE id=1")).affectedRows,1);
+ // Production carried hand-made duplicate policies; the migration must remove them.
+ await actor(db,null,'none');
+ await db.exec(`CREATE POLICY "Admins can update tools" ON tools FOR UPDATE TO authenticated USING(true);
+  CREATE POLICY "Public tools are viewable by everyone" ON tools FOR SELECT TO authenticated USING(true);
+  CREATE POLICY "Tools viewable by authenticated users" ON tools FOR SELECT USING(true);
+  CREATE POLICY "Calendar token access restricted to owner" ON user_calendar_tokens FOR ALL USING(true);`);
+ await db.exec(fs.readFileSync('supabase/migrations/20261112191937_tools_admin_policy.sql','utf8'));
+ const policies=(await db.query("SELECT tablename||'.'||policyname AS p FROM pg_policies WHERE tablename IN ('tools','user_calendar_tokens') ORDER BY 1")).rows.map(r=>r.p);
+ assert.deepEqual(policies,['tools.tools_admin_all','tools.tools_read_all','user_calendar_tokens.user_calendar_tokens_owner']);
+ await actor(db,B);assert.equal((await db.query("UPDATE tools SET status='up' WHERE id=1")).affectedRows,0);
+ await actor(db,null);assert.equal((await db.query("UPDATE tools SET status='up' WHERE id=1")).affectedRows,0);
 });
 
 test('Graded access, confirmation and training remain secure for owners and tool managers',async t=>{

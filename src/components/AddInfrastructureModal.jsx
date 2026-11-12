@@ -149,27 +149,11 @@ const AddInfrastructureModal = ({
 
         try {
             // Attempt insertion with responsible IDs, rate_category, and image_url
-            let { data, error } = await supabase
+            const { data, error } = await supabase
                 .from('tools')
                 .insert([payload])
                 .select('id, name, category, rate_category, status, location, license_req, description, image_url, primary_responsible_id, secondary_responsible_id')
                 .single();
-
-            // Backward compatibility fallback: if new columns don't exist yet on DB
-            if (error && error.message) {
-                const legacyPayload = { ...payload };
-                delete legacyPayload.primary_responsible_id;
-                delete legacyPayload.secondary_responsible_id;
-                delete legacyPayload.image_url;
-                delete legacyPayload.rate_category;
-                const retry = await supabase
-                    .from('tools')
-                    .insert([legacyPayload])
-                    .select('id, name, category, status, location, license_req, description')
-                    .single();
-                data = retry.data;
-                error = retry.error;
-            }
 
             if (error) throw error;
 
@@ -257,26 +241,10 @@ const AddInfrastructureModal = ({
         const validRows = rowsToInsert;
 
         try {
-            let { data, error } = await supabase
+            const { data, error } = await supabase
                 .from('tools')
                 .insert(validRows)
                 .select('id, name, category, rate_category, status, location, license_req, description, image_url');
-
-            // Fallback if rate_category or image_url column not yet applied on target DB
-            if (error && error.message && (error.message.includes('image_url') || error.message.includes('rate_category'))) {
-                const legacyRows = validRows.map(r => {
-                    const rowCopy = { ...r };
-                    delete rowCopy.image_url;
-                    delete rowCopy.rate_category;
-                    return rowCopy;
-                });
-                const retry = await supabase
-                    .from('tools')
-                    .insert(legacyRows)
-                    .select('id, name, category, status, location, license_req, description');
-                data = retry.data;
-                error = retry.error;
-            }
 
             if (error) throw error;
 
