@@ -12,8 +12,8 @@ const DashboardWrapper = ({ session, onLogout }) => {
 
     const userId = session?.user?.id;
 
-    const handleRefresh = () => {
-        setStatus('loading');
+    const handleRefresh = ({ background = false } = {}) => {
+        if (!background) setStatus('loading');
         setRefreshIndex(prev => prev + 1);
     };
 
