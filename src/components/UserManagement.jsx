@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Icon from './Icon';
 import { supabase } from '../supabaseClient';
 import { useToast } from '../context/useToast';
@@ -7,6 +7,14 @@ import {
     ACCESS_LEVEL_LABELS,
     getToolAccessLevel
 } from '../utils/bookingUtils';
+
+const equipmentCollator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+const licenseRank = {
+    [TOOL_ACCESS_LEVELS.NONE]: 0,
+    [TOOL_ACCESS_LEVELS.LEVEL_1]: 1,
+    [TOOL_ACCESS_LEVELS.LEVEL_2]: 2,
+    [TOOL_ACCESS_LEVELS.LEVEL_3]: 3,
+};
 
 const countActiveLicenses = (licenses) => {
     if (!licenses) return 0;
@@ -41,12 +49,45 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
     const [selectedUser, setSelectedUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [equipmentSearch, setEquipmentSearch] = useState('');
+    const [equipmentSort, setEquipmentSort] = useState('name-asc');
     const [approvalFilter, setApprovalFilter] = useState('all');
-    const [updatingToolId, setUpdatingToolId] = useState(null);
+    const [savingLicense, setSavingLicense] = useState(false);
     const [page,setPage]=useState(0);
     const [hasMore,setHasMore]=useState(false);
     const requestRef=useRef(0);
     const { showToast } = useToast();
+
+    const visibleEquipment = useMemo(() => {
+        if (!selectedUser) return [];
+
+        const query = equipmentSearch.trim().toLowerCase();
+        return tools
+            .filter(tool => !query || [tool.name, tool.id, tool.category].some(
+                value => String(value ?? '').toLowerCase().includes(query)
+            ))
+            .map(tool => ({ tool, currentLevel: getToolAccessLevel(selectedUser, tool.id) }))
+            .sort((a, b) => {
+                const byName = equipmentCollator.compare(a.tool.name, b.tool.name);
+                const byId = a.tool.id - b.tool.id;
+                switch (equipmentSort) {
+                    case 'name-desc':
+                        return -byName || byId;
+                    case 'category':
+                        return equipmentCollator.compare(a.tool.category || '', b.tool.category || '') || byName || byId;
+                    case 'license':
+                        return licenseRank[b.currentLevel] - licenseRank[a.currentLevel] || byName || byId;
+                    default:
+                        return byName || byId;
+                }
+            });
+    }, [equipmentSearch, equipmentSort, selectedUser, tools]);
+
+    const toggleUserDetails = user => {
+        setSelectedUser(selectedUser?.id === user.id ? null : user);
+        setEquipmentSearch('');
+        setEquipmentSort('name-asc');
+    };
 
     // Fetch All Users (Directory query selects non-sensitive columns)
     const fetchUsers = useCallback(async () => {
@@ -81,17 +122,15 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
         const userToUpdate = allUsers.find(u => u.id === userId);
         if (!userToUpdate) return;
 
-        setUpdatingToolId(toolId);
+        setSavingLicense(true);
         try {
             const {data,error} = await supabase.rpc('set_user_tool_license',{p_user_id:userId,p_tool_id:toolId,p_level:newLevel});
             if(error) throw error;
             const finalLicenses = data.licenses;
             setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, licenses: finalLicenses } : u));
-            if (selectedUser?.id === userId) {
-                setSelectedUser(prev => prev ? { ...prev, licenses: finalLicenses } : null);
-            }
+            setSelectedUser(prev => prev?.id === userId ? { ...prev, licenses: finalLicenses } : prev);
             if (currentUser && currentUser.id === userId && onProfileUpdate) {
-                onProfileUpdate();
+                onProfileUpdate({ background: true });
             }
 
             const levelLabel = ACCESS_LEVEL_LABELS[newLevel] || 'No License';
@@ -100,7 +139,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
             console.error('Error updating access level:', error);
             showToast('Failed to update access level: ' + error.message, 'error');
         } finally {
-            setUpdatingToolId(null);
+            setSavingLicense(false);
         }
     };
 
@@ -234,7 +273,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                     </button>
                                 )}
                                 <button
-                                    onClick={() => setSelectedUser(selectedUser?.id === u.id ? null : u)}
+                                    onClick={() => toggleUserDetails(u)}
                                     className="btn btn-secondary btn-sm"
                                 >
                                     {selectedUser?.id === u.id ? 'Close' : 'Manage Access'}
@@ -286,7 +325,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                 </td>
                                 <td className="p-4 text-right">
                                     <button
-                                        onClick={() => setSelectedUser(selectedUser?.id === u.id ? null : u)}
+                                        onClick={() => toggleUserDetails(u)}
                                         className="btn btn-sm btn-ghost"
                                     >
                                         {selectedUser?.id === u.id ? 'Close' : 'Manage Access'}
@@ -341,13 +380,49 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                 Set operator authorization tier: <strong>Level I</strong> (Training in progress), <strong>Level II</strong> (Supervised / Booking requires confirmation), or <strong>Level III</strong> (Independent operator).
                             </p>
 
-                            <div className="space-y-2.5 max-h-96 overflow-y-auto pr-2 custom-scroll">
-                                {tools.map(tool => {
-                                    const currentLevel = getToolAccessLevel(selectedUser, tool.id);
-                                    const isBusy = updatingToolId === tool.id;
+                            <div className="flex flex-col sm:flex-row gap-3 mb-2">
+                                <label className="min-w-0 flex-1 text-sm text-gray-700 dark:text-gray-200">
+                                    Search equipment
+                                    <input
+                                        type="search"
+                                        value={equipmentSearch}
+                                        onChange={e => setEquipmentSearch(e.target.value)}
+                                        className="input-field mt-1"
+                                        placeholder="Name, ID, or category"
+                                    />
+                                </label>
+                                <label className="text-sm text-gray-700 dark:text-gray-200">
+                                    Sort equipment
+                                    <select
+                                        value={equipmentSort}
+                                        onChange={e => setEquipmentSort(e.target.value)}
+                                        className="select-input block mt-1 w-full"
+                                    >
+                                        <option value="name-asc">Name A–Z</option>
+                                        <option value="name-desc">Name Z–A</option>
+                                        <option value="category">Category, then name</option>
+                                        <option value="license">License level (highest first)</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 mb-2 text-xs text-gray-500 dark:text-gray-400">
+                                <span role="status">Showing {visibleEquipment.length} of {tools.length} equipment</span>
+                                {equipmentSearch && (
+                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEquipmentSearch('')}>
+                                        Clear equipment search
+                                    </button>
+                                )}
+                            </div>
+                            {visibleEquipment.length === 0 && (
+                                <p className="py-4 text-sm text-gray-500 dark:text-gray-400">
+                                    {tools.length ? 'No equipment matches your search.' : 'No equipment available.'}
+                                </p>
+                            )}
 
+                            <ul aria-label="Equipment licenses" className="space-y-2.5 max-h-96 overflow-y-auto pr-2 custom-scroll">
+                                {visibleEquipment.map(({ tool, currentLevel }) => {
                                     return (
-                                        <div
+                                        <li
                                             key={tool.id}
                                             className="p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/40 space-y-2"
                                         >
@@ -371,7 +446,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                             <div className="flex flex-wrap gap-1 bg-white dark:bg-gray-900 p-1 rounded-md border dark:border-gray-700 text-xs">
                                                 <button
                                                     type="button"
-                                                    disabled={isBusy}
+                                                    disabled={savingLicense}
                                                     onClick={() => handleSetAccessLevel(selectedUser.id, tool.id, TOOL_ACCESS_LEVELS.NONE)}
                                                     className={`flex-1 py-1 px-2 rounded font-medium transition ${currentLevel === TOOL_ACCESS_LEVELS.NONE ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
                                                     title="No access granted"
@@ -380,7 +455,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    disabled={isBusy}
+                                                    disabled={savingLicense}
                                                     onClick={() => handleSetAccessLevel(selectedUser.id, tool.id, TOOL_ACCESS_LEVELS.LEVEL_1)}
                                                     className={`flex-1 py-1 px-2 rounded font-medium transition flex items-center justify-center gap-1 ${currentLevel === TOOL_ACCESS_LEVELS.LEVEL_1 ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-400 hover:bg-amber-50 dark:hover:bg-amber-900/20'}`}
                                                     title="Level I: Undergoing training (No booking permitted)"
@@ -390,7 +465,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    disabled={isBusy}
+                                                    disabled={savingLicense}
                                                     onClick={() => handleSetAccessLevel(selectedUser.id, tool.id, TOOL_ACCESS_LEVELS.LEVEL_2)}
                                                     className={`flex-1 py-1 px-2 rounded font-medium transition flex items-center justify-center gap-1 ${currentLevel === TOOL_ACCESS_LEVELS.LEVEL_2 ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'}`}
                                                     title="Level II: Supervised (Booking holds slot tentatively, requires Tool Responsible confirmation)"
@@ -400,7 +475,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    disabled={isBusy}
+                                                    disabled={savingLicense}
                                                     onClick={() => handleSetAccessLevel(selectedUser.id, tool.id, TOOL_ACCESS_LEVELS.LEVEL_3)}
                                                     className={`flex-1 py-1 px-2 rounded font-medium transition flex items-center justify-center gap-1 ${currentLevel === TOOL_ACCESS_LEVELS.LEVEL_3 ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-400 hover:bg-green-50 dark:hover:bg-green-900/20'}`}
                                                     title="Level III: Independent operator (Direct booking permitted)"
@@ -431,10 +506,10 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                                     </span>
                                                 )}
                                             </div>
-                                        </div>
+                                        </li>
                                     );
                                 })}
-                            </div>
+                            </ul>
                         </div>
 
                         {/* Projects Section */}
