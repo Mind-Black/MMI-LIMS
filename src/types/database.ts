@@ -103,9 +103,27 @@ export interface user_calendar_tokens {
  token_hash: string;
  created_at: string;
 }
+export interface user_invitations {
+ id: string;
+ email: string;
+ token_hash: string;
+ first_name: string | null;
+ last_name: string | null;
+ job_title: string | null;
+ projects: string[];
+ invited_by: string;
+ invited_user_id: string | null;
+ status: string;
+ expires_at: string;
+ last_sent_at: string;
+ accepted_at: string | null;
+ created_at: string;
+}
 export interface RpcArgs {
  cancel_booking_group: {p_ids: number[]; p_notify_users: boolean};
  create_bookings: {p_ranges: Json};
  edit_profile_assignment: {p_user_id: string; p_kind: string; p_value: string; p_add: boolean};
+ get_invitation_by_token: {p_token_hash: string};
+ revoke_user_invitation: {p_invitation_id: string};
  update_booking_group: {p_old_ids: number[]; p_date: string; p_start_time: string; p_end_time: string; p_project: string};
 }

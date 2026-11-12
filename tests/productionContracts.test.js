@@ -121,3 +121,55 @@ test('Graded access, confirmation and training remain secure for owners and tool
  assert.equal((await db.query('SELECT licenses FROM profiles WHERE id=$1',[A])).rows[0].licenses['1'],'level_3','Existing higher access must not be downgraded');
  await assert.rejects(db.query('SELECT approve_training_request($1)',[r.id]),/already reviewed/);
 });
+
+test('Admin email invitations enforce RLS, protect token_hash, auto-approve on accept, and respect revocation',async t=>{
+ const db=await setup();t.after(()=>db.close());
+ const C='33333333-3333-3333-3333-333333333333', D='44444444-4444-4444-4444-444444444444';
+ await db.query("INSERT INTO auth.users(id,email) VALUES($1,'admin@example.com'),($2,'user@example.com')",[A,B]);
+ await db.query("UPDATE profiles SET is_approved=true WHERE id IN ($1,$2)",[A,B]);
+ await db.query("UPDATE profiles SET access_level='admin' WHERE id=$1",[A]);
+
+ const tokenHash1='a'.repeat(64);
+ const tokenHash2='b'.repeat(64);
+ const inv1=(await db.query(`INSERT INTO user_invitations(email,token_hash,first_name,last_name,job_title,projects,invited_by)
+  VALUES('invitee@example.com',$1,'Ada','Lovelace','Researcher',ARRAY['Photonics','Nanotech'],$2) RETURNING id`,[tokenHash1,A])).rows[0];
+ const inv2=(await db.query(`INSERT INTO user_invitations(email,token_hash,invited_by)
+  VALUES('revoked@example.com',$1,$2) RETURNING id`,[tokenHash2,A])).rows[0];
+
+ // Anon & non-admin cannot read user_invitations; token_hash is never selectable by authenticated
+ await actor(db,null,'anon');
+ await assert.rejects(db.query('SELECT id FROM user_invitations'),/permission denied/);
+ const anonLookup=(await db.query('SELECT get_invitation_by_token($1) AS inv',[tokenHash1])).rows[0].inv;
+ assert.equal(anonLookup.email,'invitee@example.com');
+ assert.deepEqual(anonLookup.projects,['Photonics','Nanotech']);
+
+ await actor(db,B);
+ assert.equal((await db.query('SELECT id,email FROM user_invitations')).rows.length,0);
+ await assert.rejects(db.query('SELECT revoke_user_invitation($1)',[inv2.id]),/Admin required/);
+
+ await actor(db,A);
+ assert.equal((await db.query('SELECT id,email,status FROM user_invitations')).rows.length,2);
+ await assert.rejects(db.query('SELECT token_hash FROM user_invitations'),/permission denied/);
+
+ // Revoke inv2 as admin
+ const revoked=(await db.query('SELECT revoke_user_invitation($1) AS r',[inv2.id])).rows[0].r;
+ assert.equal(revoked.status,'revoked');
+ assert.equal((await db.query('SELECT get_invitation_by_token($1) AS inv',[tokenHash2])).rows[0].inv,null);
+
+ // Accepting inv1 via user creation auto-approves and applies projects & fallback profile fields
+ await actor(db,null,'none');
+ await db.query(`INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,'invitee@example.com','{}')`,[C]);
+ const invitedProfile=(await db.query('SELECT * FROM profiles WHERE id=$1',[C])).rows[0];
+ assert.equal(invitedProfile.is_approved,true);
+ assert.equal(invitedProfile.access_level,'user');
+ assert.equal(invitedProfile.first_name,'Ada');
+ assert.equal(invitedProfile.last_name,'Lovelace');
+ assert.equal(invitedProfile.job_title,'Researcher');
+ assert.deepEqual(invitedProfile.projects,['Photonics','Nanotech']);
+ assert.equal((await db.query('SELECT status FROM user_invitations WHERE id=$1',[inv1.id])).rows[0].status,'accepted');
+ assert.equal((await db.query('SELECT get_invitation_by_token($1) AS inv',[tokenHash1])).rows[0].inv,null);
+
+ // Revoked invitation does not auto-approve
+ await db.query(`INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,'revoked@example.com','{}')`,[D]);
+ assert.equal((await db.query('SELECT is_approved FROM profiles WHERE id=$1',[D])).rows[0].is_approved,false);
+});

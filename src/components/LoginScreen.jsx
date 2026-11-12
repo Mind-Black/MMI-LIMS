@@ -1,10 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import logo from '../assets/logo.svg';
 import { useToast } from '../context/useToast';
 import { JOB_TITLES } from '../utils/userConstants';
 
-const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete }) => {
+async function computeSha256Hex(message) {
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    return Array.from(new Uint8Array(hashBuffer), b => b.toString(16).padStart(2, '0')).join('');
+}
+
+const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteToken = '', onInviteComplete }) => {
     const [loading, setLoading] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -16,7 +22,84 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete }) => {
     const [showPassword, setShowPassword] = useState(false);
     const [resetSent, setResetSent] = useState(false);
     const [registrationSuccess, setRegistrationSuccess] = useState(false);
+    const [inviteLoading, setInviteLoading] = useState(Boolean(inviteToken));
+    const [inviteDetails, setInviteDetails] = useState(null);
+    const [inviteError, setInviteError] = useState('');
     const { showToast } = useToast();
+
+    useEffect(() => {
+        if (!inviteToken) {
+            setInviteLoading(false);
+            setInviteDetails(null);
+            setInviteError('');
+            return;
+        }
+
+        let cancelled = false;
+        const loadInvitation = async () => {
+            setInviteLoading(true);
+            setInviteError('');
+            try {
+                const tokenHash = await computeSha256Hex(inviteToken.trim());
+                const { data, error } = await supabase.rpc('get_invitation_by_token', { p_token_hash: tokenHash });
+                if (cancelled) return;
+                if (error) throw error;
+                if (!data) {
+                    setInviteError('This invitation link is invalid, expired, or has already been used.');
+                    setInviteDetails(null);
+                    return;
+                }
+                setInviteDetails(data);
+                setEmail(data.email || '');
+                setFirstName(data.first_name || '');
+                setLastName(data.last_name || '');
+                setJobTitle(data.job_title || '');
+            } catch (err) {
+                if (cancelled) return;
+                console.error('Error loading invitation:', err);
+                setInviteError('Unable to verify invitation link.');
+            } finally {
+                if (!cancelled) setInviteLoading(false);
+            }
+        };
+
+        loadInvitation();
+        return () => { cancelled = true; };
+    }, [inviteToken]);
+
+    const handleAcceptInvitation = async (event) => {
+        event.preventDefault();
+        if (!inviteDetails) return;
+        setLoading(true);
+        try {
+            const { data, error } = await supabase.functions.invoke('invite-user', {
+                body: {
+                    action: 'accept',
+                    token: inviteToken.trim(),
+                    password,
+                    first_name: firstName.trim(),
+                    last_name: lastName.trim(),
+                    job_title: jobTitle,
+                },
+            });
+
+            if (error) throw new Error(error.message || 'Failed to accept invitation');
+            if (data?.error) throw new Error(data.error);
+
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+                email: inviteDetails.email,
+                password,
+            });
+            if (signInError) throw signInError;
+
+            showToast('Welcome to MMI-LIMS! Your account is active.', 'success');
+            onInviteComplete?.();
+        } catch (err) {
+            showToast(err.message || 'Could not complete invitation setup.', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleRecovery = async (event) => {
         event.preventDefault();
@@ -92,7 +175,112 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete }) => {
                     <p className="text-gray-500 dark:text-gray-300 text-sm mt-2">Institute of Materials Science</p>
                 </div>
 
-                {isPasswordRecovery || forgotPassword ? (
+                {inviteToken ? (
+                    inviteLoading ? (
+                        <div className="text-center py-6 text-sm text-gray-600 dark:text-gray-300">
+                            Verifying your invitation...
+                        </div>
+                    ) : inviteError || !inviteDetails ? (
+                        <div className="space-y-4 text-center">
+                            <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
+                                {inviteError || 'This invitation link is invalid or expired.'}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => onInviteComplete?.()}
+                                className="btn btn-primary w-full"
+                            >
+                                Back to Sign In
+                            </button>
+                        </div>
+                    ) : (
+                        <form onSubmit={handleAcceptInvitation} className="space-y-4">
+                            <div>
+                                <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">Accept Invitation</h2>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    Complete your profile and choose a password to activate your account.
+                                </p>
+                            </div>
+                            <div>
+                                <label htmlFor="invite-accept-email" className="label">Email Address</label>
+                                <input
+                                    id="invite-accept-email"
+                                    type="email"
+                                    value={email}
+                                    readOnly
+                                    disabled
+                                    className="input-field bg-gray-100 dark:bg-gray-700 cursor-not-allowed"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label htmlFor="invite-accept-first-name" className="label">First Name</label>
+                                    <input
+                                        id="invite-accept-first-name"
+                                        autoComplete="given-name"
+                                        type="text"
+                                        required
+                                        value={firstName}
+                                        onChange={e => setFirstName(e.target.value)}
+                                        className="input-field"
+                                        placeholder="John"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="invite-accept-last-name" className="label">Last Name</label>
+                                    <input
+                                        id="invite-accept-last-name"
+                                        autoComplete="family-name"
+                                        type="text"
+                                        required
+                                        value={lastName}
+                                        onChange={e => setLastName(e.target.value)}
+                                        className="input-field"
+                                        placeholder="Doe"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label htmlFor="invite-accept-job-title" className="label">Job Title</label>
+                                <select
+                                    id="invite-accept-job-title"
+                                    autoComplete="organization-title"
+                                    required
+                                    value={jobTitle}
+                                    onChange={e => setJobTitle(e.target.value)}
+                                    className="input-field cursor-pointer"
+                                >
+                                    <option value="" disabled>Select Job Title</option>
+                                    {JOB_TITLES.map(title => (
+                                        <option key={title} value={title}>{title}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="invite-accept-password" className="label">Password</label>
+                                <input
+                                    id="invite-accept-password"
+                                    type={showPassword ? 'text' : 'password'}
+                                    autoComplete="new-password"
+                                    required
+                                    minLength={8}
+                                    value={password}
+                                    onChange={e => setPassword(e.target.value)}
+                                    className="input-field"
+                                    placeholder="At least 8 characters"
+                                />
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <button type="button" onClick={() => setShowPassword(value => !value)} className="text-blue-700 dark:text-blue-300 underline">
+                                    {showPassword ? 'Hide password' : 'Show password'}
+                                </button>
+                            </div>
+                            <button type="submit" disabled={loading} className="btn btn-primary w-full">
+                                {loading ? 'Activating Account...' : 'Complete Setup & Sign In'}
+                            </button>
+                        </form>
+                    )
+                ) : isPasswordRecovery || forgotPassword ? (
                     <form onSubmit={handleRecovery} className="space-y-4">
                         <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">{isPasswordRecovery ? 'Set a new password' : 'Reset your password'}</h2>
                         {resetSent ? <p role="status" className="text-sm text-green-800 dark:text-green-300">If the address has an account, a recovery link has been sent. Check your inbox.</p> : (

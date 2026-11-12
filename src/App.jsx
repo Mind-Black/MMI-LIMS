@@ -11,6 +11,14 @@ function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => window.location.hash.includes('type=recovery'));
+  const [inviteToken, setInviteToken] = useState(() => new URLSearchParams(window.location.search).get('invite') || '');
+
+  const clearInviteToken = () => {
+    setInviteToken('');
+    const url = new URL(window.location.href);
+    url.searchParams.delete('invite');
+    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+  };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -40,8 +48,13 @@ function App() {
   return (
     <ErrorBoundary><ThemeProvider>
       <ToastProvider>
-        {!session || isPasswordRecovery ? (
-          <LoginScreen isPasswordRecovery={isPasswordRecovery} onRecoveryComplete={() => setIsPasswordRecovery(false)} />
+        {!session || isPasswordRecovery || inviteToken ? (
+          <LoginScreen
+            isPasswordRecovery={isPasswordRecovery}
+            onRecoveryComplete={() => setIsPasswordRecovery(false)}
+            inviteToken={inviteToken}
+            onInviteComplete={clearInviteToken}
+          />
         ) : (
           <Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900"><LoadingSpinner /></div>}>
             <DashboardWrapper session={session} onLogout={() => supabase.auth.signOut()} />
