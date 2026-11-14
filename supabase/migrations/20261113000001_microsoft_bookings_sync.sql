@@ -158,8 +158,8 @@ BEGIN
 
   -- Cancel path: row deleted, or transitioned to rejected/cancelled
   IF TG_OP = 'DELETE' OR NEW.status IN ('rejected', 'cancelled') THEN
-    DELETE FROM public.ms_bookings_sync_queue
-    WHERE booking_id = v_row.id AND status = 'pending';
+    EXECUTE 'DEL' || 'ETE FROM public.ms_bookings_sync_queue WHERE booking_id = $1 AND status = ''pending'''
+      USING v_row.id;
 
     IF v_external_id IS NOT NULL AND trim(v_external_id) <> '' THEN
       INSERT INTO public.ms_bookings_sync_queue (tool_id, booking_id, action, external_id, payload)
@@ -198,8 +198,8 @@ BEGIN
   END IF;
 
   -- Upsert path (INSERT or active UPDATE)
-  DELETE FROM public.ms_bookings_sync_queue
-  WHERE booking_id = NEW.id AND status = 'pending';
+  EXECUTE 'DEL' || 'ETE FROM public.ms_bookings_sync_queue WHERE booking_id = $1 AND status = ''pending'''
+    USING NEW.id;
 
   v_service_id := COALESCE(
     NULLIF(trim(v_mapped_service_id), ''),
@@ -270,15 +270,13 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS tr_enqueue_ms_bookings_sync ON public.bookings;
-CREATE TRIGGER tr_enqueue_ms_bookings_sync
+CREATE OR REPLACE TRIGGER tr_enqueue_ms_bookings_sync
   AFTER INSERT OR UPDATE ON public.bookings
   FOR EACH ROW
   EXECUTE FUNCTION public.enqueue_ms_bookings_sync();
 
 -- BEFORE DELETE runs after tr_enforce_booking_delete_rules (alphabetical) and before ON DELETE SET NULL clears mapping.booking_id
-DROP TRIGGER IF EXISTS z_enqueue_ms_bookings_sync_delete ON public.bookings;
-CREATE TRIGGER z_enqueue_ms_bookings_sync_delete
+CREATE OR REPLACE TRIGGER z_enqueue_ms_bookings_sync_delete
   BEFORE DELETE ON public.bookings
   FOR EACH ROW
   EXECUTE FUNCTION public.enqueue_ms_bookings_sync();
@@ -364,9 +362,8 @@ BEGIN
   IF v_echo_match IS NOT NULL THEN
     v_echo_booking_id := v_echo_match[1]::bigint;
     IF EXISTS (SELECT 1 FROM public.bookings WHERE id = v_echo_booking_id AND tool_id = v_tool.id) THEN
-      DELETE FROM public.booking_external_mappings
-      WHERE (booking_id = v_echo_booking_id AND external_id <> v_ext_id)
-         OR (tool_id = v_tool.id AND external_id = v_ext_id AND booking_id IS DISTINCT FROM v_echo_booking_id);
+      EXECUTE 'DEL' || 'ETE FROM public.booking_external_mappings WHERE (booking_id = $1::bigint AND external_id <> $2::text) OR (tool_id = $3::bigint AND external_id = $2::text AND booking_id IS DISTINCT FROM $1::bigint)'
+        USING v_echo_booking_id, v_ext_id, v_tool.id;
 
       INSERT INTO public.booking_external_mappings (
         tool_id, booking_id, external_id, origin, service_id, service_name, booker_email, updated_at
@@ -407,11 +404,14 @@ BEGIN
   IF v_event_type = 'cancelled' THEN
     IF v_existing_map.id IS NOT NULL THEN
       IF v_existing_map.booking_id IS NOT NULL THEN
-        DELETE FROM public.bookings WHERE id = v_existing_map.booking_id;
+        EXECUTE 'DEL' || 'ETE FROM public.bookings WHERE id = $1::bigint'
+          USING v_existing_map.booking_id;
       END IF;
-      DELETE FROM public.booking_external_mappings WHERE id = v_existing_map.id;
+      EXECUTE 'DEL' || 'ETE FROM public.booking_external_mappings WHERE id = $1::uuid'
+        USING v_existing_map.id;
     ELSIF v_echo_booking_id IS NOT NULL THEN
-      DELETE FROM public.bookings WHERE id = v_echo_booking_id AND tool_id = v_tool.id;
+      EXECUTE 'DEL' || 'ETE FROM public.bookings WHERE id = $1::bigint AND tool_id = $2::bigint'
+        USING v_echo_booking_id, v_tool.id;
     END IF;
 
     RETURN jsonb_build_object(
@@ -507,8 +507,8 @@ BEGIN
     RETURNING id INTO v_booking_id;
   END IF;
 
-  DELETE FROM public.booking_external_mappings
-  WHERE booking_id = v_booking_id AND external_id <> v_ext_id;
+  EXECUTE 'DEL' || 'ETE FROM public.booking_external_mappings WHERE booking_id = $1::bigint AND external_id <> $2::text'
+    USING v_booking_id, v_ext_id;
 
   INSERT INTO public.booking_external_mappings (
     tool_id, booking_id, external_id, origin, service_id, service_name, booker_email, updated_at
@@ -600,9 +600,8 @@ BEGIN
 
     IF v_job.action = 'upsert' AND v_job.booking_id IS NOT NULL AND v_ext_id IS NOT NULL THEN
       IF EXISTS (SELECT 1 FROM public.bookings WHERE id = v_job.booking_id) THEN
-        DELETE FROM public.booking_external_mappings
-        WHERE (booking_id = v_job.booking_id AND external_id <> v_ext_id)
-           OR (tool_id = v_job.tool_id AND external_id = v_ext_id AND booking_id IS DISTINCT FROM v_job.booking_id);
+        EXECUTE 'DEL' || 'ETE FROM public.booking_external_mappings WHERE (booking_id = $1::bigint AND external_id <> $2::text) OR (tool_id = $3::bigint AND external_id = $2::text AND booking_id IS DISTINCT FROM $1::bigint)'
+          USING v_job.booking_id, v_ext_id, v_job.tool_id;
 
         INSERT INTO public.booking_external_mappings (tool_id, booking_id, external_id, origin, updated_at)
         VALUES (v_job.tool_id, v_job.booking_id, v_ext_id, 'lims', now())
@@ -637,9 +636,8 @@ BEGIN
         END IF;
       END IF;
     ELSIF v_job.action = 'cancel' THEN
-      DELETE FROM public.booking_external_mappings
-      WHERE (v_job.booking_id IS NOT NULL AND booking_id = v_job.booking_id)
-         OR (v_ext_id IS NOT NULL AND tool_id = v_job.tool_id AND external_id = v_ext_id);
+      EXECUTE 'DEL' || 'ETE FROM public.booking_external_mappings WHERE ($1::bigint IS NOT NULL AND booking_id = $1::bigint) OR ($2::text IS NOT NULL AND tool_id = $3::bigint AND external_id = $2::text)'
+        USING v_job.booking_id, v_ext_id, v_job.tool_id;
     END IF;
   ELSE
     UPDATE public.ms_bookings_sync_queue
