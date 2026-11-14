@@ -163,6 +163,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             const fetchToolsQuery = () => supabase.from('tools').select(`
                     id, name, category, rate_category, status, location, license_req, description, image_url,
                     primary_responsible_id, secondary_responsible_id,
+                    ms_bookings_email, ms_bookings_service_id, ms_bookings_sync_enabled,
                     primary_responsible:primary_responsible_id(id, first_name, last_name, email, phone, job_title),
                     secondary_responsible:secondary_responsible_id(id, first_name, last_name, email, phone, job_title)
                 `).order('id');

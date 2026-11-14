@@ -23,3 +23,7 @@ verify_jwt = true
 
 [functions.notification-worker]
 verify_jwt = false
+
+[functions.ms-bookings-sync]
+# Called by Power Automate flows using MS_BOOKINGS_SYNC_SECRET (Bearer header or query secret)
+verify_jwt = false
