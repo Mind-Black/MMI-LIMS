@@ -1,5 +1,16 @@
 // Generated from the complete repository migration chain. Run npm run types:generate.
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+export interface booking_external_mappings {
+ id: string;
+ tool_id: number;
+ booking_id: number | null;
+ external_id: string;
+ origin: string;
+ service_id: string | null;
+ service_name: string | null;
+ booker_email: string | null;
+ updated_at: string;
+}
 export interface bookings {
  id: number;
  tool_id: number;
@@ -44,6 +55,27 @@ export interface legacy_license_references {
  access_level: string;
  recorded_at: string;
 }
+export interface ms_bookings_staff_mappings {
+ tool_id: number;
+ user_email: string;
+ external_staff_id: string;
+ updated_at: string;
+}
+export interface ms_bookings_sync_queue {
+ id: string;
+ tool_id: number;
+ booking_id: number | null;
+ action: string;
+ external_id: string | null;
+ payload: Json;
+ status: string;
+ attempts: number;
+ available_at: string;
+ lease: string | null;
+ last_error: string | null;
+ created_at: string;
+ synced_at: string | null;
+}
 export interface notification_deliveries {
  id: string;
  event_id: string;
@@ -82,6 +114,9 @@ export interface tools {
  primary_responsible_id: string | null;
  secondary_responsible_id: string | null;
  rate_category: string;
+ ms_bookings_email: string | null;
+ ms_bookings_service_id: string | null;
+ ms_bookings_sync_enabled: boolean;
 }
 export interface training_requests {
  id: number;
