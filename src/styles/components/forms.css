@@ -4,7 +4,7 @@
  */
 @layer components {
     .input-field {
-        @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:placeholder-gray-400;
+        @apply w-full px-3.5 sm:px-4 py-2 text-base sm:text-sm min-h-[44px] sm:min-h-[38px] border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:placeholder-gray-400;
     }
 
     .label {
@@ -12,6 +12,6 @@
     }
 
     .select-input {
-        @apply border dark:border-gray-600 p-2 rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-white transition-colors focus:ring-2 focus:ring-blue-500 outline-none;
+        @apply text-base sm:text-sm min-h-[44px] sm:min-h-[38px] border dark:border-gray-600 px-3 py-2 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white transition-colors focus:ring-2 focus:ring-blue-500 outline-none;
     }
 }

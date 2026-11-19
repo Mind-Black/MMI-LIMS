@@ -111,54 +111,54 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
     return (
         <>
         <div className="md:hidden card p-4 space-y-3">
-            <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setMobileDate(formatDate(addDays(mobileDate, -1)))} aria-label="Previous day" className="btn btn-secondary btn-sm">‹</button>
-                <label className="flex-1 text-sm text-gray-700 dark:text-gray-200">Agenda date
+            <div className="flex items-end gap-2">
+                <button type="button" onClick={() => setMobileDate(formatDate(addDays(mobileDate, -1)))} aria-label="Previous day" className="btn btn-secondary min-h-[44px] min-w-[44px] px-0 flex items-center justify-center self-end shrink-0">‹</button>
+                <label className="flex-1 min-w-0 text-sm text-gray-700 dark:text-gray-200">Agenda date
                     <input type="date" value={mobileDate} onChange={e => setMobileDate(e.target.value)} className="input-field mt-1" />
                 </label>
-                <button type="button" onClick={() => setMobileDate(formatDate(addDays(mobileDate, 1)))} aria-label="Next day" className="btn btn-secondary btn-sm">›</button>
+                <button type="button" onClick={() => setMobileDate(formatDate(addDays(mobileDate, 1)))} aria-label="Next day" className="btn btn-secondary min-h-[44px] min-w-[44px] px-0 flex items-center justify-center self-end shrink-0">›</button>
             </div>
             <div className="flex justify-between gap-3">
-                <button type="button" onClick={() => setMobileDate(getVilniusNow().dateStr)} className="text-sm text-blue-700 dark:text-blue-300 underline">Today</button>
-                <button type="button" onClick={() => { if (!mobileWeekView) onWeekChange(getMonday(mobileDate)); setMobileWeekView(value => !value); }} aria-pressed={mobileWeekView} className="text-sm text-blue-700 dark:text-blue-300 underline">{mobileWeekView ? 'Day agenda' : 'Week view'}</button>
+                <button type="button" onClick={() => setMobileDate(getVilniusNow().dateStr)} className="btn btn-ghost btn-sm min-h-[44px] px-3 text-blue-700 dark:text-blue-300">Today</button>
+                <button type="button" onClick={() => { if (!mobileWeekView) onWeekChange(getMonday(mobileDate)); setMobileWeekView(value => !value); }} aria-pressed={mobileWeekView} className="btn btn-ghost btn-sm min-h-[44px] px-3 text-blue-700 dark:text-blue-300">{mobileWeekView ? 'Day agenda' : 'Week view'}</button>
             </div>
             {!mobileWeekView && (groupedBookings.filter(b => b.date === mobileDate).length ? groupedBookings.filter(b => b.date === mobileDate).map(booking => {
                 const isPending = booking.status === 'pending_approval';
                 return (
-                    <button key={booking.ids[0]} type="button" onClick={() => onBookingClick?.(booking)} className={`block w-full text-left p-3 rounded ${isPending ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-900 dark:text-amber-100 border border-amber-300 dark:border-amber-700' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100'}`}>
-                        <div className="flex items-center justify-between">
-                            <span className="font-semibold">{booking.startTime}–{booking.endTime} · {booking.tool_name}</span>
-                            {isPending && <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 px-1.5 py-0.5 rounded font-bold">Pending</span>}
+                    <button key={booking.ids[0]} type="button" onClick={() => onBookingClick?.(booking)} className={`block w-full min-h-[44px] text-left p-3 rounded ${isPending ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-900 dark:text-amber-100 border border-amber-300 dark:border-amber-700' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100'}`}>
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold break-words">{booking.startTime}–{booking.endTime} · {booking.tool_name}</span>
+                            {isPending && <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 px-1.5 py-0.5 rounded font-bold shrink-0">Pending</span>}
                         </div>
-                        <span className="block text-sm">{booking.project}</span>
+                        <span className="block text-sm break-words">{booking.project}</span>
                     </button>
                 );
             }) : <p className="text-sm text-gray-600 dark:text-gray-300">No reservations on this day.</p>)}
         </div>
-        <div className={`${mobileWeekView ? 'flex' : 'hidden'} md:flex bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 flex-col overflow-hidden h-[min(75vh,850px)] transition-colors`}>
+        <div className={`${mobileWeekView ? 'flex' : 'hidden'} md:flex bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 flex-col overflow-hidden h-[min(75dvh,850px)] transition-colors`}>
             {/* Header */}
-            <div className="p-2 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center shrink-0 transition-colors">
-                <div className="flex items-center gap-4">
-                    <button onClick={handlePrevWeek} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded transition-colors" title="Previous Week">
-                        <Icon className="fas fa-chevron-left" />
+            <div className="p-2 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex items-center justify-between gap-2 shrink-0 transition-colors">
+                <div className="flex items-center gap-1 sm:gap-3 flex-1 min-w-0">
+                    <button type="button" onClick={handlePrevWeek} className="btn-icon text-gray-600 dark:text-gray-300" aria-label="Previous week" title="Previous Week">
+                        <Icon aria-hidden="true" className="fas fa-chevron-left" />
                     </button>
-                    <div className="font-bold text-gray-700 dark:text-gray-200 w-48 text-center transition-colors">
+                    <div className="font-bold text-xs sm:text-sm text-gray-700 dark:text-gray-200 flex-1 sm:flex-none sm:w-48 text-center truncate transition-colors">
                         {displayDate(weekDates[0])} - {displayDate(weekDates[6])}
                     </div>
-                    <button onClick={handleNextWeek} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded transition-colors" title="Next Week">
-                        <Icon className="fas fa-chevron-right" />
+                    <button type="button" onClick={handleNextWeek} className="btn-icon text-gray-600 dark:text-gray-300" aria-label="Next week" title="Next Week">
+                        <Icon aria-hidden="true" className="fas fa-chevron-right" />
                     </button>
                 </div>
-                <button onClick={() => onWeekChange(getVilniusNow().dateStr)} className="text-sm text-blue-700 dark:text-blue-300 underline">Today</button>
+                <button type="button" onClick={() => onWeekChange(getMonday(getVilniusNow().dateStr))} className="btn btn-ghost btn-sm shrink-0 text-blue-700 dark:text-blue-300">Today</button>
             </div>
 
             {/* Calendar Grid Container */}
-            <div ref={scrollContainerRef} className="flex-1 overflow-auto custom-scroll relative select-none">
+            <div ref={scrollContainerRef} tabIndex={0} role="region" aria-label="Weekly reservations grid" className="flex-1 overflow-auto custom-scroll relative select-none">
                 <div className="min-w-[700px] flex">
 
                     {/* Time Labels Column */}
                     <div className="w-[50px] shrink-0 bg-gray-50 dark:bg-gray-900 border-r dark:border-gray-700 sticky left-0 z-30 transition-colors">
-                        <div className="h-10 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 transition-colors"></div>
+                        <div className="h-10 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 sticky top-0 z-30 transition-colors"></div>
                         {timeSlots.map(time => (
                             <div key={time} className="h-12 border-b dark:border-gray-700 text-right pr-2 text-xs text-gray-500 dark:text-gray-400 font-mono flex items-center justify-end transition-colors">
                                 {time}
@@ -188,22 +188,24 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
 
                                         {/* Current Time Indicator */}
                                         {isToday(date) && (
-                                            <button type="button"
-                                                className="absolute w-full border-b-2 border-red-500 z-40 pointer-events-none"
+                                            <div
+                                                aria-hidden="true"
+                                                className="absolute w-full border-b-2 border-red-500 z-[15] pointer-events-none"
                                                 style={{ top: `${getCurrentTimeTop()}px` }}
                                                 title="Current Time"
                                             >
                                                 <div className="absolute -left-1 -top-[4px] w-2 h-2 bg-red-500 rounded-full"></div>
-                                            </button>
+                                            </div>
                                         )}
 
                                         {/* Events Overlay */}
                                         {positionedBookings.map(booking => {
                                             const isPending = booking.status === 'pending_approval';
                                             return (
-                                                <div
+                                                <button
                                                     key={booking.ids[0]}
-                                                    className={`absolute border rounded p-1 text-xs overflow-hidden transition-all hover:z-10 hover:shadow-md cursor-pointer ${isPending
+                                                    type="button"
+                                                    className={`absolute border rounded p-1 text-xs text-left overflow-hidden transition-all hover:z-10 hover:shadow-md cursor-pointer ${isPending
                                                         ? 'bg-amber-100/90 dark:bg-amber-900/40 border-amber-400 dark:border-amber-600 border-dashed text-amber-900 dark:text-amber-200'
                                                         : 'bg-blue-100 dark:bg-blue-900/50 border-blue-300 dark:border-blue-700'}`}
                                                     style={getEventStyle(booking)}
@@ -218,7 +220,7 @@ const UserBookingsCalendar = ({ bookings, currentWeekStart, onWeekChange, onBook
                                                     <div className={`${isPending ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-blue-600 dark:text-blue-400'} text-[10px] pointer-events-none`}>
                                                         {booking.startTime} - {booking.endTime} {isPending ? '(Pending)' : ''}
                                                     </div>
-                                                </div>
+                                                </button>
                                             );
                                         })}
                                     </div>

@@ -82,14 +82,14 @@ export const RatePricingModal = ({ isOpen, onClose }) => {
     ];
 
     return (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs animate-fadeIn">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs animate-fadeIn modal-backdrop">
             <div
                 ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="pricing-modal-title"
                 tabIndex={-1}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full p-5 sm:p-6 border dark:border-gray-700 max-h-[92vh] overflow-y-auto space-y-5"
+                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full p-4 sm:p-6 border dark:border-gray-700 max-h-[92dvh] overflow-y-auto modal-scroll space-y-5"
             >
                 {/* Header */}
                 <div className="flex justify-between items-start border-b dark:border-gray-700 pb-3">
@@ -109,7 +109,7 @@ export const RatePricingModal = ({ isOpen, onClose }) => {
                     <button
                         type="button"
                         onClick={onClose}
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition cursor-pointer"
+                        className="btn-icon shrink-0"
                         aria-label="Close rate guide"
                     >
                         <Icon className="fas fa-times text-lg" />
@@ -167,7 +167,41 @@ export const RatePricingModal = ({ isOpen, onClose }) => {
                         </span>
                     </div>
 
-                    <div className="overflow-x-auto border dark:border-gray-700 rounded-lg">
+                    <div className="sm:hidden space-y-3">
+                        {tiers.map(t => (
+                            <div key={`mobile-tier-${t.category}`} className="p-4 rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3 shadow-sm">
+                                <div className="flex items-center justify-between border-b dark:border-gray-700 pb-2">
+                                    <div className="flex items-center gap-2">
+                                        <RateCategoryBadge rate={t.category} />
+                                        <span className="font-bold text-gray-900 dark:text-gray-100 text-sm">
+                                            Tier {t.category}
+                                        </span>
+                                    </div>
+                                    <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Hourly Rates</span>
+                                </div>
+                                <div>
+                                    <h5 className="font-semibold text-sm text-gray-800 dark:text-gray-200">{t.title}</h5>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">{t.equipmentSummary}</p>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2 pt-2 border-t dark:border-gray-700 text-center">
+                                    <div className="bg-emerald-50/50 dark:bg-emerald-950/20 p-2 rounded border border-emerald-100 dark:border-emerald-900/30">
+                                        <div className="text-[10px] uppercase font-bold text-emerald-800 dark:text-emerald-300">External</div>
+                                        <div className="text-xs font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">{t.external}</div>
+                                    </div>
+                                    <div className="bg-blue-50/50 dark:bg-blue-950/20 p-2 rounded border border-blue-100 dark:border-blue-900/30">
+                                        <div className="text-[10px] uppercase font-bold text-blue-800 dark:text-blue-300">University</div>
+                                        <div className="text-xs font-bold text-blue-700 dark:text-blue-400 mt-0.5">{t.ktu}</div>
+                                    </div>
+                                    <div className="bg-purple-50/50 dark:bg-purple-950/20 p-2 rounded border border-purple-100 dark:border-purple-900/30">
+                                        <div className="text-[10px] uppercase font-bold text-purple-800 dark:text-purple-300">Facility Dept</div>
+                                        <div className="text-xs font-bold text-purple-700 dark:text-purple-400 mt-0.5">{t.dept}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div tabIndex={0} role="region" aria-label="Hourly service rates matrix" className="hidden sm:block overflow-x-auto border dark:border-gray-700 rounded-lg">
                         <table className="w-full text-left border-collapse text-xs sm:text-sm">
                             <thead className="bg-gray-50 dark:bg-gray-900 border-b dark:border-gray-700 text-gray-700 dark:text-gray-300">
                                 <tr>
@@ -233,7 +267,7 @@ export const RatePricingModal = ({ isOpen, onClose }) => {
                                 </div>
                                 <ul className="space-y-1 text-gray-600 dark:text-gray-400 text-[11px] list-disc list-inside">
                                     {t.examples.map((ex, i) => (
-                                        <li key={i} className="truncate" title={ex}>
+                                        <li key={i} className="sm:truncate break-words" title={ex}>
                                             {ex}
                                         </li>
                                     ))}

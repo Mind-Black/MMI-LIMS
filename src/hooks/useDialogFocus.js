@@ -10,7 +10,7 @@ export function useDialogFocus(active, onClose) {
         const dialog = dialogRef.current;
         const previousFocus = document.activeElement;
         const focusable = () => Array.from(dialog?.querySelectorAll(
-            'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         ) || []).filter(element => element.getClientRects().length > 0);
         (focusable()[0] || dialog)?.focus();
 

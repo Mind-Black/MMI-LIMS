@@ -63,11 +63,13 @@ const BookingModal = ({
     const [selectedProject, setSelectedProject] = useState(initialBooking ? initialBooking.project : 'General');
 
     const scrollContainerRef = useRef(null);
+    const mobileTimelineRef = useRef(null);
 
     // Selection State
     const [isSelecting, setIsSelecting] = useState(false);
     const selectionRef = useRef(null);
     const longPressTimer = useRef(null);
+    const gridTouchStartRef = useRef(null);
 
     const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -200,6 +202,11 @@ const BookingModal = ({
         }
     }, [initialBooking]);
 
+    useEffect(() => {
+        const target = mobileTimelineRef.current?.querySelector('[data-slot-time="08:00"]');
+        target?.scrollIntoView?.({ block: 'start' });
+    }, [formDate]);
+
     const formatDate = (date) => formatLocalDate(date);
     const displayDate = (date) => formatDisplayDate(date);
 
@@ -331,51 +338,6 @@ const BookingModal = ({
         setFormNeedsCheck(false);
     };
 
-    // Mobile slot tap handler
-    const handleSlotTap = (time) => {
-        if (!canBook) {
-            setFormError(eligibility.reason || 'Booking is restricted.');
-            return;
-        }
-        const nextSlot = getNextSlotTime(time);
-        const isBooked = isSlotBooked(formDate, time);
-        const isPast = !isAdminOverride && isSlotInPast(formDate, time, currentTime);
-        if (isBooked || isPast) return;
-
-        if (selectedSlots.length > 0 && selectedSlots[0].date === formDate) {
-            const firstMin = getMinutes(selectedSlots[0].time);
-            const clickedMin = getMinutes(time);
-            if (clickedMin > firstMin) {
-                const slots = [];
-                let blocked = false;
-                for (let m = firstMin; m <= clickedMin; m += 30) {
-                    const t = timeSlots[m / 30];
-                    const overlaps = isSlotBooked(formDate, t);
-                    if (!t || overlaps || (!isAdminOverride && isSlotInPast(formDate, t, currentTime))) {
-                        blocked = true;
-                        break;
-                    }
-                    slots.push({ date: formDate, time: t });
-                }
-                if (!blocked) {
-                    const newEnd = getNextSlotTime(time);
-                    setFormStart(selectedSlots[0].time);
-                    setFormEnd(newEnd);
-                    setSelectedSlots(slots);
-                    setFormError('');
-                    setFormNeedsCheck(false);
-                    return;
-                }
-            }
-        }
-
-        setFormStart(time);
-        setFormEnd(nextSlot);
-        setSelectedSlots([{ date: formDate, time }]);
-        setFormError('');
-        setFormNeedsCheck(false);
-    };
-
     const getCurrentTimeTop = () => {
         const totalMinutes = getVilniusCurrentMinutes(currentTime);
         return (totalMinutes / 30) * PIXELS_PER_30_MINS;
@@ -412,6 +374,16 @@ const BookingModal = ({
         const toolBookings = displayBookings.filter(b => b.tool_id === tool.id);
         return groupBookings(toolBookings);
     }, [displayBookings, tool.id]);
+
+    const getSlotBooking = useCallback((dateStr, timeStr) => {
+        const slotMin = getMinutes(timeStr);
+        return groupedBookings.find(b => {
+            if (b.date !== dateStr) return false;
+            const startMin = getMinutes(b.startTime);
+            const endMin = getMinutes(b.endTime);
+            return slotMin >= startMin && slotMin < endMin;
+        }) || null;
+    }, [groupedBookings]);
 
     // Unified interaction hook for both draft selection and existing bookings
     const { interaction, startInteraction } = useBookingInteraction({
@@ -471,30 +443,138 @@ const BookingModal = ({
     };
 
     const handleBookingClick = (e, booking) => {
-        e.stopPropagation();
-        if (interaction) return;
+        const targetBooking = booking || (e && typeof e.stopPropagation !== 'function' ? e : null);
+        if (e && typeof e.stopPropagation === 'function') {
+            e.stopPropagation();
+        }
+        if (interaction || !targetBooking) return;
 
-        const bookingId = booking.ids[0];
+        const bookingId = targetBooking.ids?.[0] ?? targetBooking.id;
         const singleBooking = {
-            ...booking,
+            ...targetBooking,
             id: bookingId,
         };
 
         setEditingBooking(singleBooking);
         setOriginalBookingState(singleBooking);
-        setSelectedProject(booking.project);
+        setSelectedProject(targetBooking.project);
         setSelectedSlots([]);
-        setFormDate(booking.date);
-        setFormStart(booking.startTime);
-        setFormEnd(booking.endTime);
+        setFormDate(targetBooking.date);
+        setFormStart(targetBooking.startTime);
+        setFormEnd(targetBooking.endTime);
+        setFormNeedsCheck(false);
+        setFormError('');
+    };
+
+    // Mobile slot tap handler
+    const handleSlotTap = (time) => {
+        if (!availabilityReady) return;
+        const slotBooking = getSlotBooking(formDate, time);
+        if (slotBooking) {
+            if (slotBooking.user_id === user.id || isAdmin) {
+                handleBookingClick(slotBooking);
+            }
+            return;
+        }
+
+        if (!canBook) {
+            setFormError(eligibility.reason || 'Booking is restricted.');
+            return;
+        }
+
+        const isPast = !isAdminOverride && isSlotInPast(formDate, time, currentTime);
+        if (isPast) return;
+
+        if (editingBooking) {
+            const editIds = editingBooking.ids || [editingBooking.id];
+            const firstMin = getMinutes(formStart);
+            const clickedMin = getMinutes(time);
+
+            if (editingBooking.date === formDate && clickedMin > firstMin) {
+                let blocked = false;
+                for (let m = firstMin; m <= clickedMin; m += 30) {
+                    const t = timeSlots[m / 30];
+                    const nextT = getNextSlotTime(t);
+                    const overlaps = !t || checkCollision({ tool_id: tool.id, date: formDate, time: t, end_time: nextT }, allKnownBookings, editIds);
+                    if (overlaps || (!isAdminOverride && isSlotInPast(formDate, t, currentTime))) {
+                        blocked = true;
+                        break;
+                    }
+                }
+                if (!blocked) {
+                    const newStart = formStart;
+                    const newEnd = getNextSlotTime(time);
+                    setFormStart(newStart);
+                    setFormEnd(newEnd);
+                    setEditingBooking(prev => prev ? { ...prev, date: formDate, startTime: newStart, endTime: newEnd } : null);
+                    setFormError('');
+                    setFormNeedsCheck(false);
+                    return;
+                }
+            }
+
+            const newStart = time;
+            const newEnd = getNextSlotTime(time);
+            if (checkCollision({ tool_id: tool.id, date: formDate, time: newStart, end_time: newEnd }, allKnownBookings, editIds)) {
+                return;
+            }
+            setFormStart(newStart);
+            setFormEnd(newEnd);
+            setEditingBooking(prev => prev ? { ...prev, date: formDate, startTime: newStart, endTime: newEnd } : null);
+            setFormError('');
+            setFormNeedsCheck(false);
+            return;
+        }
+
+        if (isSlotBooked(formDate, time)) return;
+
+        if (selectedSlots.length === 1 && selectedSlots[0].date === formDate && selectedSlots[0].time === time) {
+            setSelectedSlots([]);
+            setFormError('');
+            return;
+        }
+
+        if (selectedSlots.length > 0 && selectedSlots[0].date === formDate) {
+            const firstMin = getMinutes(selectedSlots[0].time);
+            const clickedMin = getMinutes(time);
+            if (clickedMin > firstMin) {
+                const slots = [];
+                let blocked = false;
+                for (let m = firstMin; m <= clickedMin; m += 30) {
+                    const t = timeSlots[m / 30];
+                    const overlaps = isSlotBooked(formDate, t);
+                    if (!t || overlaps || (!isAdminOverride && isSlotInPast(formDate, t, currentTime))) {
+                        blocked = true;
+                        break;
+                    }
+                    slots.push({ date: formDate, time: t });
+                }
+                if (!blocked) {
+                    const newEnd = getNextSlotTime(time);
+                    setFormStart(selectedSlots[0].time);
+                    setFormEnd(newEnd);
+                    setSelectedSlots(slots);
+                    setFormError('');
+                    setFormNeedsCheck(false);
+                    return;
+                }
+            }
+        }
+
+        const nextSlot = getNextSlotTime(time);
+        setFormStart(time);
+        setFormEnd(nextSlot);
+        setSelectedSlots([{ date: formDate, time }]);
+        setFormError('');
         setFormNeedsCheck(false);
     };
 
     const handleCancelClick = (e, booking) => {
         e.stopPropagation();
-        if (onCancel && booking && booking.ids) {
-            onCancel(booking.ids, (cancelledIds) => {
-                const idsToRemove = Array.isArray(cancelledIds) ? cancelledIds : booking.ids;
+        const ids = booking?.ids || (booking?.id ? [booking.id] : null);
+        if (onCancel && ids?.length) {
+            onCancel(ids, (cancelledIds) => {
+                const idsToRemove = Array.isArray(cancelledIds) ? cancelledIds : ids;
                 setToolWeekBookings(prev => prev.filter(b => !idsToRemove.includes(b.id)));
                 setEditingBooking(null);
                 setOriginalBookingState(null);
@@ -596,6 +676,7 @@ const BookingModal = ({
         };
 
         const handleWindowTouchMove = (e) => {
+            if (!e.touches?.[0]) return;
             if (e.cancelable) e.preventDefault();
 
             const touch = e.touches[0];
@@ -667,9 +748,15 @@ const BookingModal = ({
     }, [handleToday, handlePrevWeek, handleNextWeek]);
 
     const handleGridTouchStart = (e, dateStr, timeIndex) => {
+        if (!canBook || !availabilityReady) return;
+        const touch = e.touches?.[0];
+        gridTouchStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+        if (longPressTimer.current) {
+            clearTimeout(longPressTimer.current);
+        }
         longPressTimer.current = setTimeout(() => {
             setEditingBooking(null);
-            if (!canBook) return;
+            if (!canBook || !availabilityReady) return;
 
             const timeStr = timeSlots[timeIndex];
             if (isSlotBooked(dateStr, timeStr)) return;
@@ -694,9 +781,22 @@ const BookingModal = ({
         }, 500);
     };
 
+    const handleGridTouchMove = (e) => {
+        if (!longPressTimer.current || isSelecting) return;
+        const touch = e.touches?.[0];
+        const start = gridTouchStartRef.current;
+        if (!touch || !start) return;
+        if (Math.hypot(touch.clientX - start.x, touch.clientY - start.y) > 8) {
+            clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
+        }
+    };
+
     const handleGridTouchEnd = () => {
+        gridTouchStartRef.current = null;
         if (longPressTimer.current) {
             clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
         }
     };
 
@@ -826,9 +926,9 @@ const BookingModal = ({
     }, [editingBooking, originalBookingState, selectedProject]);
 
     return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-2 sm:p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 backdrop-blur-sm modal-backdrop animate-fade-in" onClick={onClose}>
             <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="booking-dialog-title" tabIndex={-1}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-7xl h-[96vh] md:h-[95vh] flex flex-col overflow-hidden border dark:border-gray-700 transition-colors"
+                className="bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-xl shadow-2xl w-full max-w-7xl h-[96dvh] md:h-[95dvh] flex flex-col overflow-hidden border dark:border-gray-700 transition-colors"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header Bar */}
@@ -867,8 +967,8 @@ const BookingModal = ({
                 {/* Main Body: Left Sidebar + Right Calendar Area */}
                 <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
                     {/* Left Sidebar */}
-                    <div className="w-full md:w-80 lg:w-96 shrink-0 border-r dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex flex-col justify-between overflow-y-auto">
-                        <div className="p-4 space-y-3.5 flex-1 overflow-y-auto">
+                    <div className="w-full flex-1 min-h-0 md:flex-none md:w-80 lg:w-96 md:shrink-0 md:border-r dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex flex-col overflow-hidden">
+                        <div className="p-3.5 sm:p-4 space-y-3.5 flex-1 min-h-0 overflow-y-auto modal-scroll">
                             {/* Tool Metadata Card */}
                             <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border dark:border-gray-700 text-xs text-gray-600 dark:text-gray-300 space-y-1 shadow-2xs">
                                 <div className="flex items-center justify-between">
@@ -921,21 +1021,23 @@ const BookingModal = ({
                                         <button
                                             type="button"
                                             onClick={handlePrevDay}
-                                            className="p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0 cursor-pointer min-h-[32px] min-w-[30px] flex items-center justify-center text-xs"
+                                            aria-label="Previous day"
+                                            className="p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0 cursor-pointer min-h-[44px] min-w-[44px] md:min-h-[32px] md:min-w-[30px] flex items-center justify-center text-xs"
                                             title="Previous Day"
                                         >
                                             <Icon className="fas fa-chevron-left text-[9px]" />
                                         </button>
                                         <input
                                             type="date"
-                                            className="input-field flex-1 text-xs py-1 min-h-[32px]"
+                                            className="input-field flex-1 min-w-0 text-base md:text-xs px-2.5 py-1 min-h-[44px] md:min-h-[32px]"
                                             aria-label="Date" value={formDate}
                                             onChange={e => handleFormDateChange(e.target.value)}
                                         />
                                         <button
                                             type="button"
                                             onClick={handleNextDay}
-                                            className="p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0 cursor-pointer min-h-[32px] min-w-[30px] flex items-center justify-center text-xs"
+                                            aria-label="Next day"
+                                            className="p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0 cursor-pointer min-h-[44px] min-w-[44px] md:min-h-[32px] md:min-w-[30px] flex items-center justify-center text-xs"
                                             title="Next Day"
                                         >
                                             <Icon className="fas fa-chevron-right text-[9px]" />
@@ -948,7 +1050,7 @@ const BookingModal = ({
                                     <div>
                                         <label className="text-[11px] font-semibold text-gray-600 dark:text-gray-400 block mb-1">Start</label>
                                         <select
-                                            className="select-input w-full text-xs min-h-[32px] py-1"
+                                            className="select-input w-full text-base md:text-xs min-h-[44px] md:min-h-[32px] py-1"
                                             aria-label="Start" value={formStart}
                                             onChange={e => { setFormStart(e.target.value); setFormError(''); setFormNeedsCheck(true); setSelectedSlots([]); }}
                                         >
@@ -958,7 +1060,7 @@ const BookingModal = ({
                                     <div>
                                         <label className="text-[11px] font-semibold text-gray-600 dark:text-gray-400 block mb-1">End</label>
                                         <select
-                                            className="select-input w-full text-xs min-h-[32px] py-1"
+                                            className="select-input w-full text-base md:text-xs min-h-[44px] md:min-h-[32px] py-1"
                                             aria-label="End" value={formEnd}
                                             onChange={e => { setFormEnd(e.target.value); setFormError(''); setFormNeedsCheck(true); setSelectedSlots([]); }}
                                         >
@@ -972,7 +1074,7 @@ const BookingModal = ({
                                     <div className="flex items-center justify-between mb-1">
                                         <span className="text-[11px] font-semibold text-gray-600 dark:text-gray-400">Quick Duration</span>
                                     </div>
-                                    <div className="grid grid-cols-6 gap-1">
+                                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
                                         {[
                                             { label: '30m', h: 0, m: 30 },
                                             { label: '1h', h: 1, m: 0 },
@@ -985,7 +1087,7 @@ const BookingModal = ({
                                                 key={d.label}
                                                 type="button"
                                                 onClick={() => applyDuration(d.h, d.m)}
-                                                className="px-1 py-1 text-[11px] font-medium rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-300 transition-colors shadow-2xs text-center cursor-pointer"
+                                                className="px-1 py-1 min-h-[40px] md:min-h-[28px] text-xs font-medium rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-300 transition-colors shadow-2xs text-center cursor-pointer"
                                             >
                                                 +{d.label}
                                             </button>
@@ -999,7 +1101,7 @@ const BookingModal = ({
                                     <select
                                         aria-label="Project" value={selectedProject}
                                         onChange={e => setSelectedProject(e.target.value)}
-                                        className="select-input w-full text-xs min-h-[32px] py-1"
+                                        className="select-input w-full text-base md:text-xs min-h-[44px] md:min-h-[32px] py-1"
                                     >
                                         <option value="General">General</option>
                                         {profile?.projects?.map(proj => <option key={proj} value={proj}>{proj}</option>)}
@@ -1010,7 +1112,7 @@ const BookingModal = ({
                                     type="button"
                                     onClick={applyFormSelection}
                                     disabled={!canBook || !availabilityReady}
-                                    className="btn btn-secondary w-full text-xs py-1.5 min-h-[32px]"
+                                    className="btn btn-secondary w-full min-h-[44px] md:min-h-[36px] text-sm md:text-xs py-1.5"
                                 >
                                     Check & Apply Time
                                 </button>
@@ -1071,11 +1173,21 @@ const BookingModal = ({
                                     <div className="text-[11px] text-amber-800 dark:text-amber-300 opacity-90">
                                         Project: {selectedProject}
                                     </div>
+                                    {(editingBooking.user_id === user.id || isAdmin) && onCancel && (!isBookingStarted(originalBookingState || editingBooking) || isAdminOverride) && (
+                                        <button
+                                            type="button"
+                                            className="btn btn-outline-danger btn-sm w-full mt-2 flex items-center justify-center gap-1.5 min-h-[44px] md:min-h-[34px]"
+                                            onClick={(e) => handleCancelClick(e, editingBooking)}
+                                        >
+                                            <Icon className="fas fa-trash-alt text-xs" />
+                                            Cancel Reservation
+                                        </button>
+                                    )}
                                 </div>
                             )}
 
                             {/* Interaction Tips Box */}
-                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border dark:border-gray-700 text-[11px] text-gray-500 dark:text-gray-400 space-y-1">
+                            <div className="hidden md:block bg-white dark:bg-gray-800 p-2.5 rounded-lg border dark:border-gray-700 text-[11px] text-gray-500 dark:text-gray-400 space-y-1">
                                 <div className="font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1">
                                     <Icon className="fas fa-lightbulb text-amber-500 text-[10px]" />
                                     <span>Interactive Tips</span>
@@ -1101,20 +1213,44 @@ const BookingModal = ({
                                 <div className="text-xs font-bold text-gray-700 dark:text-gray-300 flex items-center justify-between">
                                     <span>Mobile Day Timeline ({formDate})</span>
                                 </div>
-                                <div className="grid grid-cols-4 gap-1 max-h-48 overflow-y-auto p-1 border dark:border-gray-700 rounded bg-white dark:bg-gray-800">
+                                <div ref={mobileTimelineRef} className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-h-60 overflow-y-auto p-1.5 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 modal-scroll">
                                     {timeSlots.map(time => {
-                                        const isBooked = isSlotBooked(formDate, time);
+                                        const slotBooking = getSlotBooking(formDate, time);
+                                        const isOwnBooking = slotBooking ? (slotBooking.user_id === user.id || isAdmin) : false;
+                                        const isOwnPending = Boolean(slotBooking && isOwnBooking && slotBooking.status === 'pending_approval');
+                                        const editIds = editingBooking ? (editingBooking.ids || [editingBooking.id]) : [];
+                                        const hasOtherCollision = editingBooking
+                                            ? checkCollision({ tool_id: tool.id, date: formDate, time, end_time: getNextSlotTime(time) }, allKnownBookings, editIds)
+                                            : false;
+                                        const isBookedByOthers = Boolean(slotBooking && !isOwnBooking) || (!slotBooking && (editingBooking ? hasOtherCollision : isSlotBooked(formDate, time)));
                                         const isPast = !isAdminOverride && isSlotInPast(formDate, time, currentTime);
-                                        const isSelected = selectedSlotKeys.has(`${formDate}:${time}`);
+                                        const isEditingThisSlot = Boolean(
+                                            editingBooking &&
+                                            editingBooking.date === formDate &&
+                                            getMinutes(time) >= getMinutes(editingBooking.startTime) &&
+                                            getMinutes(time) < getMinutes(editingBooking.endTime)
+                                        );
+                                        const isSelected = editingBooking ? isEditingThisSlot : selectedSlotKeys.has(`${formDate}:${time}`);
+                                        const stateClasses = isSelected
+                                            ? 'bg-blue-600 text-white border-blue-700 font-bold'
+                                            : isOwnPending
+                                                ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-100 border-amber-400 dark:border-amber-600 border-dashed'
+                                                : isOwnBooking
+                                                    ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-900 dark:text-blue-100 border-blue-300 dark:border-blue-700'
+                                                    : isBookedByOthers
+                                                        ? 'bg-gray-100 dark:bg-gray-700/70 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 cursor-not-allowed'
+                                                        : isPast
+                                                            ? 'bg-gray-50 dark:bg-gray-800/60 text-gray-400 dark:text-gray-500 border-gray-100 dark:border-gray-700/50 cursor-not-allowed'
+                                                            : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 cursor-pointer';
                                         return (
                                             <button
                                                 key={time}
                                                 type="button"
-                                                disabled={(isBooked && !isSelected) || isPast}
+                                                data-slot-time={time}
+                                                aria-pressed={isSelected}
+                                                disabled={isBookedByOthers || (isPast && !isOwnBooking && !isSelected)}
                                                 onClick={() => handleSlotTap(time)}
-                                                className={`py-1 px-0.5 rounded text-[11px] border text-center transition-all ${
-                                                    isSelected ? 'bg-blue-600 text-white font-bold' : isBooked ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : isPast ? 'bg-gray-50 text-gray-300 cursor-not-allowed' : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                                                }`}
+                                                className={`min-h-[44px] px-1 py-1.5 rounded-md text-xs font-medium border text-center transition-colors ${stateClasses}`}
                                             >
                                                 {time}
                                             </button>
@@ -1125,12 +1261,13 @@ const BookingModal = ({
                         </div>
 
                         {/* Pinned Bottom Actions in Sidebar */}
-                        <div className="p-3 border-t dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0 space-y-2">
+                        <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0 space-y-2">
                             <div className="flex items-center gap-2">
-                                <button onClick={onClose} className="btn btn-secondary flex-1 text-xs py-2">
+                                <button type="button" onClick={onClose} className="btn btn-secondary flex-1 min-h-[44px] md:min-h-[36px] text-sm md:text-xs py-2">
                                     Cancel
                                 </button>
                                 <button
+                                    type="button"
                                     disabled={(!editingBooking || editingBooking.user_id === user.id || isAdmin) && ((selectedSlots.length === 0 && !editingBooking) || isSubmitting || !availabilityReady || formNeedsCheck)}
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -1140,7 +1277,7 @@ const BookingModal = ({
                                             handleConfirmBooking();
                                         }
                                     }}
-                                    className={`btn flex-1 text-xs py-2 flex items-center justify-center gap-1.5
+                                    className={`btn flex-1 min-h-[44px] md:min-h-[36px] text-sm md:text-xs py-2 flex items-center justify-center gap-1.5
                                         ${(editingBooking && editingBooking.user_id !== user.id && (!isAdmin || !isBookingDirty))
                                             ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/50 dark:text-blue-300 dark:hover:bg-blue-900/70'
                                             : ((selectedSlots.length === 0 && !editingBooking) || isSubmitting
@@ -1164,7 +1301,7 @@ const BookingModal = ({
                     </div>
 
                     {/* Right Calendar Area (Desktop) */}
-                    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-white dark:bg-gray-800">
+                    <div className="hidden md:flex flex-1 flex-col min-h-0 overflow-hidden bg-white dark:bg-gray-800">
                         {/* Week Navigation Toolbar */}
                         <div className="px-4 py-2 border-b dark:border-gray-700 flex items-center justify-between gap-2 bg-white dark:bg-gray-800 shrink-0 z-20">
                             <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 p-0.5 rounded-lg">
@@ -1275,7 +1412,9 @@ const BookingModal = ({
                                                                 onMouseDown={() => handleGridMouseDown(dateStr, timeIdx)}
                                                                 onMouseEnter={() => handleMouseEnter(dateStr, timeIdx)}
                                                                 onTouchStart={(e) => handleGridTouchStart(e, dateStr, timeIdx)}
+                                                                onTouchMove={handleGridTouchMove}
                                                                 onTouchEnd={handleGridTouchEnd}
+                                                                onTouchCancel={handleGridTouchEnd}
                                                                 style={{ height: `${PIXELS_PER_30_MINS}px` }}
                                                                 className={`transition-colors cursor-pointer relative border-b dark:border-gray-700/50 ${
                                                                     time.endsWith(':00') ? 'border-b-gray-200 dark:border-b-gray-700' : 'border-b-gray-100 dark:border-b-gray-800/40'
@@ -1324,6 +1463,7 @@ const BookingModal = ({
                                                                 onTouchStart={(e) => canMove && handleBookingTouchStart(e, booking, 'move')}
                                                                 onTouchMove={handleBookingTouchMove}
                                                                 onTouchEnd={handleBookingTouchEnd}
+                                                                onTouchCancel={handleBookingTouchEnd}
                                                                 onClick={(e) => handleBookingClick(e, booking)}
                                                                 role="button"
                                                                 tabIndex={canEdit ? 0 : -1}
@@ -1333,7 +1473,7 @@ const BookingModal = ({
                                                             >
                                                                 {canResizeTop && (
                                                                     <div
-                                                                        className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-25 opacity-0 group-hover:opacity-100 bg-blue-500/40 flex items-center justify-center transition-opacity"
+                                                                        className="touch-none absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-25 opacity-0 group-hover:opacity-100 bg-blue-500/40 flex items-center justify-center transition-opacity"
                                                                         title="Drag to resize start time"
                                                                         onMouseDown={(e) => { e.stopPropagation(); startInteraction(e, booking, 'resize-top', 'existing'); }}
                                                                         onTouchStart={(e) => { e.stopPropagation(); handleBookingTouchStart(e, booking, 'resize-top'); }}
@@ -1350,18 +1490,20 @@ const BookingModal = ({
                                                                 <div className={`truncate text-[10px] pointer-events-none ${isPending ? 'text-amber-700 dark:text-amber-300' : isOwnBooking ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'}`}>{booking.project}</div>
 
                                                                 {editingBooking && editingBooking.id === booking.ids[0] && (isAdmin || isOwnBooking) && (!isStarted || isAdminOverride) && (
-                                                                    <div
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label="Cancel booking"
                                                                         className="absolute top-0 right-0 p-1 cursor-pointer text-red-600 hover:text-red-800 bg-white/70 hover:bg-white rounded-bl z-30"
                                                                         onClick={(e) => handleCancelClick(e, booking)}
                                                                         title="Cancel Booking"
                                                                     >
-                                                                        <Icon className="fas fa-times text-xs" />
-                                                                    </div>
+                                                                        <Icon aria-hidden="true" className="fas fa-times text-xs" />
+                                                                    </button>
                                                                 )}
 
                                                                 {canResizeBottom && (
                                                                     <div
-                                                                        className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-25 opacity-0 group-hover:opacity-100 bg-blue-500/40 flex items-center justify-center transition-opacity"
+                                                                        className="touch-none absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-25 opacity-0 group-hover:opacity-100 bg-blue-500/40 flex items-center justify-center transition-opacity"
                                                                         title="Drag to resize end time"
                                                                         onMouseDown={(e) => { e.stopPropagation(); startInteraction(e, booking, 'resize-bottom', 'existing'); }}
                                                                         onTouchStart={(e) => { e.stopPropagation(); handleBookingTouchStart(e, booking, 'resize-bottom'); }}
@@ -1376,7 +1518,7 @@ const BookingModal = ({
                                                     {/* Interactive Draft Selection Window (Box) */}
                                                     {!editingBooking && !isSelecting && selectedSlots.length > 0 && selectedSlots[0].date === dateStr && !interaction && (
                                                         <div
-                                                            className="absolute rounded-md border-2 border-blue-600 dark:border-blue-400 bg-blue-500/25 dark:bg-blue-600/35 backdrop-blur-xs text-blue-950 dark:text-blue-100 shadow-md ring-2 ring-blue-500/20 flex flex-col justify-between overflow-hidden group select-none transition-shadow hover:shadow-lg cursor-grab active:cursor-grabbing z-25"
+                                                            className="touch-none absolute rounded-md border-2 border-blue-600 dark:border-blue-400 bg-blue-500/25 dark:bg-blue-600/35 backdrop-blur-xs text-blue-950 dark:text-blue-100 shadow-md ring-2 ring-blue-500/20 flex flex-col justify-between overflow-hidden group select-none transition-shadow hover:shadow-lg cursor-grab active:cursor-grabbing z-25"
                                                             style={{
                                                                 top: `${((getMinutes(formStart || selectedSlots[0].time) - (START_HOUR * 60)) / 30) * PIXELS_PER_30_MINS}px`,
                                                                 height: `${(((getMinutes(formEnd || getNextSlotTime(selectedSlots[selectedSlots.length - 1].time)) - getMinutes(formStart || selectedSlots[0].time)) / 30) * PIXELS_PER_30_MINS) - 1}px`,
@@ -1412,7 +1554,7 @@ const BookingModal = ({
                                                         >
                                                             {/* Top Double-Arrow Resize Handle (↕) */}
                                                             <div
-                                                                className="h-2 w-full cursor-ns-resize bg-blue-600/30 hover:bg-blue-600 dark:bg-blue-400/40 dark:hover:bg-blue-400 transition-colors flex items-center justify-center shrink-0 z-30 group/top"
+                                                                className="touch-none h-2 w-full cursor-ns-resize bg-blue-600/30 hover:bg-blue-600 dark:bg-blue-400/40 dark:hover:bg-blue-400 transition-colors flex items-center justify-center shrink-0 z-30 group/top"
                                                                 title="Drag up/down to adjust start time"
                                                                 onMouseDown={(e) => {
                                                                     e.stopPropagation();
@@ -1462,7 +1604,7 @@ const BookingModal = ({
 
                                                             {/* Bottom Double-Arrow Resize Handle (↕) */}
                                                             <div
-                                                                className="h-2 w-full cursor-ns-resize bg-blue-600/30 hover:bg-blue-600 dark:bg-blue-400/40 dark:hover:bg-blue-400 transition-colors flex items-center justify-center shrink-0 z-30 group/bottom"
+                                                                className="touch-none h-2 w-full cursor-ns-resize bg-blue-600/30 hover:bg-blue-600 dark:bg-blue-400/40 dark:hover:bg-blue-400 transition-colors flex items-center justify-center shrink-0 z-30 group/bottom"
                                                                 title="Drag up/down to adjust end time"
                                                                 onMouseDown={(e) => {
                                                                     e.stopPropagation();
@@ -1547,11 +1689,11 @@ const BookingModal = ({
                 {/* Message Modal */}
                 {isMessageModalOpen && (
                     <div
-                        className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] backdrop-blur-sm"
+                        className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4 backdrop-blur-sm modal-backdrop"
                         onClick={(e) => { e.stopPropagation(); setIsMessageModalOpen(false); }}
                     >
                         <div ref={messageDialogRef} role="dialog" aria-modal="true" aria-labelledby="message-dialog-title" tabIndex={-1}
-                            className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md p-6 border dark:border-gray-700"
+                            className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md max-h-[90dvh] overflow-y-auto modal-scroll p-4 sm:p-6 border dark:border-gray-700"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <h3 id="message-dialog-title" className="text-lg font-bold text-gray-900 dark:text-white mb-4">Send Message to {editingBooking?.user_name || 'User'}</h3>

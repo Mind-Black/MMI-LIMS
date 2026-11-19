@@ -69,12 +69,15 @@ export const useBookingInteraction = ({
         const top = (startOffset / 30) * slotHeight;
         const height = (duration / 30) * slotHeight;
 
-        const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-        const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+        const isTouch = e.type.includes('touch');
+        if (isTouch && !e.touches?.[0]) return;
+        const clientX = isTouch ? e.touches[0].clientX : e.clientX;
+        const clientY = isTouch ? e.touches[0].clientY : e.clientY;
 
         const initialData = {
             type,
             targetType, // 'draft' or 'existing'
+            isTouch,
             bookingId: Array.isArray(booking.ids) ? booking.ids[0] : (booking.id || 'draft'),
             originalBooking: booking,
             startY: clientY,
@@ -94,10 +97,6 @@ export const useBookingInteraction = ({
         };
 
         interactionRef.current = initialData;
-
-        if (e.type.includes('touch')) {
-            setInteraction(initialData);
-        }
     };
 
     useEffect(() => {
@@ -107,6 +106,7 @@ export const useBookingInteraction = ({
 
             let clientX, clientY;
             if (e.type === 'touchmove') {
+                if (!e.touches?.[0]) return;
                 if (e.cancelable) e.preventDefault();
                 clientX = e.touches[0].clientX;
                 clientY = e.touches[0].clientY;
@@ -117,7 +117,8 @@ export const useBookingInteraction = ({
 
             if (!data.hasMoved) {
                 const dist = Math.hypot(clientX - data.startX, clientY - data.startY);
-                if (dist < 4) return;
+                const threshold = data.isTouch ? 10 : 4;
+                if (dist < threshold) return;
                 data.hasMoved = true;
                 setInteraction(data);
             }
@@ -286,16 +287,23 @@ export const useBookingInteraction = ({
             }, 60);
         };
 
+        const handleCancel = () => {
+            interactionRef.current = null;
+            setInteraction(null);
+        };
+
         window.addEventListener('mousemove', handleMove);
         window.addEventListener('mouseup', handleUp);
         window.addEventListener('touchmove', handleMove, { passive: false });
         window.addEventListener('touchend', handleUp);
+        window.addEventListener('touchcancel', handleCancel);
 
         return () => {
             window.removeEventListener('mousemove', handleMove);
             window.removeEventListener('mouseup', handleUp);
             window.removeEventListener('touchmove', handleMove);
             window.removeEventListener('touchend', handleUp);
+            window.removeEventListener('touchcancel', handleCancel);
         };
     }, [weekDates, existingBookings, isAdminOverride, onInteractionEnd, showToast, slotHeight]);
 

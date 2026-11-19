@@ -165,9 +165,9 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteTok
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-blue-700 p-4">
-            <div className="bg-white dark:bg-gray-800 backdrop-blur-sm p-8 rounded-2xl shadow-2xl w-full max-w-md border border-white/20 dark:border-gray-700">
-                <div className="text-center mb-8">
+        <div className="min-h-dvh flex items-center justify-center bg-gradient-to-br from-blue-900 to-blue-700 p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+            <div className="bg-white dark:bg-gray-800 backdrop-blur-sm p-5 sm:p-8 rounded-2xl shadow-2xl w-full max-w-md border border-white/20 dark:border-gray-700">
+                <div className="text-center mb-6 sm:mb-8">
                     <div className="bg-white p-4 rounded-full w-24 h-24 mx-auto mb-4 flex items-center justify-center shadow-md">
                         <img src={logo} alt="MMI-LIMS Logo" className="h-12 w-auto" />
                     </div>
@@ -212,7 +212,7 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteTok
                                     className="input-field bg-gray-100 dark:bg-gray-700 cursor-not-allowed"
                                 />
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label htmlFor="invite-accept-first-name" className="label">First Name</label>
                                     <input
@@ -271,7 +271,7 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteTok
                                 />
                             </div>
                             <div className="flex justify-between text-sm">
-                                <button type="button" onClick={() => setShowPassword(value => !value)} className="text-blue-700 dark:text-blue-300 underline">
+                                <button type="button" onClick={() => setShowPassword(value => !value)} className="min-h-[44px] inline-flex items-center py-1 text-blue-700 dark:text-blue-300 underline">
                                     {showPassword ? 'Hide password' : 'Show password'}
                                 </button>
                             </div>
@@ -290,21 +290,21 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteTok
                                 </label> : <label htmlFor="recovery-email" className="label">Email address
                                     <input id="recovery-email" type="email" required autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} className="input-field mt-1" />
                                 </label>}
-                                {isPasswordRecovery && <button type="button" onClick={() => setShowPassword(value => !value)} className="text-sm text-blue-700 dark:text-blue-300 underline">{showPassword ? 'Hide password' : 'Show password'}</button>}
+                                {isPasswordRecovery && <button type="button" onClick={() => setShowPassword(value => !value)} className="min-h-[44px] inline-flex items-center py-1 text-sm text-blue-700 dark:text-blue-300 underline">{showPassword ? 'Hide password' : 'Show password'}</button>}
                                 <button disabled={loading} type="submit" className="btn btn-primary w-full">{loading ? 'Processing…' : isPasswordRecovery ? 'Update password' : 'Send recovery link'}</button>
                             </>
                         )}
-                        {!isPasswordRecovery && <button type="button" onClick={() => { setForgotPassword(false); setResetSent(false); }} className="text-sm text-blue-700 dark:text-blue-300 underline">Back to sign in</button>}
+                        {!isPasswordRecovery && <button type="button" onClick={() => { setForgotPassword(false); setResetSent(false); }} className="min-h-[44px] inline-flex items-center py-1 text-sm text-blue-700 dark:text-blue-300 underline">Back to sign in</button>}
                     </form>
                 ) : registrationSuccess ? (
                     <div className="text-center space-y-6">
-                        <div className="bg-green-50 p-4 rounded-lg border border-green-100">
-                            <h3 className="text-xl font-semibold text-green-800 mb-2">Registration Successful!</h3>
-                            <p className="text-green-700">
+                        <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-100 dark:border-green-800">
+                            <h3 className="text-xl font-semibold text-green-800 dark:text-green-200 mb-2">Registration Successful!</h3>
+                            <p className="text-green-700 dark:text-green-300">
                                 Please check your email inbox for a confirmation link to activate your account.
                             </p>
                         </div>
-                        <p className="text-gray-600 text-sm">
+                        <p className="text-gray-600 dark:text-gray-300 text-sm">
                             Once confirmed, you will be able to sign in.
                         </p>
                         <button
@@ -327,7 +327,7 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteTok
                         <form onSubmit={handleAuth} className="space-y-5">
                             {isSignUp && (
                                 <>
-                                    <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div>
                                             <label htmlFor="signup-first-name" className="label">First Name</label>
                                             <input
@@ -398,9 +398,9 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteTok
                                     placeholder="••••••••"
                                 />
                             </div>
-                            <div className="flex justify-between text-sm">
-                                <button type="button" onClick={() => setShowPassword(value => !value)} className="text-blue-700 dark:text-blue-300 underline">{showPassword ? 'Hide password' : 'Show password'}</button>
-                                {!isSignUp && <button type="button" onClick={() => setForgotPassword(true)} className="text-blue-700 dark:text-blue-300 underline">Forgot password?</button>}
+                            <div className="flex flex-wrap justify-between items-center gap-2 text-sm">
+                                <button type="button" onClick={() => setShowPassword(value => !value)} className="min-h-[44px] inline-flex items-center py-1 text-blue-700 dark:text-blue-300 underline">{showPassword ? 'Hide password' : 'Show password'}</button>
+                                {!isSignUp && <button type="button" onClick={() => setForgotPassword(true)} className="min-h-[44px] inline-flex items-center py-1 text-blue-700 dark:text-blue-300 underline">Forgot password?</button>}
                             </div>
 
                             <button
@@ -423,7 +423,7 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteTok
                         <div className="mt-6 text-center">
                             <button
                                 onClick={() => setIsSignUp(!isSignUp)}
-                                className="text-sm text-blue-700 dark:text-blue-300 hover:text-blue-900 font-medium transition-colors"
+                                className="min-h-[44px] inline-flex items-center py-1 text-sm text-blue-700 dark:text-blue-300 hover:text-blue-900 font-medium transition-colors"
                             >
                                 {isSignUp ? 'Already have an account? Sign In' : 'Need an account? Sign Up'}
                             </button>
@@ -431,7 +431,7 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteTok
                     </>
                 )}
 
-                <div className="mt-8 pt-6 border-t border-gray-100 text-center">
+                <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700 text-center">
                     <p className="text-xs text-gray-400">Protected by Supabase Auth</p>
                 </div>
             </div>

@@ -308,7 +308,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                         type="search"
                         value={search}
                         onChange={e => setSearch(e.target.value)}
-                        className="input-field mt-1"
+                        className="input-field mt-1 text-base sm:text-sm"
                         placeholder="Search name, job title, or email..."
                     />
                 </label>
@@ -316,7 +316,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                     <select
                         value={approvalFilter}
                         onChange={e => setApprovalFilter(e.target.value)}
-                        className="select-input block mt-1"
+                        className="select-input block mt-1 w-full text-base sm:text-sm"
                     >
                         <option value="all">All</option>
                         <option value="approved">Approved</option>
@@ -328,29 +328,56 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
             <div className="card overflow-hidden">
                 {/* Mobile User Cards */}
                 <div className="lg:hidden divide-y dark:divide-gray-700">
-                    {filteredUsers.map(u => (
-                        <div key={u.id} className="p-4 space-y-2 text-sm text-gray-700 dark:text-gray-200">
-                            <div className="font-bold break-words">{u.first_name} {u.last_name}</div>
-                            {u.email && <div className="text-xs text-gray-500">{u.email}</div>}
-                            <div>{u.job_title} · {u.access_level} · {u.is_approved ? 'Approved' : 'Pending'}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                                Equipment: {getLicenseBreakdown(u.licenses)}
-                            </div>
-                            <div className="flex gap-2 pt-1">
-                                {!u.is_approved && (
-                                    <button onClick={() => handleApproveUser(u.id)} className="btn btn-primary btn-sm">
-                                        Approve
+                    {filteredUsers.map(u => {
+                        const isSelected = selectedUser?.id === u.id;
+                        return (
+                            <div
+                                key={u.id}
+                                className={`p-4 space-y-2 text-sm text-gray-700 dark:text-gray-200 transition-colors ${isSelected ? 'bg-blue-50/70 dark:bg-blue-900/20 border-l-4 border-l-blue-600 dark:border-l-blue-400' : ''}`}
+                            >
+                                <div className="font-bold break-words">{u.first_name} {u.last_name}</div>
+                                {u.email && <div className="text-xs text-gray-500 dark:text-gray-400 break-all">{u.email}</div>}
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                    {u.job_title && (
+                                        <span className="text-xs text-gray-600 dark:text-gray-300 mr-1">{u.job_title}</span>
+                                    )}
+                                    <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${u.access_level === 'admin' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'}`}>
+                                        {u.access_level}
+                                    </span>
+                                    {u.is_approved ? (
+                                        <span className="px-2 py-0.5 rounded text-xs font-bold uppercase bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                                            Active
+                                        </span>
+                                    ) : (
+                                        <span className="px-2 py-0.5 rounded text-xs font-bold uppercase bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300">
+                                            Pending
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                    Equipment: {getLicenseBreakdown(u.licenses)}
+                                </div>
+                                <div className="flex gap-2 pt-1">
+                                    {!u.is_approved && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleApproveUser(u.id)}
+                                            className="btn btn-primary btn-sm flex-1 min-h-[44px] sm:min-h-[34px] inline-flex items-center justify-center"
+                                        >
+                                            Approve
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleUserDetails(u)}
+                                        className="btn btn-secondary btn-sm flex-1 min-h-[44px] sm:min-h-[34px] inline-flex items-center justify-center"
+                                    >
+                                        {isSelected ? 'Close' : 'Manage Access'}
                                     </button>
-                                )}
-                                <button
-                                    onClick={() => toggleUserDetails(u)}
-                                    className="btn btn-secondary btn-sm"
-                                >
-                                    {selectedUser?.id === u.id ? 'Close' : 'Manage Access'}
-                                </button>
+                                </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
 
                 {/* Desktop Users Table */}
@@ -413,223 +440,251 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
             </div>
 
             {/* Selected User Management Drawer */}
-            <div className="flex gap-3"><button disabled={!page||loading} onClick={()=>setPage(p=>p-1)}>Previous users</button><span>Page {page+1}</span><button disabled={!hasMore||loading} onClick={()=>setPage(p=>p+1)}>Next users</button></div>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={!page || loading}
+                    onClick={() => setPage(p => p - 1)}
+                >
+                    Previous users
+                </button>
+                <span>Page {page + 1}</span>
+                <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={!hasMore || loading}
+                    onClick={() => setPage(p => p + 1)}
+                >
+                    Next users
+                </button>
+            </div>
             {selectedUser && (
-                <div className="card p-6 animate-fade-in space-y-6">
-                    <div className="flex justify-between items-center border-b dark:border-gray-700 pb-3">
-                        <div>
-                            <h4 className="font-bold text-lg text-gray-800 dark:text-gray-200">
-                                Manage Access: {selectedUser.first_name} {selectedUser.last_name}
-                            </h4>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                {selectedUser.job_title} &bull; {selectedUser.email || 'No email registered'} &bull; Role: {selectedUser.access_level}
-                            </p>
-                        </div>
-                        <button
-                            onClick={() => setSelectedUser(null)}
-                            aria-label="Close user details"
-                            className="btn btn-ghost btn-sm"
-                        >
-                            <Icon className="fas fa-times" />
-                        </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Equipment Access Levels Section */}
-                        <div>
-                            <div className="flex items-center justify-between mb-2">
-                                <h5 className="font-semibold text-gray-700 dark:text-gray-300">
-                                    Equipment Access Levels
-                                </h5>
-                                <span className="text-xs text-gray-500">
-                                    {countActiveLicenses(selectedUser.licenses)} active
-                                </span>
-                            </div>
-
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                                Set operator authorization tier: <strong>Level I</strong> (Training in progress), <strong>Level II</strong> (Supervised / Booking requires confirmation), or <strong>Level III</strong> (Independent operator).
-                            </p>
-
-                            <div className="flex flex-col sm:flex-row gap-3 mb-2">
-                                <label className="min-w-0 flex-1 text-sm text-gray-700 dark:text-gray-200">
-                                    Search equipment
-                                    <input
-                                        type="search"
-                                        value={equipmentSearch}
-                                        onChange={e => setEquipmentSearch(e.target.value)}
-                                        className="input-field mt-1"
-                                        placeholder="Name, ID, or category"
-                                    />
-                                </label>
-                                <label className="text-sm text-gray-700 dark:text-gray-200">
-                                    Sort equipment
-                                    <select
-                                        value={equipmentSort}
-                                        onChange={e => setEquipmentSort(e.target.value)}
-                                        className="select-input block mt-1 w-full"
-                                    >
-                                        <option value="name-asc">Name A–Z</option>
-                                        <option value="name-desc">Name Z–A</option>
-                                        <option value="category">Category, then name</option>
-                                        <option value="license">License level (highest first)</option>
-                                    </select>
-                                </label>
-                            </div>
-                            <div className="flex items-center justify-between gap-2 mb-2 text-xs text-gray-500 dark:text-gray-400">
-                                <span role="status">Showing {visibleEquipment.length} of {tools.length} equipment</span>
-                                {equipmentSearch && (
-                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEquipmentSearch('')}>
-                                        Clear equipment search
-                                    </button>
-                                )}
-                            </div>
-                            {visibleEquipment.length === 0 && (
-                                <p className="py-4 text-sm text-gray-500 dark:text-gray-400">
-                                    {tools.length ? 'No equipment matches your search.' : 'No equipment available.'}
+                <div
+                    className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4 modal-backdrop lg:static lg:inset-auto lg:z-auto lg:bg-transparent lg:block lg:p-0"
+                    onClick={(e) => { if (e.target === e.currentTarget) setSelectedUser(null); }}
+                >
+                    <div className="card w-full max-w-3xl lg:max-w-none max-h-[90dvh] lg:max-h-none overflow-y-auto lg:overflow-visible modal-scroll rounded-t-2xl sm:rounded-xl lg:rounded-lg p-4 sm:p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:pb-6 animate-fade-in space-y-6">
+                        <div className="sticky top-0 z-10 bg-white dark:bg-gray-800 -mx-4 px-4 pt-1 pb-3 sm:mx-0 sm:px-0 lg:static flex justify-between items-start gap-2 border-b dark:border-gray-700">
+                            <div className="min-w-0 flex-1">
+                                <h4 className="font-bold text-lg text-gray-800 dark:text-gray-200 break-words">
+                                    Manage Access: {selectedUser.first_name} {selectedUser.last_name}
+                                </h4>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 break-words">
+                                    {selectedUser.job_title && <>{selectedUser.job_title} &bull; </>}
+                                    <span className="break-all">{selectedUser.email || 'No email registered'}</span> &bull; Role: {selectedUser.access_level}
                                 </p>
-                            )}
-
-                            <ul aria-label="Equipment licenses" className="space-y-2.5 max-h-96 overflow-y-auto pr-2 custom-scroll">
-                                {visibleEquipment.map(({ tool, currentLevel }) => {
-                                    return (
-                                        <li
-                                            key={tool.id}
-                                            className="p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/40 space-y-2"
-                                        >
-                                            <div className="flex justify-between items-start">
-                                                <div>
-                                                    <span className="font-medium text-sm text-gray-800 dark:text-gray-200">
-                                                        {tool.name}
-                                                    </span>
-                                                    <span className="text-xs text-gray-500 ml-2">
-                                                        ({tool.category})
-                                                    </span>
-                                                </div>
-                                                {!tool.license_req && (
-                                                    <span className="text-[11px] font-semibold text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded">
-                                                        Open Access
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            {/* 4-Option Segmented Control */}
-                                            <div className="flex flex-wrap gap-1 bg-white dark:bg-gray-900 p-1 rounded-md border dark:border-gray-700 text-xs">
-                                                <button
-                                                    type="button"
-                                                    disabled={savingLicense}
-                                                    onClick={() => handleSetAccessLevel(selectedUser.id, tool.id, TOOL_ACCESS_LEVELS.NONE)}
-                                                    className={`flex-1 py-1 px-2 rounded font-medium transition ${currentLevel === TOOL_ACCESS_LEVELS.NONE ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
-                                                    title="No access granted"
-                                                >
-                                                    None
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    disabled={savingLicense}
-                                                    onClick={() => handleSetAccessLevel(selectedUser.id, tool.id, TOOL_ACCESS_LEVELS.LEVEL_1)}
-                                                    className={`flex-1 py-1 px-2 rounded font-medium transition flex items-center justify-center gap-1 ${currentLevel === TOOL_ACCESS_LEVELS.LEVEL_1 ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-400 hover:bg-amber-50 dark:hover:bg-amber-900/20'}`}
-                                                    title="Level I: Undergoing training (No booking permitted)"
-                                                >
-                                                    <Icon className="fas fa-user-graduate text-[10px]" />
-                                                    Level I
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    disabled={savingLicense}
-                                                    onClick={() => handleSetAccessLevel(selectedUser.id, tool.id, TOOL_ACCESS_LEVELS.LEVEL_2)}
-                                                    className={`flex-1 py-1 px-2 rounded font-medium transition flex items-center justify-center gap-1 ${currentLevel === TOOL_ACCESS_LEVELS.LEVEL_2 ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'}`}
-                                                    title="Level II: Supervised (Booking holds slot tentatively, requires Tool Responsible confirmation)"
-                                                >
-                                                    <Icon className="fas fa-user-check text-[10px]" />
-                                                    Level II
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    disabled={savingLicense}
-                                                    onClick={() => handleSetAccessLevel(selectedUser.id, tool.id, TOOL_ACCESS_LEVELS.LEVEL_3)}
-                                                    className={`flex-1 py-1 px-2 rounded font-medium transition flex items-center justify-center gap-1 ${currentLevel === TOOL_ACCESS_LEVELS.LEVEL_3 ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-400 hover:bg-green-50 dark:hover:bg-green-900/20'}`}
-                                                    title="Level III: Independent operator (Direct booking permitted)"
-                                                >
-                                                    <Icon className="fas fa-award text-[10px]" />
-                                                    Level III
-                                                </button>
-                                            </div>
-
-                                            {/* Helper Description for current level */}
-                                            <div className="text-[11px] text-gray-500 dark:text-gray-400 px-1">
-                                                {currentLevel === TOOL_ACCESS_LEVELS.LEVEL_1 && (
-                                                    <span className="text-amber-700 dark:text-amber-300 flex items-center gap-1">
-                                                        <Icon className="fas fa-info-circle text-[10px]" />
-                                                        Level I: User is registered for training. Equipment booking is restricted.
-                                                    </span>
-                                                )}
-                                                {currentLevel === TOOL_ACCESS_LEVELS.LEVEL_2 && (
-                                                    <span className="text-blue-700 dark:text-blue-300 flex items-center gap-1">
-                                                        <Icon className="fas fa-info-circle text-[10px]" />
-                                                        Level II: User can book; reservations are held tentatively until confirmed by a Tool Responsible.
-                                                    </span>
-                                                )}
-                                                {currentLevel === TOOL_ACCESS_LEVELS.LEVEL_3 && (
-                                                    <span className="text-green-700 dark:text-green-300 flex items-center gap-1">
-                                                        <Icon className="fas fa-check-circle text-[10px]" />
-                                                        Level III: Fully certified for independent reservations.
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </li>
-                                    );
-                                })}
-                            </ul>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedUser(null)}
+                                aria-label="Close user details"
+                                className="btn-icon shrink-0"
+                            >
+                                <Icon className="fas fa-times" />
+                            </button>
                         </div>
 
-                        {/* Projects Section */}
-                        <div>
-                            <h5 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Assigned Projects</h5>
-                            <div className="flex gap-2 mb-2">
-                                <input
-                                    aria-label="New project name"
-                                    type="text"
-                                    placeholder="New Project Name"
-                                    className="input-field py-1 text-sm flex-1"
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            const val = e.target.value.trim();
-                                            if (val) {
-                                                handleProjectAdd(selectedUser.id, val);
-                                                e.target.value = '';
-                                            }
-                                        }
-                                    }}
-                                    id="new-project-input"
-                                />
-                                <button
-                                    className="btn btn-primary btn-sm"
-                                    onClick={() => {
-                                        const input = document.getElementById('new-project-input');
-                                        if (input && input.value.trim()) {
-                                            handleProjectAdd(selectedUser.id, input.value.trim());
-                                            input.value = '';
-                                        }
-                                    }}
-                                >
-                                    Add
-                                </button>
-                            </div>
-                            <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
-                                {selectedUser.projects?.map((proj, idx) => (
-                                    <span key={idx} className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded text-xs flex items-center gap-1">
-                                        {proj}
-                                        <button
-                                            type="button"
-                                            aria-label={`Remove project ${proj}`}
-                                            className="fas fa-times cursor-pointer hover:text-red-500 ml-1 text-xs"
-                                            onClick={() => handleProjectRemove(selectedUser.id, proj)}
-                                        ></button>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Equipment Access Levels Section */}
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <h5 className="font-semibold text-gray-700 dark:text-gray-300">
+                                        Equipment Access Levels
+                                    </h5>
+                                    <span className="text-xs text-gray-500">
+                                        {countActiveLicenses(selectedUser.licenses)} active
                                     </span>
-                                ))}
-                                {(!selectedUser.projects || selectedUser.projects.length === 0) && (
-                                    <span className="text-gray-400 text-xs italic">No projects assigned</span>
+                                </div>
+
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                                    Set operator authorization tier: <strong>Level I</strong> (Training in progress), <strong>Level II</strong> (Supervised / Booking requires confirmation), or <strong>Level III</strong> (Independent operator).
+                                </p>
+
+                                <div className="flex flex-col sm:flex-row gap-3 mb-2">
+                                    <label className="min-w-0 flex-1 text-sm text-gray-700 dark:text-gray-200">
+                                        Search equipment
+                                        <input
+                                            type="search"
+                                            value={equipmentSearch}
+                                            onChange={e => setEquipmentSearch(e.target.value)}
+                                            className="input-field mt-1 text-base sm:text-sm"
+                                            placeholder="Name, ID, or category"
+                                        />
+                                    </label>
+                                    <label className="text-sm text-gray-700 dark:text-gray-200">
+                                        Sort equipment
+                                        <select
+                                            value={equipmentSort}
+                                            onChange={e => setEquipmentSort(e.target.value)}
+                                            className="select-input block mt-1 w-full text-base sm:text-sm"
+                                        >
+                                            <option value="name-asc">Name A–Z</option>
+                                            <option value="name-desc">Name Z–A</option>
+                                            <option value="category">Category, then name</option>
+                                            <option value="license">License level (highest first)</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <div className="flex items-center justify-between gap-2 mb-2 text-xs text-gray-500 dark:text-gray-400">
+                                    <span role="status">Showing {visibleEquipment.length} of {tools.length} equipment</span>
+                                    {equipmentSearch && (
+                                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEquipmentSearch('')}>
+                                            Clear equipment search
+                                        </button>
+                                    )}
+                                </div>
+                                {visibleEquipment.length === 0 && (
+                                    <p className="py-4 text-sm text-gray-500 dark:text-gray-400">
+                                        {tools.length ? 'No equipment matches your search.' : 'No equipment available.'}
+                                    </p>
                                 )}
+
+                                <ul aria-label="Equipment licenses" className="space-y-2.5 lg:max-h-96 lg:overflow-y-auto lg:pr-2 custom-scroll">
+                                    {visibleEquipment.map(({ tool, currentLevel }) => {
+                                        return (
+                                            <li
+                                                key={tool.id}
+                                                className="p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/40 space-y-2"
+                                            >
+                                                <div className="flex justify-between items-start gap-2">
+                                                    <div className="min-w-0">
+                                                        <span className="font-medium text-sm text-gray-800 dark:text-gray-200">
+                                                            {tool.name}
+                                                        </span>
+                                                        <span className="text-xs text-gray-500 ml-2">
+                                                            ({tool.category})
+                                                        </span>
+                                                    </div>
+                                                    {!tool.license_req && (
+                                                        <span className="shrink-0 text-[11px] font-semibold text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded">
+                                                            Open Access
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                {/* 4-Option Segmented Control */}
+                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-white dark:bg-gray-900 p-1.5 rounded-lg border dark:border-gray-700 text-xs">
+                                                    <button
+                                                        type="button"
+                                                        disabled={savingLicense}
+                                                        onClick={() => handleSetAccessLevel(selectedUser.id, tool.id, TOOL_ACCESS_LEVELS.NONE)}
+                                                        className={`min-h-[44px] sm:min-h-[34px] py-2 sm:py-1.5 px-2 rounded font-medium transition flex items-center justify-center ${currentLevel === TOOL_ACCESS_LEVELS.NONE ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                                                        title="No access granted"
+                                                    >
+                                                        None
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={savingLicense}
+                                                        onClick={() => handleSetAccessLevel(selectedUser.id, tool.id, TOOL_ACCESS_LEVELS.LEVEL_1)}
+                                                        className={`min-h-[44px] sm:min-h-[34px] py-2 sm:py-1.5 px-2 rounded font-medium transition flex items-center justify-center gap-1 ${currentLevel === TOOL_ACCESS_LEVELS.LEVEL_1 ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-400 hover:bg-amber-50 dark:hover:bg-amber-900/20'}`}
+                                                        title="Level I: Undergoing training (No booking permitted)"
+                                                    >
+                                                        <Icon className="fas fa-user-graduate text-[10px]" />
+                                                        Level I
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={savingLicense}
+                                                        onClick={() => handleSetAccessLevel(selectedUser.id, tool.id, TOOL_ACCESS_LEVELS.LEVEL_2)}
+                                                        className={`min-h-[44px] sm:min-h-[34px] py-2 sm:py-1.5 px-2 rounded font-medium transition flex items-center justify-center gap-1 ${currentLevel === TOOL_ACCESS_LEVELS.LEVEL_2 ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'}`}
+                                                        title="Level II: Supervised (Booking holds slot tentatively, requires Tool Responsible confirmation)"
+                                                    >
+                                                        <Icon className="fas fa-user-check text-[10px]" />
+                                                        Level II
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={savingLicense}
+                                                        onClick={() => handleSetAccessLevel(selectedUser.id, tool.id, TOOL_ACCESS_LEVELS.LEVEL_3)}
+                                                        className={`min-h-[44px] sm:min-h-[34px] py-2 sm:py-1.5 px-2 rounded font-medium transition flex items-center justify-center gap-1 ${currentLevel === TOOL_ACCESS_LEVELS.LEVEL_3 ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 font-bold shadow-xs' : 'text-gray-600 dark:text-gray-400 hover:bg-green-50 dark:hover:bg-green-900/20'}`}
+                                                        title="Level III: Independent operator (Direct booking permitted)"
+                                                    >
+                                                        <Icon className="fas fa-award text-[10px]" />
+                                                        Level III
+                                                    </button>
+                                                </div>
+
+                                                {/* Helper Description for current level */}
+                                                <div className="text-[11px] text-gray-500 dark:text-gray-400 px-1">
+                                                    {currentLevel === TOOL_ACCESS_LEVELS.LEVEL_1 && (
+                                                        <span className="text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                                                            <Icon className="fas fa-info-circle text-[10px]" />
+                                                            Level I: User is registered for training. Equipment booking is restricted.
+                                                        </span>
+                                                    )}
+                                                    {currentLevel === TOOL_ACCESS_LEVELS.LEVEL_2 && (
+                                                        <span className="text-blue-700 dark:text-blue-300 flex items-center gap-1">
+                                                            <Icon className="fas fa-info-circle text-[10px]" />
+                                                            Level II: User can book; reservations are held tentatively until confirmed by a Tool Responsible.
+                                                        </span>
+                                                    )}
+                                                    {currentLevel === TOOL_ACCESS_LEVELS.LEVEL_3 && (
+                                                        <span className="text-green-700 dark:text-green-300 flex items-center gap-1">
+                                                            <Icon className="fas fa-check-circle text-[10px]" />
+                                                            Level III: Fully certified for independent reservations.
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            </div>
+
+                            {/* Projects Section */}
+                            <div>
+                                <h5 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Assigned Projects</h5>
+                                <div className="flex gap-2 mb-2">
+                                    <input
+                                        aria-label="New project name"
+                                        type="text"
+                                        placeholder="New Project Name"
+                                        className="input-field flex-1 min-w-0"
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value.trim();
+                                                if (val) {
+                                                    handleProjectAdd(selectedUser.id, val);
+                                                    e.target.value = '';
+                                                }
+                                            }
+                                        }}
+                                        id="new-project-input"
+                                    />
+                                    <button
+                                        type="button"
+                                        className="btn btn-primary btn-sm shrink-0"
+                                        onClick={() => {
+                                            const input = document.getElementById('new-project-input');
+                                            if (input && input.value.trim()) {
+                                                handleProjectAdd(selectedUser.id, input.value.trim());
+                                                input.value = '';
+                                            }
+                                        }}
+                                    >
+                                        Add
+                                    </button>
+                                </div>
+                                <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
+                                    {selectedUser.projects?.map((proj, idx) => (
+                                        <span key={idx} className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded text-xs flex items-center gap-1 break-all">
+                                            <span>{proj}</span>
+                                            <button
+                                                type="button"
+                                                aria-label={`Remove project ${proj}`}
+                                                className="inline-flex items-center justify-center min-w-[32px] min-h-[32px] -mr-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 cursor-pointer"
+                                                onClick={() => handleProjectRemove(selectedUser.id, proj)}
+                                            >
+                                                <Icon className="fas fa-times text-xs" />
+                                            </button>
+                                        </span>
+                                    ))}
+                                    {(!selectedUser.projects || selectedUser.projects.length === 0) && (
+                                        <span className="text-gray-400 text-xs italic">No projects assigned</span>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -655,9 +710,9 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                 const displayName = [inv.first_name, inv.last_name].filter(Boolean).join(' ');
                                 return (
                                     <div key={inv.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
-                                        <div className="space-y-1">
+                                        <div className="space-y-1 min-w-0">
                                             <div className="flex flex-wrap items-center gap-2">
-                                                <span className="font-semibold text-gray-800 dark:text-gray-200">{inv.email}</span>
+                                                <span className="font-semibold text-gray-800 dark:text-gray-200 break-all">{inv.email}</span>
                                                 {isExpired ? (
                                                     <span className="px-2 py-0.5 rounded text-[11px] font-bold uppercase bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
                                                         Expired
@@ -689,7 +744,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                                 type="button"
                                                 disabled={isBusy}
                                                 onClick={() => handleResendInvitation(inv.id, inv.email)}
-                                                className="btn btn-secondary btn-sm"
+                                                className="btn btn-secondary btn-sm min-h-[44px] sm:min-h-[34px]"
                                             >
                                                 {isBusy ? 'Working...' : 'Resend'}
                                             </button>
@@ -697,7 +752,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                                 type="button"
                                                 disabled={isBusy}
                                                 onClick={() => handleRevokeInvitation(inv.id, inv.email)}
-                                                className="btn btn-ghost btn-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                className="btn btn-ghost btn-sm min-h-[44px] sm:min-h-[34px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                                             >
                                                 Revoke
                                             </button>

@@ -65,14 +65,14 @@ const ApplyTrainingModal = ({ isOpen, onClose, tool, user, profile, onSuccess })
     };
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 modal-backdrop animate-fade-in" onClick={onClose}>
             <div
                 ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="apply-training-title"
                 tabIndex={-1}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4 border dark:border-gray-700 transition-colors"
+                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full max-h-[92dvh] overflow-y-auto modal-scroll p-4 sm:p-6 space-y-4 border dark:border-gray-700 transition-colors"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
@@ -90,7 +90,7 @@ const ApplyTrainingModal = ({ isOpen, onClose, tool, user, profile, onSuccess })
                         type="button"
                         onClick={onClose}
                         aria-label="Close training application dialog"
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1"
+                        className="btn-icon shrink-0"
                     >
                         <Icon className="fas fa-times text-lg" />
                     </button>
@@ -134,7 +134,7 @@ const ApplyTrainingModal = ({ isOpen, onClose, tool, user, profile, onSuccess })
                             min={todayStr}
                             value={preferredDate}
                             onChange={(e) => setPreferredDate(e.target.value)}
-                            className="input-field text-sm"
+                            className="input-field"
                         />
                         <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
                             Training schedule will be finalized with the Tool Responsible.
@@ -152,7 +152,7 @@ const ApplyTrainingModal = ({ isOpen, onClose, tool, user, profile, onSuccess })
                             placeholder="Briefly state your project, intended samples, and any prior experience with this or similar instruments..."
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            className="input-field text-sm leading-relaxed"
+                            className="input-field leading-relaxed"
                         ></textarea>
                     </div>
 
@@ -161,11 +161,11 @@ const ApplyTrainingModal = ({ isOpen, onClose, tool, user, profile, onSuccess })
                         <span>Upon approval, your account will be granted <strong>Level I (In Training)</strong> access.</span>
                     </div>
 
-                    <div className="flex justify-end gap-2 pt-2 border-t dark:border-gray-700">
+                    <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2 border-t dark:border-gray-700">
                         <button
                             type="button"
                             onClick={onClose}
-                            className="btn btn-secondary btn-sm"
+                            className="btn btn-secondary btn-sm w-full sm:w-auto justify-center"
                             disabled={isSubmitting}
                         >
                             Cancel
@@ -173,7 +173,7 @@ const ApplyTrainingModal = ({ isOpen, onClose, tool, user, profile, onSuccess })
                         <button
                             type="submit"
                             disabled={isSubmitting}
-                            className="btn btn-primary btn-sm flex items-center gap-1.5"
+                            className="btn btn-primary btn-sm flex items-center gap-1.5 w-full sm:w-auto justify-center"
                         >
                             {isSubmitting ? <Icon className="fas fa-spinner fa-spin" /> : <Icon className="fas fa-paper-plane" />}
                             Submit Application

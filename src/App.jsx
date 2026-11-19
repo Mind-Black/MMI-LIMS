@@ -39,7 +39,7 @@ function App() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-100">
+      <div className="flex items-center justify-center h-dvh bg-gray-100">
         <LoadingSpinner />
       </div>
     );
@@ -56,7 +56,7 @@ function App() {
             onInviteComplete={clearInviteToken}
           />
         ) : (
-          <Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900"><LoadingSpinner /></div>}>
+          <Suspense fallback={<div className="flex items-center justify-center h-dvh bg-gray-100 dark:bg-gray-900"><LoadingSpinner /></div>}>
             <DashboardWrapper session={session} onLogout={() => supabase.auth.signOut()} />
           </Suspense>
         )}

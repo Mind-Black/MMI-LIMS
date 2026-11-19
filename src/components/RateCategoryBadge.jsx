@@ -23,11 +23,12 @@ export const RateCategoryBadge = ({ rate, className = "", size = "sm" }) => {
         colorClasses = 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border-purple-200 dark:border-purple-800';
     }
 
-    const sizeClass = size === 'xs' ? 'text-[10px] px-1.5 py-0.2' : 'text-xs px-2 py-0.5';
+    const sizeClass = size === 'xs' ? 'text-[10px] px-1.5 py-0.5' : 'text-xs px-2 py-0.5';
 
     return (
         <span
-            className={`inline-flex items-center justify-center font-bold rounded border shadow-xs select-none ${sizeClass} ${colorClasses} ${className}`}
+            className={`inline-flex items-center justify-center shrink-0 font-bold rounded border shadow-xs select-none ${sizeClass} ${colorClasses} ${className}`}
+            aria-label={`Rate ${r}`}
             title={`Rate ${r}: External ${details.external} | University ${details.ktu} | Dept ${details.dept} (hourly, excl. VAT)`}
         >
             {r}

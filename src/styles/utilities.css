@@ -55,6 +55,11 @@
     animation: fadeIn 0.3s ease-out forwards;
 }
 
+.modal-backdrop { overscroll-behavior: contain; }
+.modal-scroll { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+
+@media (prefers-reduced-motion: reduce) { .toast-enter, .animate-fade-in { animation: none; } }
+
 /* Base Patterns */
 .pattern-dots {
     background-image: radial-gradient(#cbd5e1 1px, transparent 1px);

@@ -142,7 +142,7 @@ const TutorialModal = ({ isOpen, onClose, isAdmin = false, onNavigate, onOpenPri
     };
 
     return (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs animate-fadeIn">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs animate-fadeIn modal-backdrop">
             <div
                 ref={dialogRef}
                 role="dialog"
@@ -150,10 +150,10 @@ const TutorialModal = ({ isOpen, onClose, isAdmin = false, onNavigate, onOpenPri
                 aria-labelledby="tutorial-modal-title"
                 aria-describedby="tutorial-step-body"
                 tabIndex={-1}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-xl w-full border dark:border-gray-700 max-h-[92vh] overflow-y-auto flex flex-col"
+                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-xl w-full border dark:border-gray-700 max-h-[92dvh] overflow-y-auto modal-scroll flex flex-col"
             >
                 {/* Header */}
-                <div className="flex justify-between items-center gap-3 border-b dark:border-gray-700 px-5 sm:px-6 py-4">
+                <div className="flex justify-between items-center gap-3 border-b dark:border-gray-700 px-4 sm:px-6 py-3.5 sm:py-4">
                     <div className="flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xl shrink-0">
                             <Icon className="fas fa-graduation-cap" />
@@ -170,7 +170,7 @@ const TutorialModal = ({ isOpen, onClose, isAdmin = false, onNavigate, onOpenPri
                     <button
                         type="button"
                         onClick={onClose}
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition cursor-pointer"
+                        className="btn-icon shrink-0"
                         aria-label="Close tutorial"
                     >
                         <Icon className="fas fa-times text-lg" />
@@ -178,7 +178,7 @@ const TutorialModal = ({ isOpen, onClose, isAdmin = false, onNavigate, onOpenPri
                 </div>
 
                 {/* Step content */}
-                <div className="px-5 sm:px-6 py-5 space-y-4 min-h-[260px]">
+                <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-4 sm:min-h-[260px]">
                     <div className="flex items-start gap-3">
                         <div className="w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center text-xl shrink-0 shadow-sm">
                             <Icon className={`fas ${step.icon}`} />
@@ -220,7 +220,7 @@ const TutorialModal = ({ isOpen, onClose, isAdmin = false, onNavigate, onOpenPri
                 </div>
 
                 {/* Footer */}
-                <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 border-t dark:border-gray-700 px-5 sm:px-6 py-4">
+                <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 border-t dark:border-gray-700 px-4 sm:px-6 py-3.5 sm:py-4">
                     <div className="flex items-center justify-center gap-1.5" role="group" aria-label="Tutorial steps">
                         {steps.map((s, i) => (
                             <button
@@ -229,8 +229,10 @@ const TutorialModal = ({ isOpen, onClose, isAdmin = false, onNavigate, onOpenPri
                                 onClick={() => setStepIndex(i)}
                                 aria-label={`Step ${i + 1}: ${s.title}`}
                                 aria-current={i === index ? 'step' : undefined}
-                                className={`h-2.5 rounded-full transition-all cursor-pointer ${i === index ? 'w-6 bg-blue-600' : 'w-2.5 bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500'}`}
-                            />
+                                className="min-w-[28px] min-h-[40px] flex items-center justify-center cursor-pointer"
+                            >
+                                <span className={`block h-2.5 rounded-full transition-all ${i === index ? 'w-6 bg-blue-600' : 'w-2.5 bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500'}`} />
+                            </button>
                         ))}
                     </div>
                     <div className="flex items-center justify-end gap-2">

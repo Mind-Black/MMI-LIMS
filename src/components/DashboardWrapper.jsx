@@ -89,8 +89,8 @@ const DashboardWrapper = ({ session, onLogout }) => {
 
     if (!session?.user?.id) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-4 transition-colors">
-                <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full text-center">
+            <div className="min-h-dvh flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-4 transition-colors">
+                <div className="bg-white dark:bg-gray-800 p-5 sm:p-8 rounded-lg shadow-xl max-w-md w-full text-center">
                     <p className="text-gray-600 dark:text-gray-300">No active session found.</p>
                     <button onClick={onLogout} className="mt-4 btn btn-primary">Sign In</button>
                 </div>
@@ -100,7 +100,7 @@ const DashboardWrapper = ({ session, onLogout }) => {
 
     if (status === 'loading') {
         return (
-            <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900 transition-colors">
+            <div className="flex items-center justify-center h-dvh bg-gray-100 dark:bg-gray-900 transition-colors">
                 <LoadingSpinner />
             </div>
         );
@@ -108,8 +108,8 @@ const DashboardWrapper = ({ session, onLogout }) => {
 
     if (status === 'error') {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-4 transition-colors">
-                <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full text-center border-t-4 border-red-500">
+            <div className="min-h-dvh flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-4 transition-colors">
+                <div className="bg-white dark:bg-gray-800 p-5 sm:p-8 rounded-lg shadow-xl max-w-md w-full text-center border-t-4 border-red-500">
                     <div className="mb-4">
                         <Icon className="fas fa-exclamation-triangle text-5xl text-red-500" />
                     </div>
@@ -117,16 +117,16 @@ const DashboardWrapper = ({ session, onLogout }) => {
                     <p className="text-gray-600 dark:text-gray-300 text-sm mb-6">
                         {errorMessage || 'An error occurred while loading your profile data.'}
                     </p>
-                    <div className="flex justify-center gap-3">
+                    <div className="flex flex-wrap justify-center gap-3">
                         <button
                             onClick={handleRefresh}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition"
+                            className="btn btn-primary"
                         >
                             Retry
                         </button>
                         <button
                             onClick={onLogout}
-                            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded transition"
+                            className="btn btn-secondary"
                         >
                             Sign Out
                         </button>
@@ -138,8 +138,8 @@ const DashboardWrapper = ({ session, onLogout }) => {
 
     if (status === 'pending' || (profile && !profile.is_approved)) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-4 transition-colors">
-                <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full text-center border-t-4 border-yellow-500">
+            <div className="min-h-dvh flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-4 transition-colors">
+                <div className="bg-white dark:bg-gray-800 p-5 sm:p-8 rounded-lg shadow-xl max-w-md w-full text-center border-t-4 border-yellow-500">
                     <div className="mb-4">
                         <Icon className="fas fa-clock text-5xl text-yellow-500 animate-pulse" />
                     </div>
@@ -149,16 +149,16 @@ const DashboardWrapper = ({ session, onLogout }) => {
                         Your account requires administrator approval before you can access laboratory equipment bookings.
                         Please contact the lab manager.
                     </p>
-                    <div className="flex justify-center gap-3">
+                    <div className="flex flex-wrap justify-center gap-3">
                         <button
                             onClick={handleRefresh}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition"
+                            className="btn btn-primary"
                         >
                             Check Status
                         </button>
                         <button
                             onClick={onLogout}
-                            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded transition"
+                            className="btn btn-secondary"
                         >
                             Sign Out
                         </button>
