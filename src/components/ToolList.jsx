@@ -32,18 +32,18 @@ const ToolResponsibleBadge = ({ responsible }) => {
                 <span>{name}</span>
             </div>
             {responsible.job_title && (
-                <div className="text-gray-500 dark:text-gray-400 text-[11px] truncate max-w-[180px]">
+                <div className="text-gray-500 dark:text-gray-400 text-[11px] truncate max-w-full sm:max-w-[180px]">
                     {responsible.job_title}
                 </div>
             )}
             {responsible.email && (
                 <a
                     href={`mailto:${responsible.email}`}
-                    className="text-blue-600 dark:text-blue-400 hover:underline text-[11px] flex items-center gap-1 mt-0.5"
+                    className="text-blue-600 dark:text-blue-400 hover:underline text-[11px] inline-flex items-center min-h-[32px] gap-1 mt-0.5 max-w-full"
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <Icon className="fas fa-envelope text-[10px]" />
-                    <span className="truncate max-w-[180px]">{responsible.email}</span>
+                    <Icon className="fas fa-envelope text-[10px] shrink-0" />
+                    <span className="max-w-full sm:max-w-[180px] break-all sm:truncate">{responsible.email}</span>
                 </a>
             )}
             {responsible.phone && (
@@ -159,7 +159,7 @@ const ToolPendingActionsSection = ({
                                     <button
                                         type="button"
                                         onClick={() => onApproveRequest?.(req)}
-                                        className="btn btn-primary btn-sm py-1 text-xs"
+                                        className="btn btn-primary btn-sm min-h-[44px] sm:min-h-[32px] py-2 sm:py-1 text-xs"
                                         title="Approve and assign Level I (In Training)"
                                     >
                                         Approve (Level I)
@@ -167,7 +167,7 @@ const ToolPendingActionsSection = ({
                                     <button
                                         type="button"
                                         onClick={() => onRejectRequest?.(req)}
-                                        className="btn btn-secondary btn-sm py-1 text-xs text-red-600 hover:text-red-700"
+                                        className="btn btn-secondary btn-sm min-h-[44px] sm:min-h-[32px] py-2 sm:py-1 text-xs text-red-600 hover:text-red-700"
                                     >
                                         Reject
                                     </button>
@@ -197,7 +197,7 @@ const ToolPendingActionsSection = ({
                                     <button
                                         type="button"
                                         onClick={() => onConfirmBooking?.(b)}
-                                        className="btn btn-primary btn-sm py-1 text-xs"
+                                        className="btn btn-primary btn-sm min-h-[44px] sm:min-h-[32px] py-2 sm:py-1 text-xs"
                                         title="Confirm reservation to publish on active calendar"
                                     >
                                         Confirm
@@ -205,7 +205,7 @@ const ToolPendingActionsSection = ({
                                     <button
                                         type="button"
                                         onClick={() => onRejectBooking?.(b)}
-                                        className="btn btn-secondary btn-sm py-1 text-xs text-red-600 hover:text-red-700"
+                                        className="btn btn-secondary btn-sm min-h-[44px] sm:min-h-[32px] py-2 sm:py-1 text-xs text-red-600 hover:text-red-700"
                                     >
                                         Reject
                                     </button>
@@ -417,19 +417,22 @@ const ToolTable = ({
                     return (
                         <article key={tool.id} className="p-4 min-w-0 space-y-3">
                             <div className="flex justify-between gap-3 items-start">
-                                <div className="min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <h4 className="font-bold text-gray-800 dark:text-gray-100 break-words">{tool.name}</h4>
-                                        {pendingCount > 0 && (
-                                            <span className="bg-amber-500 text-white text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title={`${pendingCount} pending items`}>
-                                                <Icon className="fas fa-bell text-[10px]" /> {pendingCount}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1.5 flex-wrap mt-0.5">
-                                        <span>{tool.category}</span>
-                                        <RateCategoryBadge rate={tool.rate_category} size="xs" />
-                                        <span>· ID {tool.id} {tool.location ? `· ${tool.location}` : ''}</span>
+                                <div className="flex items-start gap-3 min-w-0 flex-1">
+                                    <ToolImage tool={tool} className="w-14 h-14 shrink-0" rounded="rounded-lg" />
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <h4 className="font-bold text-gray-800 dark:text-gray-100 break-words">{tool.name}</h4>
+                                            {pendingCount > 0 && (
+                                                <span className="bg-amber-500 text-white text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title={`${pendingCount} pending items`}>
+                                                    <Icon className="fas fa-bell text-[10px]" /> {pendingCount}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1.5 flex-wrap mt-0.5">
+                                            <span>{tool.category}</span>
+                                            <RateCategoryBadge rate={tool.rate_category} size="xs" />
+                                            <span>· ID {tool.id} {tool.location ? `· ${tool.location}` : ''}</span>
+                                        </div>
                                     </div>
                                 </div>
                                 <StatusBadge status={tool.status} />
@@ -474,13 +477,13 @@ const ToolTable = ({
                             )}
 
                             {isAdmin && (
-                                <label className="block text-sm text-gray-700 dark:text-gray-300">
-                                    Equipment status
+                                <label className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
+                                    <span>Equipment status</span>
                                     <select
                                         aria-label={`Status for ${tool.name}`}
                                         value={tool.status}
                                         onChange={e => onStatusChange(tool.id, e.target.value)}
-                                        className="select-input ml-2 text-sm"
+                                        className="select-input w-full"
                                     >
                                         <option value="up">Available</option>
                                         <option value="down">Unavailable</option>
@@ -492,7 +495,7 @@ const ToolTable = ({
                             <div className="flex flex-wrap gap-2 pt-1">
                                 <button
                                     type="button"
-                                    className="btn btn-secondary btn-sm min-h-[38px] px-3"
+                                    className="btn btn-secondary btn-sm min-h-[44px] sm:min-h-[38px] px-3"
                                     onClick={() => onToggleExpand(tool.id)}
                                     aria-expanded={isExpanded}
                                 >
@@ -502,7 +505,7 @@ const ToolTable = ({
                                 {canBook && (
                                     <button
                                         type="button"
-                                        className="btn btn-primary btn-sm min-h-[38px] px-4 font-semibold"
+                                        className="btn btn-primary btn-sm min-h-[44px] sm:min-h-[38px] px-4 font-semibold flex-1 sm:flex-none justify-center"
                                         onClick={() => onBook(tool)}
                                     >
                                         View availability / Book
@@ -512,7 +515,7 @@ const ToolTable = ({
                                 {!canBook && tool.license_req && level === TOOL_ACCESS_LEVELS.NONE && onApply && (
                                     <button
                                         type="button"
-                                        className="btn btn-secondary btn-sm min-h-[38px] text-blue-600 dark:text-blue-400 flex items-center gap-1.5"
+                                        className="btn btn-secondary btn-sm min-h-[44px] sm:min-h-[38px] text-blue-600 dark:text-blue-400 flex items-center gap-1.5 flex-1 sm:flex-none justify-center"
                                         onClick={() => onApply(tool)}
                                     >
                                         <Icon className="fas fa-graduation-cap" />
@@ -524,7 +527,7 @@ const ToolTable = ({
                                     <button
                                         type="button"
                                         disabled
-                                        className="btn btn-secondary btn-sm min-h-[38px] opacity-60 cursor-not-allowed text-amber-700 dark:text-amber-300"
+                                        className="btn btn-secondary btn-sm min-h-[44px] sm:min-h-[38px] opacity-60 cursor-not-allowed text-amber-700 dark:text-amber-300 flex-1 sm:flex-none justify-center"
                                         title="Level I users are undergoing training and cannot book"
                                     >
                                         <Icon className="fas fa-user-graduate" /> In Training
@@ -885,16 +888,26 @@ const ToolList = ({
                             aria-label="Search equipment"
                             type="text"
                             placeholder="Search equipment name, ID, or description..."
-                            className="input-field pl-9"
+                            className="input-field pl-9 pr-11"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                         <Icon className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm" />
+                        {searchQuery && (
+                            <button
+                                type="button"
+                                onClick={() => setSearchQuery('')}
+                                aria-label="Clear search"
+                                className="w-10 h-10 flex items-center justify-center absolute right-1 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                            >
+                                <Icon className="fas fa-times" />
+                            </button>
+                        )}
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
                         {/* Desktop View Mode Toggle (Grid vs Table) */}
-                        <div className="hidden md:inline-flex items-center rounded-lg border border-gray-200 dark:border-gray-700 p-0.5 bg-gray-50 dark:bg-gray-900">
+                        <div className="hidden lg:inline-flex items-center rounded-lg border border-gray-200 dark:border-gray-700 p-0.5 bg-gray-50 dark:bg-gray-900">
                             <button
                                 type="button"
                                 onClick={() => handleViewModeChange('table')}
@@ -924,11 +937,11 @@ const ToolList = ({
                         </div>
 
                         {profile?.access_level === 'admin' && onOpenAddModal && (
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                                 <button
                                     type="button"
                                     onClick={() => onOpenAddModal('single')}
-                                    className="btn btn-primary btn-sm flex items-center gap-1.5 whitespace-nowrap min-h-[36px]"
+                                    className="btn btn-primary btn-sm flex items-center gap-1.5 whitespace-nowrap min-h-[44px] sm:min-h-[36px]"
                                 >
                                     <Icon className="fas fa-plus" />
                                     Add Equipment
@@ -936,7 +949,7 @@ const ToolList = ({
                                 <button
                                     type="button"
                                     onClick={() => onOpenAddModal('bulk')}
-                                    className="btn btn-secondary btn-sm flex items-center gap-1.5 whitespace-nowrap min-h-[36px]"
+                                    className="btn btn-secondary btn-sm flex items-center gap-1.5 whitespace-nowrap min-h-[44px] sm:min-h-[36px]"
                                     title="Import equipment from CSV file"
                                 >
                                     <Icon className="fas fa-file-csv" />
@@ -948,7 +961,7 @@ const ToolList = ({
                 </div>
 
                 {/* Horizontal Category Filter Chips */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin min-w-0 max-w-full snap-x snap-proximity">
                     {categories.map(c => {
                         const count = c === 'All'
                             ? tools.length
@@ -959,7 +972,7 @@ const ToolList = ({
                                 key={c}
                                 type="button"
                                 onClick={() => setFilterCategory(c)}
-                                className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                className={`min-h-[40px] sm:min-h-[32px] snap-start px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
                                     isSelected
                                         ? 'bg-blue-600 text-white shadow-xs'
                                         : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
@@ -976,7 +989,7 @@ const ToolList = ({
 
                 {/* Horizontal Rate Category Filter Chips & Guide Button */}
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t dark:border-gray-700/60 pt-2.5">
-                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin min-w-0 max-w-full snap-x snap-proximity">
                         <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 mr-1 shrink-0">Rate:</span>
                         {['All', 'A', 'B', 'C', 'D'].map(rate => {
                             const count = rate === 'All'
@@ -990,14 +1003,14 @@ const ToolList = ({
                                     key={rate}
                                     type="button"
                                     onClick={() => setFilterRateCategory(rate)}
-                                    className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                    className={`min-h-[40px] sm:min-h-[32px] snap-start px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
                                         isSelected
                                             ? 'bg-blue-600 text-white shadow-xs'
                                             : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                                     }`}
                                 >
                                     <span>{rate === 'All' ? 'All Rates' : `Rate ${rate}`}</span>
-                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
                                         {count}
                                     </span>
                                 </button>
@@ -1008,7 +1021,7 @@ const ToolList = ({
                     <button
                         type="button"
                         onClick={() => setIsPricingModalOpen(true)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition shrink-0 cursor-pointer shadow-xs"
+                        className="inline-flex items-center gap-1.5 min-h-[44px] sm:min-h-[34px] px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition shrink-0 cursor-pointer shadow-xs"
                         title="View official equipment hourly rate table for External, University, and Department users"
                     >
                         <Icon className="fas fa-table text-blue-600 dark:text-blue-400" />

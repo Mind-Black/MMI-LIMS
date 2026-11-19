@@ -16,4 +16,5 @@
     width: 12px;
     border-radius: 50%;
     display: inline-block;
+    flex-shrink: 0;
 }

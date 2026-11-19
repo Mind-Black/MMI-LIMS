@@ -277,7 +277,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
         const syncFromUrl = () => {
             const params = new URLSearchParams(window.location.search);
             const view = params.get('view');
-            setActiveTab(['dashboard', 'tools', ...(profile?.access_level === 'admin' ? ['all_bookings', 'users'] : [])].includes(view) ? view : 'dashboard');
+            setActiveTab(['dashboard', 'tools', ...(profile?.access_level === 'admin' ? ['all_bookings', 'users', 'infrastructure'] : [])].includes(view) ? view : 'dashboard');
             setFilterStartDate(params.get('from') || '');
             setFilterEndDate(params.get('to') || '');
             setFilterUserName(params.get('user') || '');
@@ -741,7 +741,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
 
     if (loading && !lastUpdated) {
         return (
-            <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900 transition-colors">
+            <div className="flex items-center justify-center h-dvh bg-gray-100 dark:bg-gray-900 transition-colors">
                 <LoadingSpinner />
             </div>
         );
@@ -756,7 +756,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
     };
 
     return (
-        <div className="flex h-screen bg-gray-100 dark:bg-gray-900 transition-colors">
+        <div className="flex h-dvh bg-gray-100 dark:bg-gray-900 transition-colors">
             {/* Mobile Sidebar Overlay */}
             {isSidebarOpen && (
                 <div
@@ -766,8 +766,8 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             )}
 
             {/* Sidebar */}
-            <aside className={`fixed inset-y-0 left-0 z-50 bg-white dark:bg-gray-800 shadow-lg flex flex-col transition-all duration-300 ease-in-out lg:static lg:inset-auto ${isSidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full lg:translate-x-0'} ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}`}>
-                <div className="h-16 flex items-center justify-center border-b border-blue-900 lims-header transition-colors px-3">
+            <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 shadow-lg flex flex-col transition-all duration-300 ease-in-out lg:static lg:inset-auto ${isSidebarOpen ? 'translate-x-0 visible' : '-translate-x-full invisible lg:visible lg:translate-x-0'} ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}`}>
+                <div className="min-h-16 pt-[env(safe-area-inset-top)] flex items-center justify-center border-b border-blue-900 lims-header transition-colors px-3">
                     <div className="font-bold text-xl tracking-wider flex items-center justify-center overflow-hidden">
                         <img src={logo} alt="Logo" className="h-8 brightness-0 invert shrink-0" />
                         {!isSidebarCollapsed && <span className="ml-2 truncate">MMI-LIMS</span>}
@@ -820,7 +820,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                         {!isSidebarCollapsed && <span>Equipment List</span>}
                     </button>
                     <button
-                        onClick={() => setIsPricingModalOpen(true)}
+                        onClick={() => { setIsPricingModalOpen(true); setIsSidebarOpen(false); }}
                         title="Equipment Rates & Access Modes"
                         className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-3 rounded-lg text-sm font-medium transition text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/60 cursor-pointer`}
                     >
@@ -875,7 +875,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                     )}
                 </nav>
 
-                <div className="p-3 border-t dark:border-gray-700 space-y-2">
+                <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t dark:border-gray-700 space-y-2">
                     {/* Desktop Sidebar Collapse Toggle */}
                     <button
                         onClick={toggleSidebarCollapse}
@@ -908,10 +908,10 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             </aside>
 
             {/* Main Content */}
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
                 {/* Mobile Header */}
-                <header className="h-16 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between px-4 lg:hidden sticky top-0 z-30 shadow-xs">
-                    <div className="flex items-center gap-2.5">
+                <header className="min-h-16 pt-[env(safe-area-inset-top)] bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between px-4 lg:hidden sticky top-0 z-30 shadow-xs">
+                    <div className="flex items-center gap-2.5 min-w-0">
                         <button
                             onClick={() => setIsSidebarOpen(true)}
                             aria-label="Open navigation menu"
@@ -919,9 +919,9 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                         >
                             <Icon className="fas fa-bars text-xl" />
                         </button>
-                        <div className="flex items-center gap-2 font-bold text-base text-gray-800 dark:text-gray-100">
-                            <img src={logo} alt="Logo" className="h-6 w-auto" />
-                            <span>MMI-LIMS</span>
+                        <div className="flex items-center gap-2 font-bold text-base text-gray-800 dark:text-gray-100 min-w-0">
+                            <img src={logo} alt="Logo" className="h-6 w-auto shrink-0" />
+                            <span className="truncate">MMI-LIMS</span>
                         </div>
                     </div>
                     <div className="flex items-center gap-1">
@@ -943,7 +943,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                     </div>
                 </header>
 
-                <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pb-24 lg:pb-8">
+                <main className="flex-1 overflow-y-auto p-3.5 sm:p-4 md:p-6 lg:p-8 pb-[calc(5.25rem+env(safe-area-inset-bottom))] scroll-pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:pb-8 lg:scroll-pb-8">
                     {refreshError && <div role="alert" className="mb-4 p-3 rounded bg-amber-50 dark:bg-amber-900/30 text-amber-900 dark:text-amber-200 text-sm">
                         Booking data may be out of date: {refreshError} <button onClick={() => fetchData(true, true)} className="underline ml-2">Retry</button>
                     </div>}
@@ -1090,7 +1090,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                             </h3>
                                         </div>
                                         <div className="card p-0">
-                                            <div className="overflow-y-auto p-3 custom-scroll max-h-[300px]">
+                                            <div className="xl:overflow-y-auto p-3 custom-scroll xl:max-h-[300px]">
                                                 {recentTools.length > 0 ? (
                                                     <div className="grid grid-cols-1 gap-2.5">
                                                         {recentTools.map(tool => (
@@ -1130,8 +1130,8 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                                 <span>Upcoming Bookings</span>
                                             </h3>
                                         </div>
-                                        <div className="card p-0 max-h-[350px] flex flex-col">
-                                            <div className="overflow-y-auto p-3 custom-scroll">
+                                        <div className="card p-0 xl:max-h-[350px] flex flex-col">
+                                            <div className="xl:overflow-y-auto p-3 custom-scroll">
                                                 <BookingList
                                                     bookings={myBookings.filter(b => !isBookingPast(b))}
                                                     allBookings={allCalendarBookings}
@@ -1151,8 +1151,8 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                                 <span>Past Reservations</span>
                                             </h3>
                                         </div>
-                                        <div className="card p-0 bg-gray-50/70 dark:bg-gray-900/40 max-h-[320px] flex flex-col">
-                                            <div className="overflow-y-auto p-3 custom-scroll">
+                                        <div className="card p-0 bg-gray-50/70 dark:bg-gray-900/40 xl:max-h-[320px] flex flex-col">
+                                            <div className="xl:overflow-y-auto p-3 custom-scroll">
                                                 <BookingList
                                                     bookings={myBookings.filter(b => isBookingPast(b))}
                                                     allBookings={allCalendarBookings}
@@ -1211,17 +1211,17 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                             </div>
 
                             <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border dark:border-gray-700 mb-4 grid grid-cols-1 md:grid-cols-4 gap-4 transition-colors">
-                                <div className="md:col-span-4 flex gap-3 text-sm">
-                                    <button onClick={() => setDateShortcut(0)} className="text-blue-700 dark:text-blue-300 underline">Today</button>
-                                    <button onClick={() => setDateShortcut(6)} className="text-blue-700 dark:text-blue-300 underline">Past week</button>
-                                    <button onClick={clearAdminFilters} className="text-blue-700 dark:text-blue-300 underline">Clear filters</button>
+                                <div className="md:col-span-4 flex flex-wrap gap-2 text-sm">
+                                    <button onClick={() => setDateShortcut(0)} className="min-h-[44px] sm:min-h-[32px] px-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-medium cursor-pointer">Today</button>
+                                    <button onClick={() => setDateShortcut(6)} className="min-h-[44px] sm:min-h-[32px] px-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-medium cursor-pointer">Past week</button>
+                                    <button onClick={clearAdminFilters} className="min-h-[44px] sm:min-h-[32px] px-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-medium cursor-pointer">Clear filters</button>
                                 </div>
                                 <div>
                                     <label htmlFor="filter-start-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
                                     <input
                                         id="filter-start-date"
                                         type="date"
-                                        className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="input-field"
                                         value={filterStartDate}
                                         onChange={(e) => setFilterStartDate(e.target.value)}
                                     />
@@ -1231,7 +1231,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                     <input
                                         id="filter-end-date"
                                         type="date"
-                                        className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="input-field"
                                         value={filterEndDate}
                                         onChange={(e) => setFilterEndDate(e.target.value)}
                                     />
@@ -1241,7 +1241,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                     <input
                                         id="filter-user"
                                         type="text"
-                                        className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="input-field"
                                         placeholder="Filter by user..."
                                         value={filterUserName}
                                         onChange={(e) => setFilterUserName(e.target.value)}
@@ -1251,7 +1251,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                     <label htmlFor="filter-tool" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tool</label>
                                     <select
                                         id="filter-tool"
-                                        className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="select-input w-full"
                                         value={filterToolId}
                                         onChange={(e) => setFilterToolId(e.target.value)}
                                     >
@@ -1279,7 +1279,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                         onClearFilters={clearAdminFilters}
                                     />
                                 )}
-                                <div className="flex items-center justify-between gap-3 mt-4 text-sm text-gray-700 dark:text-gray-300">
+                                <div className="flex flex-wrap items-center justify-between gap-3 mt-4 text-sm text-gray-700 dark:text-gray-300">
                                     <span>{adminTotal ? `${adminPage * 200 + 1}–${Math.min((adminPage + 1) * 200, adminTotal)} of ${adminTotal}` : '0 bookings'}</span>
                                     <div className="flex gap-2">
                                         <button disabled={adminPage === 0 || loadingAdminBookings} onClick={() => setAdminPage(p => p - 1)} className="btn btn-secondary btn-sm">Previous</button>
@@ -1398,8 +1398,8 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
 
             {/* Calendar Subscription Feed Modal (Fixes R12) */}
             {calendarModalOpen && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div ref={calendarDialogRef} role="dialog" aria-modal="true" aria-labelledby="calendar-dialog-title" tabIndex={-1} className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4">
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-3 sm:p-4 modal-backdrop">
+                    <div ref={calendarDialogRef} role="dialog" aria-modal="true" aria-labelledby="calendar-dialog-title" tabIndex={-1} className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full max-h-[90dvh] overflow-y-auto modal-scroll p-4 sm:p-6 space-y-4">
                         <div className="flex justify-between items-center">
                             <h3 id="calendar-dialog-title" className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
                                 <Icon className="fas fa-calendar-alt text-blue-600 dark:text-blue-400" />
@@ -1408,7 +1408,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                             <button
                                 onClick={() => setCalendarModalOpen(false)}
                                 aria-label="Close calendar subscription dialog"
-                                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                                className="btn-icon shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                             >
                                 <Icon className="fas fa-times text-lg" />
                             </button>
@@ -1429,13 +1429,13 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                 <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">
                                     Your Private Subscription URL:
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-col sm:flex-row gap-2">
                                     <input
                                         type="text"
                                         readOnly
                                         value={calendarUrl}
                                         onClick={(e) => e.target.select()}
-                                        className="w-full text-xs font-mono bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded px-3 py-2 text-gray-800 dark:text-gray-200 select-all"
+                                        className="input-field min-w-0 font-mono text-base sm:text-xs select-all"
                                     />
                                     <button
                                         onClick={handleManualCopy}
@@ -1528,45 +1528,49 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
             )}
 
             {/* Fixed Mobile Bottom Navigation Bar */}
-            <nav aria-label="Mobile Navigation" className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex items-center justify-around px-1 z-40 shadow-lg">
+            <nav aria-label="Mobile Navigation" className="lg:hidden fixed bottom-0 left-0 right-0 min-h-16 pb-[env(safe-area-inset-bottom)] bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex items-stretch justify-around px-1 z-40 shadow-lg">
                 <button
                     onClick={() => handleNavigation('dashboard')}
-                    className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-xs font-medium transition-colors ${activeTab === 'dashboard' ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
+                    aria-current={activeTab === 'dashboard' ? 'page' : undefined}
+                    className={`flex flex-col items-center justify-center flex-1 min-h-[56px] min-w-0 px-1 py-1 text-xs font-medium transition-colors border-t-2 ${activeTab === 'dashboard' ? 'border-blue-600 dark:border-blue-400 text-blue-600 dark:text-blue-400 font-bold' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
                 >
                     <Icon className="fas fa-calendar-alt text-lg mb-0.5" />
-                    <span>Dashboard</span>
+                    <span className="truncate max-w-full">Dashboard</span>
                 </button>
                 <button
                     onClick={() => handleNavigation('tools')}
-                    className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-xs font-medium transition-colors ${activeTab === 'tools' ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
+                    aria-current={activeTab === 'tools' ? 'page' : undefined}
+                    className={`flex flex-col items-center justify-center flex-1 min-h-[56px] min-w-0 px-1 py-1 text-xs font-medium transition-colors border-t-2 ${activeTab === 'tools' ? 'border-blue-600 dark:border-blue-400 text-blue-600 dark:text-blue-400 font-bold' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
                 >
                     <Icon className="fas fa-microscope text-lg mb-0.5" />
-                    <span>Equipment</span>
+                    <span className="truncate max-w-full">Equipment</span>
                 </button>
                 {profile?.access_level === 'admin' ? (
                     <button
                         onClick={() => handleNavigation('all_bookings')}
-                        className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-xs font-medium transition-colors ${activeTab === 'all_bookings' ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
+                        aria-current={activeTab === 'all_bookings' ? 'page' : undefined}
+                        className={`flex flex-col items-center justify-center flex-1 min-h-[56px] min-w-0 px-1 py-1 text-xs font-medium transition-colors border-t-2 ${activeTab === 'all_bookings' ? 'border-blue-600 dark:border-blue-400 text-blue-600 dark:text-blue-400 font-bold' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
                     >
                         <Icon className="fas fa-list-alt text-lg mb-0.5" />
-                        <span>Bookings</span>
+                        <span className="truncate max-w-full">Bookings</span>
                     </button>
                 ) : null}
                 {profile?.access_level === 'admin' ? (
                     <button
                         onClick={() => handleNavigation('users')}
-                        className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-xs font-medium transition-colors ${activeTab === 'users' ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
+                        aria-current={activeTab === 'users' ? 'page' : undefined}
+                        className={`flex flex-col items-center justify-center flex-1 min-h-[56px] min-w-0 px-1 py-1 text-xs font-medium transition-colors border-t-2 ${activeTab === 'users' ? 'border-blue-600 dark:border-blue-400 text-blue-600 dark:text-blue-400 font-bold' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
                     >
                         <Icon className="fas fa-users-cog text-lg mb-0.5" />
-                        <span>Users</span>
+                        <span className="truncate max-w-full">Users</span>
                     </button>
                 ) : null}
                 <button
                     onClick={() => setIsSidebarOpen(true)}
-                    className="flex flex-col items-center justify-center flex-1 h-full py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                    className="flex flex-col items-center justify-center flex-1 min-h-[56px] min-w-0 px-1 py-1 text-xs font-medium border-t-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
                 >
                     <Icon className="fas fa-bars text-lg mb-0.5" />
-                    <span>Menu</span>
+                    <span className="truncate max-w-full">Menu</span>
                 </button>
             </nav>
         </div>

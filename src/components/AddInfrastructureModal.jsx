@@ -266,14 +266,14 @@ const AddInfrastructureModal = ({
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-3 sm:p-4 modal-backdrop">
             <div
                 ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="add-infra-title"
                 tabIndex={-1}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full p-6 space-y-5 my-8 transition-colors border dark:border-gray-700"
+                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[92dvh] overflow-y-auto modal-scroll p-4 sm:p-6 space-y-5 transition-colors border dark:border-gray-700"
             >
                 {/* Header */}
                 <div className="flex justify-between items-center border-b dark:border-gray-700 pb-3">
@@ -287,7 +287,7 @@ const AddInfrastructureModal = ({
                         type="button"
                         onClick={onClose}
                         aria-label="Close dialog"
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg"
+                        className="btn-icon shrink-0"
                     >
                         <Icon className="fas fa-times text-lg" />
                     </button>
@@ -352,7 +352,7 @@ const AddInfrastructureModal = ({
                                     id="infra-category"
                                     value={formData.category}
                                     onChange={(e) => handleInputChange('category', e.target.value)}
-                                    className={`select-input ${formErrors.category ? 'border-red-500' : ''}`}
+                                    className={`select-input w-full ${formErrors.category ? 'border-red-500' : ''}`}
                                 >
                                     <option value="">-- Select Category --</option>
                                     {existingCategories.map(cat => (
@@ -366,7 +366,7 @@ const AddInfrastructureModal = ({
                                         placeholder="New Category Name"
                                         value={formData.customCategory}
                                         onChange={(e) => handleInputChange('customCategory', e.target.value)}
-                                        className="input-field mt-2 text-sm"
+                                        className="input-field mt-2 text-base sm:text-sm"
                                         autoFocus
                                     />
                                 )}
@@ -405,7 +405,7 @@ const AddInfrastructureModal = ({
                                     id="infra-status"
                                     value={formData.status}
                                     onChange={(e) => handleInputChange('status', e.target.value)}
-                                    className="select-input"
+                                    className="select-input w-full"
                                 >
                                     <option value="up">Available (Up)</option>
                                     <option value="service">Under Maintenance (Service)</option>
@@ -432,7 +432,7 @@ const AddInfrastructureModal = ({
                                     id="infra-rate-category"
                                     value={formData.rate_category}
                                     onChange={(e) => handleInputChange('rate_category', e.target.value)}
-                                    className="select-input"
+                                    className="select-input w-full"
                                 >
                                     <option value="A">Category A (Cheapest / Basic)</option>
                                     <option value="B">Category B (Standard)</option>
@@ -442,13 +442,13 @@ const AddInfrastructureModal = ({
                             </div>
 
                             {/* License Required Toggle */}
-                            <div className="flex items-center pt-6">
-                                <label className="relative flex items-center gap-2 cursor-pointer select-none">
+                            <div className="flex items-center pt-1 md:pt-6">
+                                <label className="relative flex items-center gap-2.5 min-h-[44px] cursor-pointer select-none">
                                     <input
                                         type="checkbox"
                                         checked={formData.license_req}
                                         onChange={(e) => handleInputChange('license_req', e.target.checked)}
-                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                                        className="w-5 h-5 shrink-0 rounded text-blue-600 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
                                     />
                                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                                         Require Operator License
@@ -465,7 +465,7 @@ const AddInfrastructureModal = ({
                                     id="infra-primary-resp"
                                     value={formData.primary_responsible_id}
                                     onChange={(e) => handleInputChange('primary_responsible_id', e.target.value)}
-                                    className="select-input"
+                                    className="select-input w-full"
                                 >
                                     <option value="">-- Select Responsible (Default: Admin) --</option>
                                     {availableUsers.map(u => (
@@ -485,7 +485,7 @@ const AddInfrastructureModal = ({
                                     id="infra-secondary-resp"
                                     value={formData.secondary_responsible_id}
                                     onChange={(e) => handleInputChange('secondary_responsible_id', e.target.value)}
-                                    className="select-input"
+                                    className="select-input w-full"
                                 >
                                     <option value="">-- None --</option>
                                     {availableUsers.filter(u => u.id !== formData.primary_responsible_id).map(u => (
@@ -535,19 +535,19 @@ const AddInfrastructureModal = ({
                         </div>
 
                         {/* Modal Footer */}
-                        <div className="flex justify-end gap-3 pt-4 border-t dark:border-gray-700">
+                        <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-4 border-t dark:border-gray-700">
                             <button
                                 type="button"
                                 onClick={onClose}
                                 disabled={isSubmitting}
-                                className="btn btn-secondary text-sm"
+                                className="btn btn-secondary text-sm w-full sm:w-auto justify-center"
                             >
                                 Cancel
                             </button>
                             <button
                                 type="submit"
                                 disabled={isSubmitting}
-                                className="btn btn-primary text-sm flex items-center gap-2"
+                                className="btn btn-primary text-sm flex items-center gap-2 w-full sm:w-auto justify-center"
                             >
                                 {isSubmitting && <Icon className="fas fa-spinner fa-spin" />}
                                 Add Equipment
@@ -652,7 +652,7 @@ const AddInfrastructureModal = ({
                                 </div>
 
                                 {/* Preview Table */}
-                                <div className="max-h-60 overflow-y-auto border dark:border-gray-700 rounded-lg text-xs">
+                                <div tabIndex={0} role="region" aria-label="CSV import preview" className="max-h-60 overflow-auto border dark:border-gray-700 rounded-lg text-xs">
                                     <table className="w-full text-left border-collapse">
                                         <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 border-b dark:border-gray-700">
                                             <tr>
@@ -715,12 +715,12 @@ const AddInfrastructureModal = ({
                         )}
 
                         {/* Modal Footer */}
-                        <div className="flex justify-end gap-3 pt-4 border-t dark:border-gray-700">
+                        <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-4 border-t dark:border-gray-700">
                             <button
                                 type="button"
                                 onClick={onClose}
                                 disabled={isSubmitting}
-                                className="btn btn-secondary text-sm"
+                                className="btn btn-secondary text-sm w-full sm:w-auto justify-center"
                             >
                                 Cancel
                             </button>
@@ -728,7 +728,7 @@ const AddInfrastructureModal = ({
                                 type="button"
                                 onClick={handleBulkSubmit}
                                 disabled={isSubmitting || !csvParsed || (csvParsed.newRows ? csvParsed.newRows.length === 0 : csvParsed.validRows.length === 0)}
-                                className="btn btn-primary text-sm flex items-center gap-2"
+                                className="btn btn-primary text-sm flex items-center gap-2 w-full sm:w-auto justify-center"
                             >
                                 {isSubmitting && <Icon className="fas fa-spinner fa-spin" />}
                                 Import {(csvParsed?.newRows?.length ?? csvParsed?.validRows?.length) ? `${csvParsed?.newRows?.length ?? csvParsed.validRows.length} New Tool(s)` : ''}

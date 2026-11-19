@@ -28,7 +28,7 @@ const BookingList = ({
                         <select
                             value={sortOrder}
                             onChange={e => setSortOrder(e.target.value)}
-                            className="select-input text-xs py-1 px-2.5 min-h-[34px]"
+                            className="select-input text-base sm:text-xs py-1 px-2.5 min-h-[44px] sm:min-h-[34px]"
                         >
                             <option value="newest">Newest first</option>
                             <option value="oldest">Oldest first</option>
@@ -50,7 +50,7 @@ const BookingList = ({
                         <button
                             type="button"
                             onClick={onClearFilters}
-                            className="mt-3 text-xs text-blue-600 dark:text-blue-400 underline font-semibold cursor-pointer"
+                            className="mt-3 min-h-[44px] inline-flex items-center px-3 text-sm text-blue-600 dark:text-blue-400 underline font-semibold cursor-pointer"
                         >
                             Clear filters
                         </button>
@@ -65,9 +65,9 @@ const BookingList = ({
                                 readOnly ? 'opacity-80 bg-gray-50/50 dark:bg-gray-900/40' : ''
                             }`}
                         >
-                            <div className="space-y-1.5 min-w-0 flex-1">
+                            <div className="space-y-1.5 w-full min-w-0 flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                    <span className={`font-bold text-base ${readOnly ? 'text-gray-700 dark:text-gray-300' : 'text-gray-900 dark:text-gray-100'}`}>
+                                    <span className={`font-bold text-base break-words ${readOnly ? 'text-gray-700 dark:text-gray-300' : 'text-gray-900 dark:text-gray-100'}`}>
                                         {b.tool_name}
                                     </span>
                                     {b.status === 'pending_approval' ? (
@@ -97,41 +97,33 @@ const BookingList = ({
                                         <Icon className="fas fa-clock text-[10px] text-gray-400" />
                                         {b.startTime} – {b.endTime}
                                     </span>
-                                    <span className="flex items-center gap-1">
-                                        <Icon className="fas fa-folder text-[10px] text-gray-400" />
+                                    <span className="flex items-center gap-1 min-w-0 break-words">
+                                        <Icon className="fas fa-folder text-[10px] text-gray-400 shrink-0" />
                                         {b.project || 'General'}
                                     </span>
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-2 shrink-0 self-stretch sm:self-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100 dark:border-gray-800">
-                                <button
-                                    type="button"
-                                    onClick={() => onEdit(b)}
-                                    disabled={readOnly}
-                                    className={`btn btn-sm min-h-[38px] px-3 text-xs flex items-center gap-1.5 cursor-pointer ${
-                                        readOnly
-                                            ? 'border border-gray-200 text-gray-400 cursor-not-allowed'
-                                            : 'btn-outline-primary border-blue-200 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30'
-                                    }`}
-                                >
-                                    <Icon className="fas fa-edit text-xs" />
-                                    <span>Edit</span>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => onCancel(b.ids)}
-                                    disabled={readOnly}
-                                    className={`btn btn-sm min-h-[38px] px-3 text-xs flex items-center gap-1.5 cursor-pointer ${
-                                        readOnly
-                                            ? 'border border-gray-200 text-gray-400 cursor-not-allowed'
-                                            : 'btn-outline-danger'
-                                    }`}
-                                >
-                                    <Icon className={isAdminView ? "fas fa-trash-alt text-xs" : "fas fa-times text-xs"} />
-                                    <span>{isAdminView ? 'Delete' : 'Cancel'}</span>
-                                </button>
-                            </div>
+                            {!readOnly && (
+                                <div className="flex items-center gap-2 shrink-0 self-stretch sm:self-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100 dark:border-gray-800">
+                                    <button
+                                        type="button"
+                                        onClick={() => onEdit(b)}
+                                        className="btn btn-sm min-h-[44px] sm:min-h-[38px] flex-1 sm:flex-none justify-center px-3 text-xs flex items-center gap-1.5 cursor-pointer btn-outline-primary border-blue-200 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
+                                    >
+                                        <Icon className="fas fa-edit text-xs" />
+                                        <span>Edit</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => onCancel(b.ids)}
+                                        className="btn btn-sm min-h-[44px] sm:min-h-[38px] flex-1 sm:flex-none justify-center px-3 text-xs flex items-center gap-1.5 cursor-pointer btn-outline-danger"
+                                    >
+                                        <Icon className={isAdminView ? "fas fa-trash-alt text-xs" : "fas fa-times text-xs"} />
+                                        <span>{isAdminView ? 'Delete' : 'Cancel'}</span>
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>

@@ -94,7 +94,7 @@ const InviteUserModal = ({ isOpen, onClose, onInvited }) => {
 
     return (
         <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-3 sm:p-4 modal-backdrop"
             role="presentation"
             onClick={(e) => {
                 if (e.target === e.currentTarget && !submitting) handleClose();
@@ -106,9 +106,9 @@ const InviteUserModal = ({ isOpen, onClose, onInvited }) => {
                 aria-modal="true"
                 aria-labelledby="invite-user-modal-title"
                 tabIndex={-1}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg border border-gray-200 dark:border-gray-700 overflow-hidden animate-fade-in"
+                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg border border-gray-200 dark:border-gray-700 max-h-[92dvh] flex flex-col overflow-hidden animate-fade-in"
             >
-                <div className="flex items-center justify-between px-6 py-4 border-b dark:border-gray-700">
+                <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 gap-2 border-b dark:border-gray-700">
                     <div>
                         <h4 id="invite-user-modal-title" className="text-lg font-bold text-gray-800 dark:text-gray-100">
                             Invite New User
@@ -122,13 +122,13 @@ const InviteUserModal = ({ isOpen, onClose, onInvited }) => {
                         onClick={handleClose}
                         disabled={submitting}
                         aria-label="Close invite modal"
-                        className="btn btn-ghost btn-sm"
+                        className="btn-icon shrink-0"
                     >
                         <Icon className="fas fa-times" />
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 overflow-y-auto modal-scroll flex-1 min-h-0">
                     <div>
                         <label htmlFor="invite-email" className="label">
                             Email Address <span className="text-red-500">*</span>
@@ -199,13 +199,13 @@ const InviteUserModal = ({ isOpen, onClose, onInvited }) => {
                                         handleAddProject();
                                     }
                                 }}
-                                className="input-field flex-1 text-sm"
+                                className="input-field flex-1 min-w-0"
                                 placeholder="Add project name..."
                             />
                             <button
                                 type="button"
                                 onClick={handleAddProject}
-                                className="btn btn-secondary btn-sm"
+                                className="btn btn-secondary btn-sm shrink-0"
                             >
                                 Add
                             </button>
@@ -222,7 +222,7 @@ const InviteUserModal = ({ isOpen, onClose, onInvited }) => {
                                             type="button"
                                             aria-label={`Remove project ${proj}`}
                                             onClick={() => handleRemoveProject(proj)}
-                                            className="hover:text-red-500 ml-1"
+                                            className="inline-flex items-center justify-center min-w-[32px] min-h-[32px] -mr-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 cursor-pointer"
                                         >
                                             <Icon className="fas fa-times text-[10px]" />
                                         </button>
@@ -232,19 +232,19 @@ const InviteUserModal = ({ isOpen, onClose, onInvited }) => {
                         )}
                     </div>
 
-                    <div className="flex justify-end gap-3 pt-4 border-t dark:border-gray-700">
+                    <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-4 border-t dark:border-gray-700">
                         <button
                             type="button"
                             onClick={handleClose}
                             disabled={submitting}
-                            className="btn btn-secondary"
+                            className="btn btn-secondary w-full sm:w-auto justify-center"
                         >
                             Cancel
                         </button>
                         <button
                             type="submit"
                             disabled={submitting}
-                            className="btn btn-primary flex items-center gap-2"
+                            className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
                         >
                             <Icon className={submitting ? 'fas fa-spinner fa-spin' : 'fas fa-paper-plane'} />
                             {submitting ? 'Sending...' : 'Send Invitation'}

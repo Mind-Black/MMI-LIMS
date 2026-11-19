@@ -8,9 +8,9 @@ const StatusBadge = ({ status }) => {
     };
     const current = config[status] || { color: 'bg-gray-500', text: 'Status unknown' };
     return (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
             <span aria-hidden="true" className={`status-dot ${current.color}`}></span>
-            <span className="text-sm text-gray-700 dark:text-gray-200">{current.text}</span>
+            <span className="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">{current.text}</span>
         </div>
     );
 };

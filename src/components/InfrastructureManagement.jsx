@@ -31,6 +31,7 @@ const InfrastructureManagement = ({
     const [availableUsers, setAvailableUsers] = useState([]);
     const { showToast } = useToast();
     const syncGuideDialogRef = useDialogFocus(isSyncGuideOpen, () => setIsSyncGuideOpen(false));
+    const editDialogRef = useDialogFocus(Boolean(editingTool), () => setEditingTool(null));
 
     // Fetch users for Tool Responsible assignment dropdown
     useEffect(() => {
@@ -225,11 +226,11 @@ const InfrastructureManagement = ({
                         Configure laboratory equipment, assign designated Tool Responsibles, and manage operational statuses.
                     </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
                     <button
                         type="button"
                         onClick={() => openSyncGuide()}
-                        className="btn btn-secondary btn-sm flex items-center gap-1.5"
+                        className="btn btn-secondary btn-sm flex items-center justify-center gap-1.5"
                         title="Configure two-way Microsoft Bookings sync via Power Automate"
                     >
                         <Icon className="fas fa-sync-alt text-indigo-600 dark:text-indigo-400" />
@@ -238,7 +239,7 @@ const InfrastructureManagement = ({
                     <button
                         type="button"
                         onClick={() => setIsPricingModalOpen(true)}
-                        className="btn btn-secondary btn-sm flex items-center gap-1.5"
+                        className="btn btn-secondary btn-sm flex items-center justify-center gap-1.5"
                         title="View official equipment rate categories and access modes"
                     >
                         <Icon className="fas fa-tags text-emerald-600 dark:text-emerald-400" />
@@ -247,7 +248,7 @@ const InfrastructureManagement = ({
                     <button
                         type="button"
                         onClick={() => downloadInfrastructureCsvTemplate()}
-                        className="btn btn-secondary btn-sm flex items-center gap-1.5"
+                        className="btn btn-secondary btn-sm flex items-center justify-center gap-1.5"
                         title="Download CSV Template"
                     >
                         <Icon className="fas fa-download" />
@@ -256,7 +257,7 @@ const InfrastructureManagement = ({
                     <button
                         type="button"
                         onClick={() => onOpenAddModal('bulk')}
-                        className="btn btn-secondary btn-sm flex items-center gap-1.5"
+                        className="btn btn-secondary btn-sm flex items-center justify-center gap-1.5"
                     >
                         <Icon className="fas fa-file-csv" />
                         Bulk Import CSV
@@ -264,7 +265,7 @@ const InfrastructureManagement = ({
                     <button
                         type="button"
                         onClick={() => onOpenAddModal('single')}
-                        className="btn btn-primary btn-sm flex items-center gap-1.5"
+                        className="btn btn-primary btn-sm col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5"
                     >
                         <Icon className="fas fa-plus" />
                         Add Equipment
@@ -308,15 +309,15 @@ const InfrastructureManagement = ({
                         placeholder="Search equipment by name, ID, location, or notes..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="input-field text-sm"
+                        className="input-field"
                         aria-label="Search equipment"
                     />
                 </div>
-                <div className="flex gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 md:flex gap-2">
                     <select
                         value={filterCategory}
                         onChange={(e) => setFilterCategory(e.target.value)}
-                        className="select-input text-sm"
+                        className="select-input w-full md:w-auto"
                         aria-label="Filter by category"
                     >
                         {categories.map(cat => (
@@ -326,7 +327,7 @@ const InfrastructureManagement = ({
                     <select
                         value={filterRateCategory}
                         onChange={(e) => setFilterRateCategory(e.target.value)}
-                        className="select-input text-sm"
+                        className="select-input w-full md:w-auto"
                         aria-label="Filter by rate category"
                     >
                         <option value="All">All Rates (A-D)</option>
@@ -338,7 +339,7 @@ const InfrastructureManagement = ({
                     <select
                         value={filterStatus}
                         onChange={(e) => setFilterStatus(e.target.value)}
-                        className="select-input text-sm"
+                        className="select-input w-full md:w-auto"
                         aria-label="Filter by status"
                     >
                         <option value="All">All Statuses</option>
@@ -349,9 +350,145 @@ const InfrastructureManagement = ({
                 </div>
             </div>
 
-            {/* Equipment Table */}
+            {/* Equipment Cards (Mobile) & Table (Desktop) */}
             <div className="card p-0 overflow-hidden">
-                <div className="overflow-x-auto">
+                {/* Mobile Equipment Cards */}
+                <div className="lg:hidden divide-y dark:divide-gray-700">
+                    {filteredTools.map(tool => {
+                        const staticImg = getToolImage(tool.id);
+                        const imgSrc = tool.image_url || staticImg;
+                        const resp = tool.primary_responsible;
+                        const respName = resp ? `${resp.first_name || ''} ${resp.last_name || ''}`.trim() : 'Lab Administrator';
+
+                        return (
+                            <div key={tool.id} className="p-4 space-y-3 text-sm">
+                                <div className="flex items-start gap-3">
+                                    <div className="w-12 h-12 rounded bg-gray-100 dark:bg-gray-800 border dark:border-gray-700 flex items-center justify-center shrink-0 overflow-hidden">
+                                        {imgSrc ? (
+                                            <img src={imgSrc} alt={tool.name} className="w-full h-full object-cover" loading="lazy" />
+                                        ) : (
+                                            <Icon className="fas fa-camera text-gray-400 text-sm" />
+                                        )}
+                                    </div>
+                                    <div className="min-w-0 flex-1 space-y-1">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="font-bold text-gray-800 dark:text-gray-200 break-words">
+                                                {tool.name}{' '}
+                                                <span className="font-mono text-xs font-normal text-gray-500 dark:text-gray-400">#{tool.id}</span>
+                                            </div>
+                                            <StatusBadge status={tool.status} />
+                                        </div>
+                                        {tool.description && (
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                                                {tool.description}
+                                            </p>
+                                        )}
+                                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                            <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded text-xs font-semibold">
+                                                {tool.category}
+                                            </span>
+                                            <RateCategoryBadge rate={tool.rate_category} />
+                                            {tool.ms_bookings_sync_enabled && tool.ms_bookings_email && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => openSyncGuide(tool)}
+                                                    className="inline-flex items-center gap-1 min-h-[36px] px-2.5 py-1.5 rounded text-xs font-semibold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 cursor-pointer"
+                                                    title={`Synced with Microsoft Bookings (${tool.ms_bookings_email})`}
+                                                >
+                                                    <Icon className="fas fa-sync-alt text-[10px]" />
+                                                    MS Bookings Sync
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-300 bg-gray-50/70 dark:bg-gray-900/40 p-2.5 rounded-lg border dark:border-gray-700/70">
+                                    <div className="min-w-0">
+                                        <span className="text-gray-500 dark:text-gray-400 block">Tool Responsible</span>
+                                        <div className="font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-1 mt-0.5">
+                                            <Icon className="fas fa-user-shield text-blue-600 dark:text-blue-400 text-[10px] shrink-0" />
+                                            <span className="break-words">{respName}</span>
+                                        </div>
+                                        {resp?.email && (
+                                            <div className="text-gray-500 dark:text-gray-400 break-all mt-0.5">
+                                                {resp.email}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="space-y-1">
+                                        <div>
+                                            <span className="text-gray-500 dark:text-gray-400">Location: </span>
+                                            <span className="text-gray-800 dark:text-gray-200 font-medium">
+                                                {tool.location || <span className="text-gray-400 italic font-normal">Unassigned</span>}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <span className="text-gray-500 dark:text-gray-400">License: </span>
+                                            {tool.license_req ? (
+                                                <span className="text-blue-700 dark:text-blue-400 font-medium inline-flex items-center gap-1">
+                                                    <Icon className="fas fa-check-circle" /> Required
+                                                </span>
+                                            ) : (
+                                                <span className="text-green-600 dark:text-green-400 font-medium">
+                                                    Open Access
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label
+                                        htmlFor={`mobile-status-${tool.id}`}
+                                        className="block text-xs font-semibold text-gray-600 dark:text-gray-400"
+                                    >
+                                        Operational Status
+                                    </label>
+                                    <select
+                                        id={`mobile-status-${tool.id}`}
+                                        aria-label={`Status for ${tool.name}`}
+                                        value={tool.status}
+                                        onChange={(e) => onStatusChange(tool.id, e.target.value)}
+                                        className="select-input w-full mt-1"
+                                    >
+                                        <option value="up">Up</option>
+                                        <option value="service">Service</option>
+                                        <option value="down">Down</option>
+                                    </select>
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setEditingTool(tool)}
+                                        className="btn btn-secondary btn-sm min-h-[44px] flex-1 inline-flex items-center justify-center gap-1.5"
+                                    >
+                                        <Icon className="fas fa-edit" />
+                                        Edit
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={deletingToolId === tool.id}
+                                        onClick={() => handleDeleteTool(tool)}
+                                        className="btn btn-secondary btn-sm min-h-[44px] flex-1 inline-flex items-center justify-center gap-1.5 text-red-600 hover:text-red-700 dark:text-red-400"
+                                    >
+                                        <Icon className="fas fa-trash" />
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {filteredTools.length === 0 && (
+                        <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+                            No laboratory infrastructure matches the selected criteria.
+                        </div>
+                    )}
+                </div>
+
+                {/* Desktop Equipment Table */}
+                <div className="hidden lg:block overflow-x-auto" tabIndex={0} role="region" aria-label="Laboratory infrastructure table">
                     <table className="w-full text-left border-collapse text-sm">
                         <thead className="bg-gray-50 dark:bg-gray-900 border-b dark:border-gray-700">
                             <tr>
@@ -462,6 +599,7 @@ const InfrastructureManagement = ({
                                                 <button
                                                     type="button"
                                                     onClick={() => setEditingTool(tool)}
+                                                    aria-label={`Edit ${tool.name}`}
                                                     className="btn btn-secondary btn-sm p-1.5 text-xs"
                                                     title="Edit equipment metadata & Tool Responsibles"
                                                 >
@@ -471,6 +609,7 @@ const InfrastructureManagement = ({
                                                     type="button"
                                                     disabled={deletingToolId === tool.id}
                                                     onClick={() => handleDeleteTool(tool)}
+                                                    aria-label={`Delete ${tool.name}`}
                                                     className="btn btn-secondary btn-sm p-1.5 text-xs text-red-600 hover:text-red-700"
                                                     title="Delete / Decommission equipment"
                                                 >
@@ -493,17 +632,25 @@ const InfrastructureManagement = ({
 
             {/* Edit Metadata Modal */}
             {editingTool && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4 border dark:border-gray-700 max-h-[90vh] overflow-y-auto">
-                        <div className="flex justify-between items-center border-b dark:border-gray-700 pb-2">
-                            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                                <Icon className="fas fa-edit text-blue-600 dark:text-blue-400" />
-                                Edit Equipment (ID {editingTool.id})
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-3 sm:p-4 modal-backdrop">
+                    <div
+                        ref={editDialogRef}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="edit-tool-title"
+                        tabIndex={-1}
+                        className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full p-4 sm:p-6 space-y-4 border dark:border-gray-700 max-h-[90dvh] overflow-y-auto modal-scroll"
+                    >
+                        <div className="flex justify-between items-center gap-2 border-b dark:border-gray-700 pb-2">
+                            <h3 id="edit-tool-title" className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2 min-w-0">
+                                <Icon className="fas fa-edit text-blue-600 dark:text-blue-400 shrink-0" />
+                                <span className="truncate">Edit Equipment (ID {editingTool.id})</span>
                             </h3>
                             <button
                                 type="button"
                                 onClick={() => setEditingTool(null)}
-                                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                                aria-label="Close edit equipment dialog"
+                                className="btn-icon shrink-0"
                             >
                                 <Icon className="fas fa-times text-lg" />
                             </button>
@@ -518,7 +665,7 @@ const InfrastructureManagement = ({
                                     required
                                     value={editingTool.name}
                                     onChange={(e) => setEditingTool({ ...editingTool, name: e.target.value })}
-                                    className="input-field text-sm"
+                                    className="input-field text-base sm:text-sm"
                                 />
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -531,7 +678,7 @@ const InfrastructureManagement = ({
                                         required
                                         value={editingTool.category}
                                         onChange={(e) => setEditingTool({ ...editingTool, category: e.target.value })}
-                                        className="input-field text-sm"
+                                        className="input-field text-base sm:text-sm"
                                     />
                                 </div>
                                 <div>
@@ -541,7 +688,7 @@ const InfrastructureManagement = ({
                                             <button
                                                 type="button"
                                                 onClick={() => setIsPricingModalOpen(true)}
-                                                className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer normal-case"
+                                                className="inline-flex items-center min-h-[28px] px-1.5 text-xs text-blue-600 dark:text-blue-400 hover:underline cursor-pointer normal-case"
                                             >
                                                 (guide)
                                             </button>
@@ -551,7 +698,7 @@ const InfrastructureManagement = ({
                                     <select
                                         value={editingTool.rate_category || 'A'}
                                         onChange={(e) => setEditingTool({ ...editingTool, rate_category: e.target.value })}
-                                        className="select-input text-sm"
+                                        className="select-input w-full text-base sm:text-sm"
                                     >
                                         <option value="A">Category A</option>
                                         <option value="B">Category B</option>
@@ -567,7 +714,7 @@ const InfrastructureManagement = ({
                                         type="text"
                                         value={editingTool.location || ''}
                                         onChange={(e) => setEditingTool({ ...editingTool, location: e.target.value })}
-                                        className="input-field text-sm"
+                                        className="input-field text-base sm:text-sm"
                                     />
                                 </div>
                             </div>
@@ -582,7 +729,7 @@ const InfrastructureManagement = ({
                                     <select
                                         value={editingTool.primary_responsible_id || ''}
                                         onChange={(e) => setEditingTool({ ...editingTool, primary_responsible_id: e.target.value || null })}
-                                        className="select-input text-xs w-full"
+                                        className="select-input text-base sm:text-xs w-full"
                                     >
                                         <option value="">Default (Administrator)</option>
                                         {availableUsers.map(u => (
@@ -600,7 +747,7 @@ const InfrastructureManagement = ({
                                     <select
                                         value={editingTool.secondary_responsible_id || ''}
                                         onChange={(e) => setEditingTool({ ...editingTool, secondary_responsible_id: e.target.value || null })}
-                                        className="select-input text-xs w-full"
+                                        className="select-input text-base sm:text-xs w-full"
                                     >
                                         <option value="">None</option>
                                         {availableUsers.map(u => (
@@ -613,7 +760,7 @@ const InfrastructureManagement = ({
                             </div>
 
                             <div>
-                                <label className="relative flex items-center gap-2 cursor-pointer select-none">
+                                <label className="relative flex items-center gap-2 min-h-[44px] cursor-pointer select-none">
                                     <input
                                         type="checkbox"
                                         checked={editingTool.license_req}
@@ -628,7 +775,7 @@ const InfrastructureManagement = ({
 
                             {/* Microsoft Bookings Two-Way Sync Configuration */}
                             <div className="p-3 bg-indigo-50/60 dark:bg-indigo-900/15 rounded-lg border border-indigo-100 dark:border-indigo-900/40 space-y-3">
-                                <label className="relative flex items-center gap-2 cursor-pointer select-none">
+                                <label className="relative flex items-center gap-2 min-h-[44px] cursor-pointer select-none">
                                     <input
                                         type="checkbox"
                                         checked={Boolean(editingTool.ms_bookings_sync_enabled)}
@@ -652,7 +799,7 @@ const InfrastructureManagement = ({
                                                 placeholder="RaithSystem@university.edu"
                                                 value={editingTool.ms_bookings_email || ''}
                                                 onChange={(e) => setEditingTool({ ...editingTool, ms_bookings_email: e.target.value })}
-                                                className="input-field text-sm"
+                                                className="input-field text-base sm:text-sm"
                                             />
                                         </div>
                                         <div>
@@ -664,7 +811,7 @@ const InfrastructureManagement = ({
                                                 placeholder="Auto-populated from Microsoft Bookings or paste Service GUID"
                                                 value={editingTool.ms_bookings_service_id || ''}
                                                 onChange={(e) => setEditingTool({ ...editingTool, ms_bookings_service_id: e.target.value })}
-                                                className="input-field text-xs font-mono"
+                                                className="input-field text-base sm:text-xs font-mono"
                                             />
                                         </div>
                                     </div>
@@ -679,7 +826,7 @@ const InfrastructureManagement = ({
                                     placeholder="https://example.com/photo.jpg"
                                     value={editingTool.image_url || ''}
                                     onChange={(e) => setEditingTool({ ...editingTool, image_url: e.target.value })}
-                                    className="input-field text-sm"
+                                    className="input-field text-base sm:text-sm"
                                 />
                             </div>
                             <div>
@@ -690,7 +837,7 @@ const InfrastructureManagement = ({
                                     rows="3"
                                     value={editingTool.description || ''}
                                     onChange={(e) => setEditingTool({ ...editingTool, description: e.target.value })}
-                                    className="input-field text-sm"
+                                    className="input-field text-base sm:text-sm"
                                 ></textarea>
                             </div>
                             <div className="flex justify-end gap-2 pt-2 border-t dark:border-gray-700">
@@ -722,25 +869,25 @@ const InfrastructureManagement = ({
 
             {/* Microsoft Bookings Power Automate Setup Modal */}
             {isSyncGuideOpen && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-3 sm:p-4 modal-backdrop">
                     <div
                         ref={syncGuideDialogRef}
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="ms-sync-guide-title"
                         tabIndex={-1}
-                        className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full p-6 space-y-5 border dark:border-gray-700 max-h-[90vh] overflow-y-auto"
+                        className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full p-4 sm:p-6 space-y-5 border dark:border-gray-700 max-h-[90dvh] overflow-y-auto modal-scroll"
                     >
-                        <div className="flex justify-between items-center border-b dark:border-gray-700 pb-3">
-                            <h3 id="ms-sync-guide-title" className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                                <Icon className="fas fa-sync-alt text-indigo-600 dark:text-indigo-400" />
-                                Microsoft Bookings Power Automate Setup (Zero Admin Consent)
+                        <div className="flex justify-between items-center gap-2 border-b dark:border-gray-700 pb-3">
+                            <h3 id="ms-sync-guide-title" className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2 min-w-0">
+                                <Icon className="fas fa-sync-alt text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                <span>Microsoft Bookings Power Automate Setup (Zero Admin Consent)</span>
                             </h3>
                             <button
                                 type="button"
                                 onClick={() => setIsSyncGuideOpen(false)}
                                 aria-label="Close Microsoft Bookings setup guide"
-                                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                                className="btn-icon shrink-0"
                             >
                                 <Icon className="fas fa-times text-lg" />
                             </button>
@@ -749,7 +896,7 @@ const InfrastructureManagement = ({
                         <div className="p-3 bg-indigo-50/70 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs text-indigo-900 dark:text-indigo-200 space-y-1">
                             <p className="font-semibold">No Entra ID App Registration or IT Tenant Admin approval needed.</p>
                             <p>
-                                Create two Power Automate cloud flows under your personal M365 account (which already owns or has staff access to the instrument&apos;s Bookings page). Set <code className="font-mono bg-white/70 dark:bg-gray-900 px-1 rounded">MS_BOOKINGS_SYNC_SECRET</code> via <code className="font-mono bg-white/70 dark:bg-gray-900 px-1 rounded">supabase secrets set</code> and replace <code className="font-mono bg-white/70 dark:bg-gray-900 px-1 rounded">YOUR_SYNC_SECRET</code> below.
+                                Create two Power Automate cloud flows under your personal M365 account (which already owns or has staff access to the instrument&apos;s Bookings page). Set <code className="font-mono bg-white/70 dark:bg-gray-900 px-1 rounded break-all">MS_BOOKINGS_SYNC_SECRET</code> via <code className="font-mono bg-white/70 dark:bg-gray-900 px-1 rounded break-all">supabase secrets set</code> and replace <code className="font-mono bg-white/70 dark:bg-gray-900 px-1 rounded break-all">YOUR_SYNC_SECRET</code> below.
                             </p>
                         </div>
 
@@ -762,7 +909,7 @@ const InfrastructureManagement = ({
                                     id="sync-guide-tool-select"
                                     value={activeGuideTool?.id || ''}
                                     onChange={(e) => setSyncGuideToolId(e.target.value)}
-                                    className="select-input text-sm w-full"
+                                    className="select-input w-full"
                                 >
                                     {syncedTools.map(t => (
                                         <option key={t.id} value={t.id}>
@@ -787,12 +934,12 @@ const InfrastructureManagement = ({
                                 Trigger: <strong>Microsoft Bookings</strong> → <em>When an appointment is Created</em> (repeat for <em>Updated</em> and <em>Cancelled</em> with <code className="font-mono">event_type</code> set to <code className="font-mono">created</code>, <code className="font-mono">updated</code>, or <code className="font-mono">cancelled</code>).
                             </p>
                             <div className="space-y-1.5">
-                                <div className="flex items-center justify-between">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
                                     <span className="text-[11px] font-semibold text-gray-600 dark:text-gray-400 uppercase">Option A: JSON POST Endpoint (HTTP / Office Script)</span>
                                     <button
                                         type="button"
                                         onClick={() => copySnippet('Inbound POST URL', `${syncEndpointUrl}?action=inbound`)}
-                                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                                        className="btn btn-secondary btn-sm shrink-0"
                                     >
                                         Copy URL
                                     </button>
@@ -817,12 +964,12 @@ Content-Type: application/json
 }`}</pre>
                             </div>
                             <div className="space-y-1.5">
-                                <div className="flex items-center justify-between">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
                                     <span className="text-[11px] font-semibold text-gray-600 dark:text-gray-400 uppercase">Option B: 100% Free Standard RSS Connector (GET)</span>
                                     <button
                                         type="button"
                                         onClick={() => copySnippet('Inbound RSS GET URL', `${syncEndpointUrl}?action=inbound&secret=YOUR_SYNC_SECRET&ms_bookings_email=${encodeURIComponent(guideBookingsEmail)}&event_type=created&external_id=@{triggerOutputs()?['body/Id']}&starts_at=@{triggerOutputs()?['body/StartTime']}&ends_at=@{triggerOutputs()?['body/EndTime']}&service_id=@{triggerOutputs()?['body/ServiceId']}&service_name=@{triggerOutputs()?['body/ServiceName']}&staff_email=@{first(triggerOutputs()?['body/StaffMembers'])?['EmailAddress']}&staff_id=@{first(triggerOutputs()?['body/StaffMembers'])?['Id']}&customer_email=@{triggerOutputs()?['body/CustomerEmail']}&customer_name=@{triggerOutputs()?['body/CustomerName']}&notes=@{triggerOutputs()?['body/ServiceNotes']}`)}
-                                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                                        className="btn btn-secondary btn-sm shrink-0"
                                     >
                                         Copy URL
                                     </button>
@@ -846,14 +993,14 @@ Content-Type: application/json
                             <ol className="text-xs text-gray-600 dark:text-gray-300 list-decimal pl-4 space-y-1.5">
                                 <li>
                                     <strong>Poll Outbox</strong> (every 1–5 min via <strong>RSS → When a feed item is published</strong> or <strong>Recurrence + RSS → List all RSS feed items</strong>):
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <code className="text-[11px] font-mono bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded px-2 py-1 flex-1 overflow-x-auto">
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-1.5">
+                                        <code className="text-[11px] font-mono bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded px-2 py-1 min-w-0 w-full sm:flex-1 overflow-x-auto whitespace-nowrap">
                                             {`${syncEndpointUrl}?action=outbox&secret=YOUR_SYNC_SECRET`}
                                         </code>
                                         <button
                                             type="button"
                                             onClick={() => copySnippet('Outbox RSS URL', `${syncEndpointUrl}?action=outbox&secret=YOUR_SYNC_SECRET`)}
-                                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold shrink-0"
+                                            className="btn btn-secondary btn-sm shrink-0 self-end sm:self-auto"
                                         >
                                             Copy
                                         </button>
@@ -863,23 +1010,23 @@ Content-Type: application/json
                                     </span>
                                 </li>
                                 <li>
-                                    <strong>Create / Update / Cancel inside Microsoft Bookings</strong> using <strong>HTTP with Microsoft Entra ID (preauthorized)</strong> (Base Resource URL &amp; Resource URI: <code className="font-mono">https://graph.microsoft.com</code> — signs in with your own account, zero admin consent):
+                                    <strong>Create / Update / Cancel inside Microsoft Bookings</strong> using <strong>HTTP with Microsoft Entra ID (preauthorized)</strong> (Base Resource URL &amp; Resource URI: <code className="font-mono break-all">https://graph.microsoft.com</code> — signs in with your own account, zero admin consent):
                                     <ul className="list-disc pl-4 mt-1 space-y-0.5 text-[11px]">
-                                        <li><strong>Method:</strong> <code className="font-mono">{`@{body('Parse_JSON')?['graph_method']}`}</code></li>
-                                        <li><strong>Url of the request:</strong> <code className="font-mono">{`https://graph.microsoft.com@{body('Parse_JSON')?['graph_endpoint']}`}</code></li>
-                                        <li><strong>Body:</strong> <code className="font-mono">{`@{body('Parse_JSON')?['graph_body']}`}</code></li>
+                                        <li><strong>Method:</strong> <code className="font-mono break-all">{`@{body('Parse_JSON')?['graph_method']}`}</code></li>
+                                        <li><strong>Url of the request:</strong> <code className="font-mono break-all">{`https://graph.microsoft.com@{body('Parse_JSON')?['graph_endpoint']}`}</code></li>
+                                        <li><strong>Body:</strong> <code className="font-mono break-all">{`@{body('Parse_JSON')?['graph_body']}`}</code></li>
                                     </ul>
                                 </li>
                                 <li>
                                     <strong>Acknowledge Job</strong> (via <strong>RSS → List all RSS feed items</strong> or HTTP POST) so MMI-LIMS saves the new Bookings Appointment ID:
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <code className="text-[11px] font-mono bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded px-2 py-1 flex-1 overflow-x-auto">
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-1.5">
+                                        <code className="text-[11px] font-mono bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded px-2 py-1 min-w-0 w-full sm:flex-1 overflow-x-auto whitespace-nowrap">
                                             {`${syncEndpointUrl}?action=ack&secret=YOUR_SYNC_SECRET&job_id=@{body('Parse_JSON')?['job_id']}&external_id=@{body('Invoke_an_HTTP_request')?['id']}`}
                                         </code>
                                         <button
                                             type="button"
                                             onClick={() => copySnippet('Ack RSS URL', `${syncEndpointUrl}?action=ack&secret=YOUR_SYNC_SECRET&job_id=@{body('Parse_JSON')?['job_id']}&external_id=@{body('Invoke_an_HTTP_request')?['id']}`)}
-                                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold shrink-0"
+                                            className="btn btn-secondary btn-sm shrink-0 self-end sm:self-auto"
                                         >
                                             Copy
                                         </button>

@@ -5,8 +5,18 @@
 @import "tailwindcss";
 @config "../../tailwind.config.js";
 
+:root { --target-size: 24px; }
+@media (pointer: coarse) { :root { --target-size: 44px; } }
+
 /* Global Styles */
 body {
     background-color: #f0f2f5;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overflow-wrap: break-word;
+    -webkit-tap-highlight-color: transparent;
 }
+
+:where(h1, h2, h3) { text-wrap: balance; }
+:where(p, li) { text-wrap: pretty; }
+:where(a, code) { overflow-wrap: anywhere; }
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
