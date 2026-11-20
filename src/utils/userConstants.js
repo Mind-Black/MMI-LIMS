@@ -11,5 +11,6 @@ export const JOB_TITLES = [
     'Researcher',
     'Senior Researcher',
     'Chief Researcher',
+    'Administration',
     'External'
 ];
