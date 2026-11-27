@@ -173,3 +173,111 @@ test('Admin email invitations enforce RLS, protect token_hash, auto-approve on a
  await db.query(`INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,'revoked@example.com','{}')`,[D]);
  assert.equal((await db.query('SELECT is_approved FROM profiles WHERE id=$1',[D])).rows[0].is_approved,false);
 });
+
+test('Admins can promote and demote other approved users while enforcing all security invariants',async t=>{
+ const db=await setup();t.after(()=>db.close());
+ const C='33333333-3333-3333-3333-333333333333', D='44444444-4444-4444-4444-444444444444';
+ await db.query("INSERT INTO auth.users(id,email) VALUES($1,'admin@example.com'),($2,'member@example.com'),($3,'pending@example.com'),($4,'rogue@example.com')",[A,B,C,D]);
+ await db.query("UPDATE profiles SET is_approved=true WHERE id IN ($1,$2)",[A,B]);
+ await db.query("UPDATE profiles SET access_level='admin' WHERE id=$1",[A]);
+ // Seed an unapproved profile with access_level='admin' directly to verify is_admin() rejects unapproved admins
+ await db.query("UPDATE profiles SET access_level='admin',is_approved=false WHERE id=$1",[D]);
+
+ // Anon cannot execute set_user_access_level
+ await actor(db,null,'anon');
+ await assert.rejects(db.query("SELECT set_user_access_level($1,'admin')",[B]),/permission denied/);
+
+ // Unapproved "admin" has zero admin privileges
+ await actor(db,D);
+ assert.equal((await db.query('SELECT is_admin($1) AS ok',[D])).rows[0].ok,false);
+ await assert.rejects(db.query("SELECT set_user_access_level($1,'admin')",[B]),/Admin required/);
+ await assert.rejects(db.query("INSERT INTO tools(name,category) VALUES('Rogue tool','Test')"),/row-level/);
+
+ // Approved ordinary user cannot promote self or others
+ await actor(db,B);
+ await assert.rejects(db.query("SELECT set_user_access_level($1,'admin')",[B]),/Admin required/);
+ await assert.rejects(db.query("SELECT set_user_access_level($1,'admin')",[C]),/Admin required/);
+ await assert.rejects(db.query("UPDATE profiles SET access_level='admin' WHERE id=$1",[B]),/Unauthorized/);
+
+ // Approved admin enforces target validation and self-protection
+ await actor(db,A);
+ await assert.rejects(db.query("SELECT set_user_access_level($1,'user')",[A]),/Cannot change your own access level/);
+ await assert.rejects(db.query("UPDATE profiles SET access_level='user' WHERE id=$1",[A]),/cannot modify your own access_level/);
+ await assert.rejects(db.query("SELECT set_user_access_level($1,'admin')",[C]),/must be approved/);
+ await assert.rejects(db.query("UPDATE profiles SET access_level='admin' WHERE id=$1",[C]),/must be approved/);
+ await assert.rejects(db.query("SELECT set_user_access_level($1,'superuser')",[B]),/Invalid access level/);
+
+ // Admin A promotes approved user B to admin
+ const promoted=(await db.query("SELECT set_user_access_level($1,'admin') AS r",[B])).rows[0].r;
+ assert.equal(promoted.access_level,'admin');
+ assert.equal((await db.query('SELECT is_admin($1) AS ok',[B])).rows[0].ok,true);
+
+ // Cannot unapprove an admin without demoting first
+ await assert.rejects(db.query("UPDATE profiles SET is_approved=false WHERE id=$1",[B]),/Cannot unapprove an administrator/);
+
+ // Newly promoted Admin B can approve C and promote C to admin
+ await actor(db,B);
+ await db.query("UPDATE profiles SET is_approved=true WHERE id=$1",[C]);
+ const promotedC=(await db.query("SELECT set_user_access_level($1,'admin') AS r",[C])).rows[0].r;
+ assert.equal(promotedC.access_level,'admin');
+
+ // Admin A can demote B back to standard user
+ await actor(db,A);
+ const demotedB=(await db.query("SELECT set_user_access_level($1,'user') AS r",[B])).rows[0].r;
+ assert.equal(demotedB.access_level,'user');
+ assert.equal((await db.query('SELECT is_admin($1) AS ok',[B])).rows[0].ok,false);
+
+ // Demoted B can no longer perform admin actions
+ await actor(db,B);
+ await assert.rejects(db.query("SELECT set_user_access_level($1,'user')",[C]),/Admin required/);
+});
+
+test('Super-admin account can be provisioned privately, is always approved admin, and can never be revoked or deleted',async t=>{
+ const db=await setup();t.after(()=>db.close());
+ const SUPER='55555555-5555-5555-5555-555555555555';
+ await db.query("INSERT INTO auth.users(id,email) VALUES($1,'super@example.com'),($2,'admin@example.com'),($3,'user@example.com')",[SUPER,A,B]);
+ await db.query("UPDATE profiles SET is_approved=true,access_level='admin' WHERE id=$1",[A]);
+ await db.query("UPDATE profiles SET is_approved=true WHERE id=$1",[B]);
+ // Provision super-admin via privileged SQL (no email hardcoded in repo)
+ await db.query("UPDATE profiles SET access_level='admin',is_approved=true,is_super_admin=true WHERE id=$1",[SUPER]);
+
+ const sp=(await db.query('SELECT * FROM profiles WHERE id=$1',[SUPER])).rows[0];
+ assert.equal(sp.access_level,'admin');
+ assert.equal(sp.is_approved,true);
+ assert.equal(sp.is_super_admin,true);
+
+ // Non-admin cannot spoof email or grant themselves is_super_admin
+ await actor(db,B);
+ await assert.rejects(db.query("UPDATE profiles SET email='super@example.com' WHERE id=$1",[B]),/Unauthorized/);
+ await assert.rejects(db.query("UPDATE profiles SET is_super_admin=true WHERE id=$1",[B]),/Unauthorized/);
+
+ // Even an approved admin cannot grant is_super_admin or revoke/unapprove/delete super-admin
+ await actor(db,A);
+ assert.equal((await db.query('SELECT is_super_admin($1) AS ok',[SUPER])).rows[0].ok,true);
+ await assert.rejects(db.query("UPDATE profiles SET is_super_admin=true WHERE id=$1",[B]),/is_super_admin/);
+ await assert.rejects(db.query("SELECT set_user_access_level($1,'user')",[SUPER]),/super-admin/);
+ await assert.rejects(db.query("UPDATE profiles SET access_level='user' WHERE id=$1",[SUPER]),/super-admin/);
+ await assert.rejects(db.query("UPDATE profiles SET is_approved=false WHERE id=$1",[SUPER]),/super-admin/);
+ await assert.rejects(db.query("UPDATE profiles SET is_super_admin=false WHERE id=$1",[SUPER]),/super-admin/);
+
+ // Even privileged SQL cannot revoke or delete super-admin profile
+ await actor(db,null,'none');
+ await assert.rejects(db.query("UPDATE profiles SET access_level='user' WHERE id=$1",[SUPER]),/super-admin/);
+ await assert.rejects(db.query("UPDATE profiles SET is_approved=false WHERE id=$1",[SUPER]),/super-admin/);
+ await assert.rejects(db.query("UPDATE profiles SET is_super_admin=false WHERE id=$1",[SUPER]),/super-admin/);
+ await assert.rejects(db.query('DELETE FROM profiles WHERE id=$1',[SUPER]),/super-admin/);
+
+ // Super-admin can promote and demote other approved users
+ await actor(db,SUPER);
+ const promoted=(await db.query("SELECT set_user_access_level($1,'admin') AS r",[B])).rows[0].r;
+ assert.equal(promoted.access_level,'admin');
+ const demoted=(await db.query("SELECT set_user_access_level($1,'user') AS r",[B])).rows[0].r;
+ assert.equal(demoted.access_level,'user');
+
+ // Optional Vault secret auto-provisions super-admin on migration backfill and signup
+ const vaultDb=await setup();t.after(()=>vaultDb.close());
+ await vaultDb.exec(`CREATE SCHEMA IF NOT EXISTS vault; CREATE TABLE vault.decrypted_secrets(name text, decrypted_secret text); INSERT INTO vault.decrypted_secrets(name,decrypted_secret) VALUES('mmi_super_admin_email','vault-super@example.com');`);
+ await vaultDb.query("INSERT INTO auth.users(id,email) VALUES($1,'VAULT-SUPER@EXAMPLE.COM')",[SUPER]);
+ const vp=(await vaultDb.query('SELECT access_level,is_approved,is_super_admin FROM profiles WHERE id=$1',[SUPER])).rows[0];
+ assert.deepEqual(vp,{access_level:'admin',is_approved:true,is_super_admin:true});
+});

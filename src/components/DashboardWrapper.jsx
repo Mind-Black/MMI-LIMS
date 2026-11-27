@@ -28,7 +28,7 @@ const DashboardWrapper = ({ session, onLogout }) => {
             try {
                 const { data, error } = await supabase
                     .from('profiles')
-                    .select('id, first_name, last_name, job_title, access_level, is_approved, licenses, projects')
+                    .select('id, first_name, last_name, job_title, access_level, is_approved, is_super_admin, licenses, projects')
                     .eq('id', userId)
                     .single();
 

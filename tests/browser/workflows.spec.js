@@ -220,3 +220,55 @@ test('404 fallback preserves auth confirmation hash and expired link displays an
  await page.getByRole('button',{name:'Dismiss error'}).click();
  await expect(page.getByRole('alert')).toHaveCount(0);
 });
+test('admin can promote and demote other approved users with confirmation, but cannot alter self, super-admin, or unapproved users',async({page})=>{
+ const member={id:'22222222-2222-2222-2222-222222222222',first_name:'Lab',last_name:'Member',email:'member@example.com',access_level:'user',is_approved:true,is_super_admin:false,licenses:{},projects:[]};
+ const pending={id:'33333333-3333-3333-3333-333333333333',first_name:'Pending',last_name:'User',email:'pending@example.com',access_level:'user',is_approved:false,is_super_admin:false,licenses:{},projects:[]};
+ const superAdmin={id:'44444444-4444-4444-4444-444444444444',first_name:'Primary',last_name:'Lead',email:'superadmin@example.com',access_level:'admin',is_approved:true,is_super_admin:true,licenses:{},projects:[]};
+ const selfAdmin={id,first_name:'Test',last_name:'Member',email:'a@example.com',access_level:'admin',is_approved:true,is_super_admin:false,licenses:{'1':'level_3'},projects:[]};
+ await session(page,true,{role:'admin',users:[selfAdmin,member,pending,superAdmin]});
+ const rpcCalls=[];
+ await page.route('**/rpc/set_user_access_level',async route=>{
+  const payload=route.request().postDataJSON();
+  rpcCalls.push(payload);
+  await route.fulfill({json:{id:payload.p_user_id,access_level:payload.p_access_level,is_approved:true}});
+ });
+ await page.goto('./?view=users');
+
+ const rows=page.locator('tbody tr');
+ // Self admin cannot change own role
+ await rows.nth(0).getByRole('button',{name:'Manage Access'}).click();
+ await expect(page.getByText('You cannot change your own administrator role.')).toBeVisible();
+ await expect(page.getByRole('button',{name:/Make Admin|Remove Admin/})).toHaveCount(0);
+
+ // Pending user cannot be made admin before approval
+ await rows.nth(2).getByRole('button',{name:'Manage Access'}).click();
+ await expect(page.getByText('Approve this account before granting administrator access.')).toBeVisible();
+ await expect(page.getByRole('button',{name:/Make Admin|Remove Admin/})).toHaveCount(0);
+
+ // Super Admin cannot be revoked
+ await expect(rows.nth(3)).toContainText('Super Admin');
+ await rows.nth(3).getByRole('button',{name:'Manage Access'}).click();
+ await expect(page.getByText('Permanent Super Admin account. Administrator privileges cannot be revoked.')).toBeVisible();
+ await expect(page.getByRole('button',{name:/Make Admin|Remove Admin/})).toHaveCount(0);
+
+ // Approved user can be promoted after confirmation
+ await rows.nth(1).getByRole('button',{name:'Manage Access'}).click();
+ await page.getByRole('button',{name:'Make Admin'}).click();
+ const confirmDialog=page.getByRole('dialog',{name:'Grant Administrator Access?'});
+ await expect(confirmDialog).toBeVisible();
+ await confirmDialog.getByRole('button',{name:'Cancel'}).click();
+ expect(rpcCalls).toHaveLength(0);
+
+ await page.getByRole('button',{name:'Make Admin'}).click();
+ await page.getByRole('dialog',{name:'Grant Administrator Access?'}).getByRole('button',{name:'Confirm'}).click();
+ await expect(page.getByText('Lab Member is now an administrator.')).toBeVisible();
+ expect(rpcCalls[0]).toEqual({p_user_id:member.id,p_access_level:'admin'});
+ await expect(rows.nth(1)).toContainText('admin');
+
+ // Can also remove admin access with confirmation
+ await page.getByRole('button',{name:'Remove Admin'}).click();
+ await page.getByRole('dialog',{name:'Remove Administrator Access?'}).getByRole('button',{name:'Confirm'}).click();
+ await expect(page.getByText('Administrator access removed for Lab Member.')).toBeVisible();
+ expect(rpcCalls[1]).toEqual({p_user_id:member.id,p_access_level:'user'});
+ await expect(rows.nth(1)).toContainText('user');
+});

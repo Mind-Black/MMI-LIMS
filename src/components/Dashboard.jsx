@@ -783,7 +783,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                             </div>
                             <div className="text-xs text-blue-600 dark:text-blue-400 font-semibold uppercase mt-1 flex items-center gap-1.5 flex-wrap">
                                 <span>{profile?.job_title || 'Researcher'}</span>
-                                {profile?.access_level === 'admin' && <span className="bg-red-600 text-white px-1.5 py-0.5 rounded text-[10px]">ADMIN</span>}
+                                {profile?.access_level === 'admin' && <span className={`${profile?.is_super_admin ? 'bg-purple-600' : 'bg-red-600'} text-white px-1.5 py-0.5 rounded text-[10px]`}>{profile?.is_super_admin ? 'SUPER ADMIN' : 'ADMIN'}</span>}
                             </div>
                             <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
                                 Timezone: <span className="font-medium text-gray-600 dark:text-gray-300">{LAB_TIMEZONE}</span>
@@ -795,7 +795,7 @@ const Dashboard = ({ user, profile, onLogout, onProfileRefresh }) => {
                                 {profile?.first_name ? profile.first_name[0] : (user.email ? user.email[0].toUpperCase() : 'U')}
                             </div>
                             {profile?.access_level === 'admin' && (
-                                <span className="mt-1 bg-red-600 text-white px-1 rounded text-[9px] font-bold">ADM</span>
+                                <span className={`mt-1 ${profile?.is_super_admin ? 'bg-purple-600' : 'bg-red-600'} text-white px-1 rounded text-[9px] font-bold`}>{profile?.is_super_admin ? 'SUP' : 'ADM'}</span>
                             )}
                         </div>
                     )}

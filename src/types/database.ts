@@ -100,6 +100,7 @@ export interface profiles {
  email: string | null;
  phone: string | null;
  job_title: string | null;
+ is_super_admin: boolean;
 }
 export interface tools {
  id: number;
@@ -160,5 +161,6 @@ export interface RpcArgs {
  edit_profile_assignment: {p_user_id: string; p_kind: string; p_value: string; p_add: boolean};
  get_invitation_by_token: {p_token_hash: string};
  revoke_user_invitation: {p_invitation_id: string};
+ set_user_access_level: {p_user_id: string; p_access_level: string};
  update_booking_group: {p_old_ids: number[]; p_date: string; p_start_time: string; p_end_time: string; p_project: string};
 }

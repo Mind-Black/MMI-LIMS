@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Icon from './Icon';
 import InviteUserModal from './InviteUserModal';
+import ConfirmModal from './ConfirmModal';
 import { supabase } from '../supabaseClient';
 import { useToast } from '../context/useToast';
 import {
@@ -45,6 +46,25 @@ const getLicenseBreakdown = (licenses) => {
     return '0 licenses';
 };
 
+const getRoleBadgeProps = (user) => {
+    if (user?.is_super_admin) {
+        return {
+            label: 'Super Admin',
+            className: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
+        };
+    }
+    if (user?.access_level === 'admin') {
+        return {
+            label: 'admin',
+            className: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300',
+        };
+    }
+    return {
+        label: 'user',
+        className: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
+    };
+};
+
 const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
     const [allUsers, setAllUsers] = useState([]);
     const [selectedUser, setSelectedUser] = useState(null);
@@ -54,6 +74,8 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
     const [equipmentSort, setEquipmentSort] = useState('name-asc');
     const [approvalFilter, setApprovalFilter] = useState('all');
     const [savingLicense, setSavingLicense] = useState(false);
+    const [roleChangeTarget, setRoleChangeTarget] = useState(null);
+    const [savingRole, setSavingRole] = useState(false);
     const [page,setPage]=useState(0);
     const [hasMore,setHasMore]=useState(false);
     const [inviteModalOpen, setInviteModalOpen] = useState(false);
@@ -119,7 +141,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
         try {
             setLoading(true);
             const request=++requestRef.current;
-            let query=supabase.from('profiles').select('id, first_name, last_name, email, phone, job_title, access_level, is_approved, licenses, projects').order('last_name').order('id');
+            let query=supabase.from('profiles').select('id, first_name, last_name, email, phone, job_title, access_level, is_approved, is_super_admin, licenses, projects').order('last_name').order('id');
             const term=search.trim().replace(/[^\p{L}\p{N} @._-]/gu,'').slice(0,100);
             if(term) query=query.or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,email.ilike.%${term}%,job_title.ilike.%${term}%`);
             if(approvalFilter!=='all') query=query.eq('is_approved',approvalFilter==='approved');
@@ -182,10 +204,46 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
             }
 
             setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, is_approved: true } : u));
+            setSelectedUser(prev => prev?.id === userId ? { ...prev, is_approved: true } : prev);
             showToast('User approved successfully.', 'success');
         } catch (error) {
             console.error('Error approving user:', error);
             showToast('Failed to approve user: ' + error.message, 'error');
+        }
+    };
+
+    const handleConfirmRoleChange = async () => {
+        if (!roleChangeTarget) return;
+        const { user: targetUser, nextLevel } = roleChangeTarget;
+        const displayName = [targetUser.first_name, targetUser.last_name].filter(Boolean).join(' ') || targetUser.email || 'User';
+
+        setSavingRole(true);
+        try {
+            const { data, error } = await supabase.rpc('set_user_access_level', {
+                p_user_id: targetUser.id,
+                p_access_level: nextLevel,
+            });
+            if (error) throw error;
+
+            const resolvedLevel = data?.access_level ?? nextLevel;
+            setAllUsers(prev => prev.map(u => u.id === targetUser.id ? { ...u, access_level: resolvedLevel } : u));
+            setSelectedUser(prev => prev?.id === targetUser.id ? { ...prev, access_level: resolvedLevel } : prev);
+            if (currentUser && currentUser.id === targetUser.id && onProfileUpdate) {
+                onProfileUpdate({ background: true });
+            }
+
+            showToast(
+                resolvedLevel === 'admin'
+                    ? `${displayName} is now an administrator.`
+                    : `Administrator access removed for ${displayName}.`,
+                'success'
+            );
+            setRoleChangeTarget(null);
+        } catch (error) {
+            console.error('Error updating user role:', error);
+            showToast('Failed to update role: ' + error.message, 'error');
+        } finally {
+            setSavingRole(false);
         }
     };
 
@@ -341,9 +399,14 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                     {u.job_title && (
                                         <span className="text-xs text-gray-600 dark:text-gray-300 mr-1">{u.job_title}</span>
                                     )}
-                                    <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${u.access_level === 'admin' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'}`}>
-                                        {u.access_level}
-                                    </span>
+                                    {(() => {
+                                        const roleBadge = getRoleBadgeProps(u);
+                                        return (
+                                            <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${roleBadge.className}`}>
+                                                {roleBadge.label}
+                                            </span>
+                                        );
+                                    })()}
                                     {u.is_approved ? (
                                         <span className="px-2 py-0.5 rounded text-xs font-bold uppercase bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
                                             Active
@@ -401,9 +464,14 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                 </td>
                                 <td className="p-4 text-gray-600 dark:text-gray-400">{u.job_title}</td>
                                 <td className="p-4">
-                                    <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${u.access_level === 'admin' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'}`}>
-                                        {u.access_level}
-                                    </span>
+                                    {(() => {
+                                        const roleBadge = getRoleBadgeProps(u);
+                                        return (
+                                            <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${roleBadge.className}`}>
+                                                {roleBadge.label}
+                                            </span>
+                                        );
+                                    })()}
                                 </td>
                                 <td className="p-4">
                                     {u.is_approved ? (
@@ -472,7 +540,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                 </h4>
                                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 break-words">
                                     {selectedUser.job_title && <>{selectedUser.job_title} &bull; </>}
-                                    <span className="break-all">{selectedUser.email || 'No email registered'}</span> &bull; Role: {selectedUser.access_level}
+                                    <span className="break-all">{selectedUser.email || 'No email registered'}</span> &bull; Role: {selectedUser.is_super_admin ? 'Super Admin' : selectedUser.access_level}
                                 </p>
                             </div>
                             <button
@@ -633,9 +701,67 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                 </ul>
                             </div>
 
-                            {/* Projects Section */}
-                            <div>
-                                <h5 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Assigned Projects</h5>
+                            {/* Role & Projects Section */}
+                            <div className="space-y-6">
+                                {/* Account Role Section */}
+                                <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/40 space-y-3">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <h5 className="font-semibold text-gray-700 dark:text-gray-300">Account Role</h5>
+                                        {(() => {
+                                            const roleBadge = getRoleBadgeProps(selectedUser);
+                                            return (
+                                                <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${roleBadge.className}`}>
+                                                    {roleBadge.label}
+                                                </span>
+                                            );
+                                        })()}
+                                    </div>
+                                    {selectedUser.is_super_admin ? (
+                                        <p className="text-xs text-purple-700 dark:text-purple-300">
+                                            Permanent Super Admin account. Administrator privileges cannot be revoked.
+                                        </p>
+                                    ) : currentUser?.id === selectedUser.id ? (
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                                            You cannot change your own administrator role.
+                                        </p>
+                                    ) : !selectedUser.is_approved ? (
+                                        <p className="text-xs text-amber-700 dark:text-amber-300">
+                                            Approve this account before granting administrator access.
+                                        </p>
+                                    ) : selectedUser.access_level === 'admin' ? (
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                Administrators can manage users, equipment, and all bookings.
+                                            </p>
+                                            <button
+                                                type="button"
+                                                disabled={savingRole}
+                                                onClick={() => setRoleChangeTarget({ user: selectedUser, nextLevel: 'user' })}
+                                                className="btn btn-outline-danger btn-sm shrink-0"
+                                            >
+                                                Remove Admin
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                Grant full administrative privileges to manage users, equipment, and bookings.
+                                            </p>
+                                            <button
+                                                type="button"
+                                                disabled={savingRole}
+                                                onClick={() => setRoleChangeTarget({ user: selectedUser, nextLevel: 'admin' })}
+                                                className="btn btn-primary btn-sm shrink-0"
+                                            >
+                                                Make Admin
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Projects Section */}
+                                <div>
+                                    <h5 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Assigned Projects</h5>
                                 <div className="flex gap-2 mb-2">
                                     <input
                                         aria-label="New project name"
@@ -684,6 +810,7 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                                     {(!selectedUser.projects || selectedUser.projects.length === 0) && (
                                         <span className="text-gray-400 text-xs italic">No projects assigned</span>
                                     )}
+                                </div>
                                 </div>
                             </div>
                         </div>
@@ -769,6 +896,23 @@ const UserManagement = ({ tools = [], currentUser, onProfileUpdate }) => {
                 isOpen={inviteModalOpen}
                 onClose={() => setInviteModalOpen(false)}
                 onInvited={(newInvite) => setPendingInvitations(prev => [newInvite, ...prev.filter(i => i.id !== newInvite.id)])}
+            />
+
+            <ConfirmModal
+                isOpen={Boolean(roleChangeTarget)}
+                title={roleChangeTarget?.nextLevel === 'admin' ? 'Grant Administrator Access?' : 'Remove Administrator Access?'}
+                message={
+                    roleChangeTarget
+                        ? roleChangeTarget.nextLevel === 'admin'
+                            ? `Make ${[roleChangeTarget.user.first_name, roleChangeTarget.user.last_name].filter(Boolean).join(' ') || roleChangeTarget.user.email || 'this user'} an administrator? They will be able to manage all equipment, bookings, and users, including promoting other users.`
+                            : `Remove administrator privileges from ${[roleChangeTarget.user.first_name, roleChangeTarget.user.last_name].filter(Boolean).join(' ') || roleChangeTarget.user.email || 'this user'}? They will retain standard user access.`
+                        : ''
+                }
+                onConfirm={handleConfirmRoleChange}
+                onCancel={() => {
+                    if (!savingRole) setRoleChangeTarget(null);
+                }}
+                isLoading={savingRole}
             />
         </div>
     );
