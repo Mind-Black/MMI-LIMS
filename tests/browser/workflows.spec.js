@@ -208,6 +208,7 @@ test('signup sends emailRedirectTo for the app base URL and confirmation callbac
  await expect(page.getByRole('heading',{name:'Registration Successful!'})).toBeVisible();
  expect(signupRedirectTo).toBe('http://127.0.0.1:4173/MMI-LIMS/');
 
+ await page.goto('about:blank');
  await page.goto('./#access_token=confirm-token&expires_in=3600&refresh_token=confirm-refresh&token_type=bearer&type=signup');
  await expect(page.getByRole('heading',{name:'Account Pending Approval'})).toBeVisible();
  await expect(page.getByText('Ada Lovelace')).toBeVisible();
