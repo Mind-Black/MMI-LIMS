@@ -68,8 +68,8 @@ A secure, high-performance Laboratory Information Management System built with R
    npm run dev
    ```
 
-6. **Password recovery**
-   Add the deployed site URL (including `/MMI-LIMS/` on GitHub Pages) to Supabase Auth's allowed redirect URLs. The recovery email returns users to that route to set a new password.
+6. **Email confirmation and password recovery**
+   Set Supabase Auth's **Site URL** and **Redirect URLs** to the deployed site URL (including `/MMI-LIMS/` on GitHub Pages, e.g., `https://mind-black.github.io/MMI-LIMS/`). Signup confirmation and recovery emails return users to that route.
 
 ## Equipment photos
 

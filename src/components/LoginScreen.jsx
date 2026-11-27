@@ -10,7 +10,18 @@ async function computeSha256Hex(message) {
     return Array.from(new Uint8Array(hashBuffer), b => b.toString(16).padStart(2, '0')).join('');
 }
 
-const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteToken = '', onInviteComplete }) => {
+function getAuthRedirectUrl() {
+    return new URL(import.meta.env.BASE_URL || '/', window.location.origin).toString();
+}
+
+const LoginScreen = ({
+    isPasswordRecovery = false,
+    onRecoveryComplete,
+    inviteToken = '',
+    onInviteComplete,
+    authError = '',
+    onDismissAuthError,
+}) => {
     const [loading, setLoading] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -103,6 +114,7 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteTok
 
     const handleRecovery = async (event) => {
         event.preventDefault();
+        onDismissAuthError?.();
         setLoading(true);
         try {
             if (isPasswordRecovery) {
@@ -114,7 +126,7 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteTok
                 showToast('Password updated. Please sign in.', 'success');
             } else {
                 const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                    redirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`
+                    redirectTo: getAuthRedirectUrl()
                 });
                 if (error) throw error;
                 setResetSent(true);
@@ -128,6 +140,7 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteTok
 
     const handleAuth = async (e) => {
         e.preventDefault();
+        onDismissAuthError?.();
         setLoading(true);
 
         try {
@@ -136,6 +149,7 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteTok
                     email,
                     password,
                     options: {
+                        emailRedirectTo: getAuthRedirectUrl(),
                         data: {
                             first_name: firstName,
                             last_name: lastName,
@@ -174,6 +188,25 @@ const LoginScreen = ({ isPasswordRecovery = false, onRecoveryComplete, inviteTok
                     <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">MMI-LIMS</h1>
                     <p className="text-gray-500 dark:text-gray-300 text-sm mt-2">Institute of Materials Science</p>
                 </div>
+
+                {authError && !inviteToken && !isPasswordRecovery && (
+                    <div
+                        role="alert"
+                        className="mb-5 p-3.5 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300 flex items-start justify-between gap-3"
+                    >
+                        <span>{authError}</span>
+                        {onDismissAuthError && (
+                            <button
+                                type="button"
+                                onClick={onDismissAuthError}
+                                aria-label="Dismiss error"
+                                className="text-red-700 dark:text-red-300 font-semibold hover:underline shrink-0"
+                            >
+                                Dismiss
+                            </button>
+                        )}
+                    </div>
+                )}
 
                 {inviteToken ? (
                     inviteLoading ? (

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MMI-LIMS</title>
+  <script>
+    (function () {
+      var base = '/MMI-LIMS/';
+      var loc = window.location;
+      if (loc.pathname.indexOf(base) === 0 && loc.pathname !== base) {
+        loc.replace(base + loc.search + loc.hash);
+      }
+    })();
+  </script>
+</head>
+
+<body>
+  <p>Redirecting to <a href="/MMI-LIMS/">MMI-LIMS</a>…</p>
+</body>
+
+</html>

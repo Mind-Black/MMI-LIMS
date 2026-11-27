@@ -181,3 +181,41 @@ test('invited user can complete setup via invitation link',async({page})=>{
  await page.getByRole('button',{name:'Complete Setup & Sign In'}).click();
  await expect(page.getByText('Welcome to MMI-LIMS! Your account is active.')).toBeVisible();
 });
+test('signup sends emailRedirectTo for the app base URL and confirmation callback lands on pending approval',async({page})=>{
+ let signupRedirectTo='';
+ await page.route('http://localhost:54321/**',async route=>{
+  const url=new URL(route.request().url());
+  const path=url.pathname;
+  let body={};
+  if(path.includes('auth/v1/signup')) {
+   signupRedirectTo=url.searchParams.get('redirect_to')||'';
+   body={user:{id,email:'new.user@example.com',identities:[{id:'ident-1'}]},session:null};
+  } else if(path.includes('auth/v1/user')) {
+   body={id,email:'new.user@example.com',aud:'authenticated'};
+  } else if(path.includes('profiles')) {
+   body={id,first_name:'Ada',last_name:'Lovelace',job_title:'Researcher',access_level:'user',is_approved:false,licenses:{},projects:[]};
+  }
+  await route.fulfill({json:body,headers:{'Access-Control-Allow-Origin':'*'}});
+ });
+ await page.goto('./');
+ await page.getByRole('button',{name:'Need an account? Sign Up'}).click();
+ await page.getByLabel('First Name').fill('Ada');
+ await page.getByLabel('Last Name').fill('Lovelace');
+ await page.getByLabel('Job Title').selectOption('Researcher');
+ await page.getByLabel('Email Address').fill('new.user@example.com');
+ await page.getByLabel('Password').fill('SecurePass123!');
+ await page.getByRole('button',{name:'Create Account'}).click();
+ await expect(page.getByRole('heading',{name:'Registration Successful!'})).toBeVisible();
+ expect(signupRedirectTo).toBe('http://127.0.0.1:4173/MMI-LIMS/');
+
+ await page.goto('./#access_token=confirm-token&expires_in=3600&refresh_token=confirm-refresh&token_type=bearer&type=signup');
+ await expect(page.getByRole('heading',{name:'Account Pending Approval'})).toBeVisible();
+ await expect(page.getByText('Ada Lovelace')).toBeVisible();
+});
+test('404 fallback preserves auth confirmation hash and expired link displays an error alert',async({page})=>{
+ await page.goto('./404.html#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired');
+ await expect(page).toHaveURL('http://127.0.0.1:4173/MMI-LIMS/');
+ await expect(page.getByRole('alert')).toContainText('Email link is invalid or has expired');
+ await page.getByRole('button',{name:'Dismiss error'}).click();
+ await expect(page.getByRole('alert')).toHaveCount(0);
+});
